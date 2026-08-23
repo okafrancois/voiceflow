@@ -32,7 +32,9 @@ Feature specs are versioned delivery contracts. Each spec at `context/feat/[name
 
 ## Completed Features
 
-(None yet)
+| Feature | Version | Status | Spec |
+|---------|---------|--------|------|
+| Complete Long Dictation | 0.1.0 | Completed | [erd.md](./long-recording-transcription/0.1.0/prd/erd.md) |
 
 ## Spec Format
 

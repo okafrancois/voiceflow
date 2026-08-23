@@ -106,6 +106,12 @@ Versioned feature specs with verification status. Each lives under `feat/<name>/
 | [Correction Learning](./feat/correction-learning/0.1.0/prd/erd.md) | 0.1.0 | Active |
 | [Polish Model Device Compatibility Warnings](./feat/polish-model-compatibility/0.1.0/prd/erd.md) | 0.1.0 | Active |
 
+### Completed
+
+| Feature | Version | Status |
+|---------|---------|--------|
+| [Complete Long Dictation](./feat/long-recording-transcription/0.1.0/prd/erd.md) | 0.1.0 | Completed |
+
 ### Draft (Deferred)
 
 | Feature | Version | Status | Description |

@@ -236,3 +236,36 @@ fn test_whisper_engine_transcribe_with_language() {
         }
     }
 }
+
+#[test]
+#[ignore = "Requires a long French WAV fixture and the Whisper Turbo model"]
+fn test_whisper_engine_transcribes_the_end_of_long_audio() {
+    let fixture_path = std::env::var("ARIATYPE_LONG_WHISPER_FIXTURE")
+        .expect("ARIATYPE_LONG_WHISPER_FIXTURE must point to a WAV file");
+    let models_dir = std::env::var("ARIATYPE_LONG_WHISPER_MODEL_DIR")
+        .expect("ARIATYPE_LONG_WHISPER_MODEL_DIR must point to the models directory");
+    let wav_data = std::fs::read(&fixture_path).expect("long Whisper fixture should be readable");
+    let samples = wav_to_samples_mono_16khz(&wav_data);
+    assert!(
+        samples.len() > 16_000 * 60,
+        "fixture must be longer than 60 seconds"
+    );
+
+    let manager = UnifiedEngineManager::new(models_dir.into());
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let result = runtime
+        .block_on(async {
+            let request = TranscriptionRequest::new(samples)
+                .with_model("whisper-turbo")
+                .with_language("fr-FR");
+            manager.transcribe(EngineType::Whisper, request).await
+        })
+        .expect("long Whisper transcription should succeed");
+    let normalized = result.text.to_lowercase();
+
+    assert!(
+        normalized.contains("kangourou") && normalized.contains("violet"),
+        "transcription should contain the final marker sentence, got: {}",
+        result.text
+    );
+}

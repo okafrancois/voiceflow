@@ -38,7 +38,7 @@ For drag-drop and file import, `UnifiedEngineManager::transcribe()` provides a b
 | EngineType | Implementation | `send_chunk` | `finish` |
 |------------|---------------|-------------|----------|
 | `SenseVoice` | `SherpaOnnxBufferingEngine` | Buffer Vec<i16> | Flatten → f32 → sherpa-onnx transcribe |
-| `Whisper` | `SherpaOnnxBufferingEngine` | Buffer Vec<i16> | Flatten → f32 → sherpa-onnx transcribe |
+| `Whisper` | `SherpaOnnxBufferingEngine` | Buffer Vec<i16> | Flatten → f32 → segment long audio → transcribe each range → join text |
 | `Qwen3Asr` | `SherpaOnnxBufferingEngine` | Buffer Vec<i16> | Flatten → f32 → sherpa-onnx transcribe |
 | `Cloud` | `StreamingSttClient` | Forward to WebSocket | Await WebSocket final result |
 
@@ -52,6 +52,17 @@ pub enum AudioSource {
 ```
 
 Local STT uses `AudioSource::Memory` — audio is passed directly from the recording pipeline to sherpa-onnx without writing a temporary WAV file.
+
+### Long local Whisper input
+
+Whisper input longer than 28 seconds is decoded as contiguous, balanced sample
+ranges. Each internal boundary moves to the lowest-energy point within three
+seconds of its balanced target. Every sample appears in exactly one range.
+Short Whisper input, SenseVoice input, and Qwen3-ASR input keep one decode call.
+
+The engine joins non-empty segment results in recording order. If any segment
+decode fails, the complete transcription fails instead of returning the earlier
+segments as a successful result.
 
 ## Model Management
 
@@ -93,7 +104,7 @@ mod mock_credentials {
 
 | Engine Category | Test Requirement | Location |
 |-----------------|------------------|----------|
-| Local engines (SherpaOnnxBufferingEngine) | send_chunk accumulation, finish transcription, empty input | `src/stt_engine/` inline + `tests/` |
+| Local engines (SherpaOnnxBufferingEngine) | send_chunk accumulation, finish transcription, empty input, complete long Whisper segmentation | `src/stt_engine/` inline + `tests/` |
 | Cloud STT engines | Real API calls with mock credentials to verify auth errors | `tests/cloud_provider_api_test.rs` |
 | Cloud Polish engines | Real API calls with mock credentials to verify auth errors | `tests/cloud_provider_api_test.rs` |
 | Response parsing (all vendors) | Mock server or recorded responses | `tests/common/mock_server.rs` |

@@ -41,6 +41,7 @@ Consumer task (identical for all engines):
 Local Engine (via SherpaOnnxBufferingEngine):
   → send_chunk() pushes Vec<i16> to internal buffer
   → finish() flattens buffer → f32 → SherpaOnnxEngine transcribe
+  → Whisper input >28s: balanced low-energy ranges → decode each → join text
   → Zero file I/O
 
 Cloud Streaming Engine (via StreamingSttClient):
@@ -197,6 +198,7 @@ Microphone (system audio capture, device sample rate)
       text = engine.finish().await;
   → Engine internals:
       ├── SherpaOnnxBufferingEngine → buffer Vec<i16> → finish: flatten → transcribe
+      │   └── Whisper input >28s → balanced low-energy ranges → decode each → join text
       └── StreamingSttClient → forward to WebSocket → finish: await final result
 ```
 

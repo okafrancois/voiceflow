@@ -2,13 +2,13 @@
 
 All notable changes to the desktop application will be documented in this file.
 
-## v1.0.6 (2026-08-23)
+## Unreleased
 
 ### Bug Fixes
 
-- Stop double-tap recording on single press (877b7db)
+- Prevent long recordings from being truncated (20ba799)
 
-## v1.0.5 (2026-08-23)
+## v1.0.6 (2026-08-23)
 
 ### Features
 

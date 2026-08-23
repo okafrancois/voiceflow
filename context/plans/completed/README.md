@@ -13,6 +13,7 @@ A plan belongs in this directory only when all of the following are true:
 
 ## Completed Plans
 
+- [Complete Local Whisper Transcription for Long Recordings](./2026-08-23-002-fix-long-whisper-transcription-plan.md) - fix - 2026-08-23
 - [Audio Command Boundary Refactor](./2026-04-13-003-refactor-audio-command-boundaries-plan.md) - refactor - 2026-04-13
 - [Startup Permission Logging Architecture](./2026-04-14-006-startup-permission-logging-architecture-plan.md) - fix - 2026-04-14
 
