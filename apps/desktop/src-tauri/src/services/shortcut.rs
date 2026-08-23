@@ -164,6 +164,10 @@ pub fn double_tap_shortcut_action(
         return DoubleTapShortcutAction::Ignore;
     }
 
+    if context.is_recording {
+        return DoubleTapShortcutAction::StopRecording;
+    }
+
     let second_tap_matches = pending_profile_id == Some(current_profile_id)
         && pending_elapsed.is_some_and(|elapsed| elapsed <= max_interval);
 
@@ -171,11 +175,7 @@ pub fn double_tap_shortcut_action(
         return DoubleTapShortcutAction::ArmFirstTap;
     }
 
-    if context.is_recording {
-        DoubleTapShortcutAction::StopRecording
-    } else {
-        DoubleTapShortcutAction::StartRecording
-    }
+    DoubleTapShortcutAction::StartRecording
 }
 
 pub fn capture_cancel_hotkey_release_owner(
@@ -326,15 +326,11 @@ mod tests {
     }
 
     #[test]
-    fn double_tap_shortcut_triggers_on_second_matching_press_within_window() {
+    fn double_tap_shortcut_starts_on_second_matching_press_within_window() {
         let idle_context = PrimaryShortcutContext {
             capture_active: false,
             is_recording: false,
             trigger_mode: ShortcutRecordingMode::DoubleTap,
-        };
-        let recording_context = PrimaryShortcutContext {
-            is_recording: true,
-            ..idle_context
         };
 
         assert_eq!(
@@ -348,13 +344,23 @@ mod tests {
             ),
             DoubleTapShortcutAction::StartRecording
         );
+    }
+
+    #[test]
+    fn double_tap_shortcut_stops_recording_on_first_press() {
+        let recording_context = PrimaryShortcutContext {
+            capture_active: false,
+            is_recording: true,
+            trigger_mode: ShortcutRecordingMode::DoubleTap,
+        };
+
         assert_eq!(
             double_tap_shortcut_action(
                 recording_context,
                 ShortcutState::Pressed,
                 "dictate",
-                Some("dictate"),
-                Some(Duration::from_millis(200)),
+                None,
+                None,
                 Duration::from_millis(500),
             ),
             DoubleTapShortcutAction::StopRecording

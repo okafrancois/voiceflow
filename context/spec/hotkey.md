@@ -39,7 +39,7 @@ Each shortcut profile chooses how its hotkey controls a recording session:
 |------|-------|--------|
 | `hold` | Press the profile hotkey | Release the profile hotkey, or press Enter |
 | `toggle` | Press the profile hotkey | Press the profile hotkey again, or press Enter |
-| `double_tap` | Press the same profile hotkey twice within the double-tap window | Double tap the profile hotkey again, or press Enter |
+| `double_tap` | Press the same profile hotkey twice within the double-tap window | Press the profile hotkey once, or press Enter |
 
 Enter means **finish the recording and continue normal transcription/finalization**. ESC means **cancel the active recording/transcription and discard the result**. These are separate runtime paths and must not share the same handler.
 
