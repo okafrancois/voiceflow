@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "AriaType Inhouse",
-  "identifier": "com.ariatype.voicetotext.inhouse",
+  "productName": "Voice Flow Dev",
+  "identifier": "com.voiceflow.voicetotext.dev",
   "bundle": {
     "icon": [
       "../assets/icons/inhouse/icon.png",

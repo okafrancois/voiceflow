@@ -24,7 +24,7 @@ impl AppPaths {
     pub fn shared_data_dir() -> PathBuf {
         dirs::data_dir()
             .unwrap_or_else(|| PathBuf::from("."))
-            .join("AriaType")
+            .join("Voice Flow")
     }
 
     pub fn models_dir() -> PathBuf {

@@ -2,7 +2,7 @@
   "name": "@ariatype/desktop",
   "version": "1.0.5",
   "license": "AGPL-3.0-only",
-  "description": "AriaType Desktop Application",
+  "description": "Voice Flow Desktop Application",
   "type": "module",
   "scripts": {
     "clean:e2e-capability": "node ../../scripts/clean-e2e-capability.mjs",

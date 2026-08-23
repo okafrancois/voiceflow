@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 1024 1024"
+  role="img"
+  aria-label="Voice Flow V logo"
+>
+  <rect width="1024" height="1024" rx="206" fill="#ede8df" />
+  <polygon
+    id="voice-flow-v"
+    points="190,250 320,250 525,690 748,260 888,260 665,780 625,845 555,890 485,845 445,780"
+    fill="#050505"
+  />
+  <circle cx="255" cy="250" r="65" fill="#050505" />
+  <circle cx="818" cy="260" r="70" fill="#050505" />
+  <circle cx="555" cy="820" r="70" fill="#050505" />
+</svg>

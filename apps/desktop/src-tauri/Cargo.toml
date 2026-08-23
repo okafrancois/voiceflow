@@ -1,8 +1,8 @@
 [package]
 name = "ariatype"
 version = "1.0.5"
-description = "AriaType - Voice to Text Application"
-authors = ["AriaType Team"]
+description = "Voice Flow - Voice to Text Application"
+authors = ["Voice Flow Team"]
 edition = "2021"
 license = "AGPL-3.0-only"
 default-run = "ariatype"

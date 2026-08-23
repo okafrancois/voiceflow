@@ -57,7 +57,7 @@ test('Sidebar exposes only current primary navigation', async ({ tauriPage }, te
   await sidebar.locator('[data-testid="nav-about"]').click();
   const aboutPage = tauriPage.locator('[data-testid="about-page"]');
   await expect(aboutPage).toBeVisible({ timeout: 10000 });
-  await expect(aboutPage.locator('h1')).toContainText('AriaType');
+  await expect(aboutPage.locator('h1')).toContainText('Voice Flow');
   await expect(aboutPage.getByText('Software Updates')).toBeVisible();
   await expect(aboutPage.getByText('Supported Platforms')).toBeVisible();
 

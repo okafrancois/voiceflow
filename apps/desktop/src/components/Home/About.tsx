@@ -96,7 +96,7 @@ export function About() {
         <div className="inline-block mb-6">
           <img
             src={logo}
-            alt="AriaType"
+            alt="Voice Flow"
             className="h-24 w-24 rounded-3xl ring-1 ring-border"
           />
         </div>

@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "license": "AGPL-3.0-only",
-  "description": "AriaType - Voice to Text Application Monorepo",
+  "description": "Voice Flow - Voice to Text Application Monorepo",
   "scripts": {
     "check:i18n": "node scripts/check-i18n.mjs",
     "lint:commit": "commitlint",

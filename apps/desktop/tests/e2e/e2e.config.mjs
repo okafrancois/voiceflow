@@ -8,12 +8,12 @@ const e2eDir = resolveHarnessDir(import.meta.url);
 export const projectRoot = join(e2eDir, '..', '..');
 export const runtimeKey = 'ordered-shared';
 const userHome = process.env.HOME ?? '/Users/bytedance';
-const e2eDataDir = join(userHome, 'Library', 'Application Support', 'com.ariatype.voicetotext.e2e');
+const e2eDataDir = join(userHome, 'Library', 'Application Support', 'com.voiceflow.voicetotext.e2e');
 export const killCommand = 'pkill -f "target/debug/ariatype"';
 export const systemDataPaths = [
-  join(userHome, 'Library', 'Application Support', 'AriaType E2E'),
+  join(userHome, 'Library', 'Application Support', 'Voice Flow E2E'),
   e2eDataDir,
-  join(userHome, 'Library', 'WebKit', 'com.ariatype.voicetotext.e2e'),
+  join(userHome, 'Library', 'WebKit', 'com.voiceflow.voicetotext.e2e'),
 ];
 export const tauriCommand = [
   'dev',

@@ -1,4 +1,4 @@
-//! System tray (status bar) implementation for AriaType.
+//! System tray (status bar) implementation for Voice Flow.
 //!
 //! Provides a persistent tray icon in the system status bar with:
 //! - Click to show/hide main settings window
@@ -52,7 +52,7 @@ pub fn create_tray(app: &AppHandle) -> tauri::Result<()> {
     let builder = TrayIconBuilder::with_id("ariatype-tray")
         .icon(tray_icon)
         .menu(&menu)
-        .tooltip("AriaType")
+        .tooltip("Voice Flow")
         .on_menu_event(handle_menu_event)
         .on_tray_icon_event(handle_tray_icon_event);
 

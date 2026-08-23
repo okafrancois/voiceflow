@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "AriaType",
+  "productName": "Voice Flow",
   "version": "1.0.5",
-  "identifier": "com.ariatype.voicetotext",
+  "identifier": "com.voiceflow.voicetotext",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1422",

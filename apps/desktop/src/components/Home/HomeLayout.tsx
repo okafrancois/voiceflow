@@ -233,7 +233,7 @@ export function HomeLayout() {
           <div className="px-5 py-5 border-b border-border/70 flex items-center gap-3">
             <img
               src={logo}
-              alt="AriaType"
+              alt="Voice Flow"
               className="h-10 w-10 rounded-lg shadow-sm ring-1 ring-border/80"
             />
             <span className="text-[22px] font-bold text-foreground font-serif italic">
