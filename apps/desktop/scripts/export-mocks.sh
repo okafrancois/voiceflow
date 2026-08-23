@@ -17,7 +17,7 @@ ABS_MOCK_DIR="$(cd "$MOCK_DIR" && pwd)"
 echo "Running export-mocks binary..."
 
 cd src-tauri
-cargo run --bin export-mocks -- "$ABS_MOCK_DIR" 2>&1
+cargo run --features e2e-testing --bin export-mocks -- "$ABS_MOCK_DIR" 2>&1
 cd ..
 
 echo ""

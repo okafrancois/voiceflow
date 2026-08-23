@@ -16,6 +16,11 @@ name = "ariatype_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 doctest = false
 
+[[bin]]
+name = "export-mocks"
+path = "dev-bin/export-mocks.rs"
+required-features = ["e2e-testing"]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
