@@ -1249,7 +1249,10 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(command, binary_path.to_string_lossy());
+        assert_eq!(
+            std::fs::canonicalize(command).unwrap(),
+            std::fs::canonicalize(binary_path).unwrap()
+        );
     }
 
     #[test]
