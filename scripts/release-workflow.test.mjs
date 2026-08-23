@@ -8,19 +8,18 @@ test('release workflow pins a llama.cpp runtime release', () => {
   assert.match(releaseWorkflow, /LLAMA_CPP_RELEASE_TAG:\s*b\d+/);
 });
 
-test('release workflow prepares macOS and Windows local polish runtimes', () => {
+test('release workflow prepares the macOS local polish runtimes', () => {
   assert.match(releaseWorkflow, /prepare-llama-server-release-assets\.mjs[\s\S]*--platform macos/);
-  assert.match(releaseWorkflow, /prepare-llama-server-release-assets\.mjs[\s\S]*--platform windows/);
   assert.match(releaseWorkflow, /\*macos\*arm64\*/);
   assert.match(releaseWorkflow, /\*macos\*x64\*/);
-  assert.match(releaseWorkflow, /\*win\*cpu\*x64\*/);
+  assert.doesNotMatch(releaseWorkflow, /--platform windows|\*win\*cpu\*x64\*/);
 });
 
 test('release workflow requires bundled local polish runtime during packaging', () => {
   const requiredGateCount = releaseWorkflow.match(/ARIATYPE_REQUIRE_LOCAL_POLISH_RUNTIME:\s*"1"/g)
     ?.length ?? 0;
 
-  assert.equal(requiredGateCount, 2);
+  assert.equal(requiredGateCount, 1);
 });
 
 test('release workflow verifies bundled runtime resources before upload', () => {
@@ -28,9 +27,17 @@ test('release workflow verifies bundled runtime resources before upload', () => 
     releaseWorkflow,
     /verify-tauri-runtime-resources\.mjs --platform macos --smoke --smoke-timeout-ms 30000/
   );
-  assert.match(
+  assert.doesNotMatch(releaseWorkflow, /verify-tauri-runtime-resources\.mjs --platform windows/);
+});
+
+test('release workflow builds and publishes macOS assets only', () => {
+  assert.match(releaseWorkflow, /build-macos:[\s\S]*needs: preflight/);
+  assert.match(releaseWorkflow, /publish:[\s\S]*needs: build-macos/);
+  assert.match(releaseWorkflow, /--require-updater-platform darwin-aarch64/);
+  assert.match(releaseWorkflow, /--require-updater-platform darwin-x86_64/);
+  assert.doesNotMatch(
     releaseWorkflow,
-    /verify-tauri-runtime-resources\.mjs --platform windows --smoke --smoke-timeout-ms 30000/
+    /build-windows:|windows-latest|windows-release-assets|windows-x86_64/
   );
 });
 
@@ -54,11 +61,10 @@ test('release workflow checks required secrets before starting desktop builds', 
   assert.match(releaseWorkflow, /preflight:/);
   assert.match(releaseWorkflow, /Missing required release secret/);
   assert.match(releaseWorkflow, /build-macos:[\s\S]*needs: preflight/);
-  assert.match(releaseWorkflow, /build-windows:[\s\S]*needs: preflight/);
 });
 
 test('release workflow uses the repository pnpm version', () => {
   const pnpmVersionCount = releaseWorkflow.match(/version:\s*8\.15\.0/g)?.length ?? 0;
 
-  assert.equal(pnpmVersionCount, 3);
+  assert.equal(pnpmVersionCount, 2);
 });

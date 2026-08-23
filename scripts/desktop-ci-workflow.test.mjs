@@ -36,6 +36,11 @@ test('desktop CI keeps Rust checks blocking and serializes tests', () => {
   assert.match(workflow, /--test-threads=1/);
 });
 
+test('desktop CI is macOS-only', () => {
+  assert.match(workflow, /test-macos:[\s\S]*runs-on: macos-latest/);
+  assert.doesNotMatch(workflow, /test-windows:|build-windows:|windows-latest/);
+});
+
 test('Windows builds use the static MSVC runtime required by sherpa-onnx', () => {
   assert.equal(existsSync(cargoConfigUrl), true);
 
