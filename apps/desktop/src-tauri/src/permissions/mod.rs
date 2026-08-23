@@ -48,6 +48,13 @@ pub enum PermissionStatus {
     NotDetermined,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PermissionRequestFlow {
+    Request,
+    OpenSettings,
+    RequestThenOpenSettingsIfDenied,
+}
+
 impl PermissionStatus {
     pub fn as_str(self) -> &'static str {
         match self {
@@ -55,6 +62,24 @@ impl PermissionStatus {
             Self::Denied => "denied",
             Self::NotDetermined => "not_determined",
         }
+    }
+}
+
+pub fn permission_request_flow(
+    kind: PermissionKind,
+    status: PermissionStatus,
+) -> PermissionRequestFlow {
+    match (kind, status) {
+        (PermissionKind::Microphone, PermissionStatus::NotDetermined) => {
+            PermissionRequestFlow::Request
+        }
+        (PermissionKind::ScreenRecording, PermissionStatus::Granted) => {
+            PermissionRequestFlow::OpenSettings
+        }
+        (PermissionKind::ScreenRecording, _) => {
+            PermissionRequestFlow::RequestThenOpenSettingsIfDenied
+        }
+        _ => PermissionRequestFlow::OpenSettings,
     }
 }
 
@@ -247,7 +272,10 @@ fn log_permission_snapshot(
 
 #[cfg(test)]
 mod tests {
-    use super::{PermissionKind, PermissionSnapshot, PermissionStatus};
+    use super::{
+        permission_request_flow, PermissionKind, PermissionRequestFlow, PermissionSnapshot,
+        PermissionStatus,
+    };
 
     #[test]
     fn permission_kind_round_trip_matches_ipc_contract() {
@@ -281,6 +309,30 @@ mod tests {
         assert_eq!(
             snapshot.status_for(PermissionKind::ScreenRecording),
             PermissionStatus::NotDetermined
+        );
+    }
+
+    #[test]
+    fn microphone_requests_the_native_prompt_only_before_the_user_decides() {
+        assert_eq!(
+            permission_request_flow(PermissionKind::Microphone, PermissionStatus::NotDetermined),
+            PermissionRequestFlow::Request
+        );
+        assert_eq!(
+            permission_request_flow(PermissionKind::Microphone, PermissionStatus::Denied),
+            PermissionRequestFlow::OpenSettings
+        );
+    }
+
+    #[test]
+    fn screen_recording_requests_access_before_falling_back_to_settings() {
+        assert_eq!(
+            permission_request_flow(PermissionKind::ScreenRecording, PermissionStatus::Denied),
+            PermissionRequestFlow::RequestThenOpenSettingsIfDenied
+        );
+        assert_eq!(
+            permission_request_flow(PermissionKind::ScreenRecording, PermissionStatus::Granted),
+            PermissionRequestFlow::OpenSettings
         );
     }
 }

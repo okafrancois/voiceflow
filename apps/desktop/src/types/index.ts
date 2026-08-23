@@ -17,6 +17,10 @@ export type PresetPosition =
 
 export type LocalSttModel =
   | "sense-voice-small"
+  | "whisper-tiny"
   | "whisper-base"
   | "whisper-small"
+  | "whisper-medium"
+  | "whisper-large-v3"
+  | "whisper-turbo"
   | "qwen3-asr-0.6b-int8";

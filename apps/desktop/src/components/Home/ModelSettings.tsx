@@ -9,6 +9,7 @@ import {
   type PolishModelInfo,
 } from "@/lib/tauri";
 import { logger } from "@/lib/logger";
+import { showErrorToast } from "@/lib/toast";
 import { useSettingsContext } from "@/contexts/SettingsContext";
 import { SettingsPageLayout } from "./SettingsPageLayout";
 import { confirm } from "@/components/ui/confirm";
@@ -160,7 +161,9 @@ export function ModelSettings({
     try {
       await modelCommands.downloadModel(modelName);
     } catch (err) {
-      logger.error("failed_to_download_model", { error: String(err) });
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error("failed_to_download_model", { error: message });
+      showErrorToast(message);
       setDownloading((prev) => {
         const next = new Set(prev);
         next.delete(modelName);

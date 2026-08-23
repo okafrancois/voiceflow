@@ -1,10 +1,11 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ModelSettings } from "../ModelSettings";
-import type { AppSettings, PolishModelInfo, PolishModelStatus } from "@/lib/tauri";
+import type { AppSettings, ModelInfo, PolishModelInfo, PolishModelStatus } from "@/lib/tauri";
 
 const {
   downloadPolishModelByIdMock,
+  downloadModelMock,
   getModelsMock,
   getPolishModelsMock,
   getPolishModelStatusMock,
@@ -19,8 +20,10 @@ const {
   preloadPolishModelMock,
   updateSettingContextMock,
   updateSettingsCommandMock,
+  showErrorToastMock,
 } = vi.hoisted(() => ({
   downloadPolishModelByIdMock: vi.fn(),
+  downloadModelMock: vi.fn(),
   getModelsMock: vi.fn(),
   getPolishModelsMock: vi.fn(),
   getPolishModelStatusMock: vi.fn(),
@@ -35,6 +38,7 @@ const {
   preloadPolishModelMock: vi.fn(),
   updateSettingContextMock: vi.fn(),
   updateSettingsCommandMock: vi.fn(),
+  showErrorToastMock: vi.fn(),
 }));
 
 vi.mock("@/contexts/SettingsContext", () => ({
@@ -48,6 +52,7 @@ vi.mock("@/contexts/SettingsContext", () => ({
 
 vi.mock("@/lib/tauri", () => ({
   modelCommands: {
+    downloadModel: downloadModelMock,
     downloadPolishModelById: downloadPolishModelByIdMock,
     getModels: getModelsMock,
     getPolishModels: getPolishModelsMock,
@@ -73,6 +78,10 @@ vi.mock("@/lib/tauri", () => ({
     onPolishModelDownloadComplete: onPolishModelDownloadCompleteMock,
     onPolishModelDownloadProgress: onPolishModelDownloadProgressMock,
   },
+}));
+
+vi.mock("@/lib/toast", () => ({
+  showErrorToast: showErrorToastMock,
 }));
 
 vi.mock("@/lib/analytics", () => ({
@@ -187,6 +196,16 @@ const polishModel: PolishModelInfo = {
   },
 };
 
+const voiceModel: ModelInfo = {
+  name: "whisper-turbo",
+  display_name: "Whisper Turbo INT8 (989M)",
+  size_mb: 989,
+  url: "",
+  downloaded: false,
+  speed_score: 5,
+  accuracy_score: 10,
+};
+
 const polishStatus: PolishModelStatus = {
   is_loaded: false,
   is_downloaded: false,
@@ -242,6 +261,28 @@ describe("ModelSettings polish model activation", () => {
     await waitFor(() => {
       expect(updateSettingsCommandMock).toHaveBeenCalledWith("polish_model", "qwen3.5-0.8b");
       expect(preloadPolishModelMock).toHaveBeenCalledTimes(1);
+    });
+  });
+});
+
+describe("ModelSettings voice model downloads", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    registerEventMocks();
+    getModelsMock.mockResolvedValue([voiceModel]);
+    getPolishModelsMock.mockResolvedValue([]);
+    getPolishModelStatusMock.mockResolvedValue(polishStatus);
+    updateSettingContextMock.mockResolvedValue(undefined);
+  });
+
+  it("shows the backend error when a model download fails", async () => {
+    downloadModelMock.mockRejectedValueOnce(new Error("download integrity check failed"));
+
+    render(<ModelSettings />);
+    fireEvent.click(await screen.findByRole("button", { name: "model.available.download" }));
+
+    await waitFor(() => {
+      expect(showErrorToastMock).toHaveBeenCalledWith("download integrity check failed");
     });
   });
 });

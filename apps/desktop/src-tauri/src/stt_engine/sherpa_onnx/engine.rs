@@ -81,13 +81,9 @@ impl SherpaOnnxEngine {
                 );
             }
             EngineType::Whisper => {
-                let prefix = match model_def.name {
-                    "whisper-base" => "base",
-                    "whisper-small" => "small",
-                    other => {
-                        return Err(format!("Unknown whisper variant: {}", other));
-                    }
-                };
+                let prefix = model_def
+                    .whisper_prefix()
+                    .ok_or_else(|| format!("Invalid whisper model name: {}", model_def.name))?;
                 let encoder_path = model_subdir.join(format!("{}-encoder.onnx", prefix));
                 let decoder_path = model_subdir.join(format!("{}-decoder.onnx", prefix));
                 let tokens_path = model_subdir.join(format!("{}-tokens.txt", prefix));

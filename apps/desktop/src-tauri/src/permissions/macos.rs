@@ -2,7 +2,60 @@
 
 use std::process::Command;
 
-use super::{PermissionProvider, PermissionStatus};
+use super::{
+    permission_request_flow, PermissionKind, PermissionProvider, PermissionRequestFlow,
+    PermissionStatus,
+};
+
+const MICROPHONE_SETTINGS_URL: &str =
+    "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone";
+const SCREEN_RECORDING_SETTINGS_URL: &str =
+    "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture";
+
+fn open_settings(url: &str) -> Result<(), String> {
+    Command::new("open")
+        .arg(url)
+        .spawn()
+        .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+fn request_microphone_access() {
+    use objc::{class, msg_send, sel, sel_impl};
+
+    #[link(name = "AVFoundation", kind = "framework")]
+    extern "C" {}
+
+    unsafe {
+        let media_type: *mut objc::runtime::Object = msg_send![
+            class!(NSString),
+            stringWithUTF8String: c"soun".as_ptr()
+        ];
+        extern crate block;
+        let completion = block::ConcreteBlock::new(move |granted: objc::runtime::BOOL| {
+            tracing::info!(
+                permission = "microphone",
+                granted = granted == objc::runtime::YES,
+                "app_permission_request_completed"
+            );
+        });
+        let completion = completion.copy();
+        let _: () = msg_send![
+            class!(AVCaptureDevice),
+            requestAccessForMediaType: media_type
+            completionHandler: &*completion
+        ];
+    }
+}
+
+fn request_screen_recording_access() -> bool {
+    #[link(name = "CoreGraphics", kind = "framework")]
+    extern "C" {
+        fn CGRequestScreenCaptureAccess() -> bool;
+    }
+
+    unsafe { CGRequestScreenCaptureAccess() }
+}
 
 pub struct MacosPermissions;
 
@@ -115,52 +168,27 @@ impl PermissionProvider for MacosPermissions {
     }
 
     fn apply_microphone(&self) -> Result<(), String> {
-        if self.check_microphone() == PermissionStatus::NotDetermined {
-            use objc::{class, msg_send, sel, sel_impl};
-
-            #[link(name = "AVFoundation", kind = "framework")]
-            extern "C" {}
-
-            let (tx, rx) = std::sync::mpsc::channel::<bool>();
-            let tx = std::sync::Mutex::new(Some(tx));
-
-            unsafe {
-                let media_type: *mut objc::runtime::Object = msg_send![
-                    class!(NSString),
-                    stringWithUTF8String: c"soun".as_ptr()
-                ];
-                let tx_ptr = Box::into_raw(Box::new(tx));
-                extern crate block;
-                let block = block::ConcreteBlock::new(move |granted: objc::runtime::BOOL| {
-                    let tx = Box::from_raw(tx_ptr);
-                    let sender = tx.lock().ok().and_then(|mut guard| guard.take());
-                    if let Some(sender) = sender {
-                        let _ = sender.send(granted == objc::runtime::YES);
-                    }
-                });
-                let block = block.copy();
-                let _: () = msg_send![
-                    class!(AVCaptureDevice),
-                    requestAccessForMediaType: media_type
-                    completionHandler: &*block
-                ];
-            }
-
-            let _ = rx.recv_timeout(std::time::Duration::from_secs(60));
-        } else {
-            Command::new("open")
-                .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")
-                .spawn()
-                .map_err(|error| error.to_string())?;
+        match permission_request_flow(PermissionKind::Microphone, self.check_microphone()) {
+            PermissionRequestFlow::Request => request_microphone_access(),
+            PermissionRequestFlow::OpenSettings => open_settings(MICROPHONE_SETTINGS_URL)?,
+            PermissionRequestFlow::RequestThenOpenSettingsIfDenied => unreachable!(),
         }
         Ok(())
     }
 
     fn apply_screen_recording(&self) -> Result<(), String> {
-        Command::new("open")
-            .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")
-            .spawn()
-            .map_err(|error| error.to_string())?;
+        match permission_request_flow(
+            PermissionKind::ScreenRecording,
+            self.check_screen_recording(),
+        ) {
+            PermissionRequestFlow::RequestThenOpenSettingsIfDenied => {
+                if !request_screen_recording_access() {
+                    open_settings(SCREEN_RECORDING_SETTINGS_URL)?;
+                }
+            }
+            PermissionRequestFlow::OpenSettings => open_settings(SCREEN_RECORDING_SETTINGS_URL)?,
+            PermissionRequestFlow::Request => unreachable!(),
+        }
         Ok(())
     }
 }

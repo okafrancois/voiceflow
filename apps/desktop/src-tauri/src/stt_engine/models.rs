@@ -4,17 +4,40 @@ use crate::stt_engine::traits::EngineType;
 #[derive(Debug, Clone)]
 pub struct ModelFile {
     pub filename: &'static str,
-    pub size_mb: u32,
+    pub source_filename: &'static str,
+    estimated_bytes: u64,
 }
 
 impl ModelFile {
+    const SMALL_SUPPORT_FILE_BYTES: u64 = 2 * 1024 * 1024;
+
+    pub const fn new(filename: &'static str, estimated_bytes: u64) -> Self {
+        Self {
+            filename,
+            source_filename: filename,
+            estimated_bytes,
+        }
+    }
+
+    pub const fn from_source(
+        filename: &'static str,
+        source_filename: &'static str,
+        estimated_bytes: u64,
+    ) -> Self {
+        Self {
+            filename,
+            source_filename,
+            estimated_bytes,
+        }
+    }
+
     pub fn estimated_size_bytes(&self) -> u64 {
-        u64::from(self.size_mb) * 1024 * 1024
+        self.estimated_bytes
     }
 
     pub fn minimum_complete_bytes(&self) -> u64 {
         let estimated = self.estimated_size_bytes();
-        if self.size_mb <= 1 {
+        if estimated <= Self::SMALL_SUPPORT_FILE_BYTES {
             1
         } else {
             estimated * 4 / 5
@@ -31,9 +54,18 @@ pub struct ModelDefinition {
     pub speed_score: u8,
     pub accuracy_score: u8,
     pub engine_type: EngineType,
+    pub repository: Option<&'static str>,
     pub files: &'static [&'static ModelFile],
     pub prefer_lang: &'static [&'static str],
     pub description: &'static str,
+}
+
+impl ModelDefinition {
+    pub fn whisper_prefix(&self) -> Option<&str> {
+        (self.engine_type == EngineType::Whisper)
+            .then(|| self.name.strip_prefix("whisper-"))
+            .flatten()
+    }
 }
 
 /// Language codes for which SenseVoice is the preferred engine
@@ -51,15 +83,10 @@ pub const SENSE_VOICE_SMALL: ModelDefinition = ModelDefinition {
     speed_score: 8,
     accuracy_score: 9,
     engine_type: EngineType::SenseVoice,
+    repository: Some("csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17"),
     files: &[
-        &ModelFile {
-            filename: "model.int8.onnx",
-            size_mb: 228,
-        },
-        &ModelFile {
-            filename: "tokens.txt",
-            size_mb: 1,
-        },
+        &ModelFile::new("model.int8.onnx", 239_233_841),
+        &ModelFile::new("tokens.txt", 315_894),
     ],
     prefer_lang: &["zh", "yue", "ja", "ko", "en"],
     description: "SenseVoice Small for Chinese, Japanese, Korean, Cantonese, and English",
@@ -73,19 +100,11 @@ pub const WHISPER_BASE: ModelDefinition = ModelDefinition {
     speed_score: 9,
     accuracy_score: 7,
     engine_type: EngineType::Whisper,
+    repository: Some("csukuangfj/sherpa-onnx-whisper-base"),
     files: &[
-        &ModelFile {
-            filename: "base-encoder.onnx",
-            size_mb: 91,
-        },
-        &ModelFile {
-            filename: "base-decoder.onnx",
-            size_mb: 187,
-        },
-        &ModelFile {
-            filename: "base-tokens.txt",
-            size_mb: 1,
-        },
+        &ModelFile::new("base-encoder.onnx", 95_087_154),
+        &ModelFile::new("base-decoder.onnx", 196_548_998),
+        &ModelFile::new("base-tokens.txt", 816_730),
     ],
     prefer_lang: &[], // Empty = all languages
     description: "Whisper Base for all languages, fast and lightweight",
@@ -99,22 +118,102 @@ pub const WHISPER_SMALL: ModelDefinition = ModelDefinition {
     speed_score: 7,
     accuracy_score: 8,
     engine_type: EngineType::Whisper,
+    repository: Some("csukuangfj/sherpa-onnx-whisper-small"),
     files: &[
-        &ModelFile {
-            filename: "small-encoder.onnx",
-            size_mb: 391,
-        },
-        &ModelFile {
-            filename: "small-decoder.onnx",
-            size_mb: 533,
-        },
-        &ModelFile {
-            filename: "small-tokens.txt",
-            size_mb: 1,
-        },
+        &ModelFile::new("small-encoder.onnx", 409_528_992),
+        &ModelFile::new("small-decoder.onnx", 559_127_829),
+        &ModelFile::new("small-tokens.txt", 816_730),
     ],
     prefer_lang: &[], // Empty = all languages
     description: "Whisper Small for all languages, better accuracy than Base",
+};
+
+/// Whisper Tiny INT8 - smallest multilingual Whisper variant
+pub const WHISPER_TINY: ModelDefinition = ModelDefinition {
+    name: "whisper-tiny",
+    display_name: "Whisper Tiny INT8 (99M)",
+    size_mb: 99,
+    speed_score: 10,
+    accuracy_score: 6,
+    engine_type: EngineType::Whisper,
+    repository: Some("csukuangfj/sherpa-onnx-whisper-tiny"),
+    files: &[
+        &ModelFile::from_source("tiny-encoder.onnx", "tiny-encoder.int8.onnx", 12_937_772),
+        &ModelFile::from_source("tiny-decoder.onnx", "tiny-decoder.int8.onnx", 89_855_401),
+        &ModelFile::new("tiny-tokens.txt", 816_730),
+    ],
+    prefer_lang: &[],
+    description: "Whisper Tiny INT8 for fast multilingual transcription",
+};
+
+/// Whisper Medium INT8 - higher-accuracy multilingual Whisper variant
+pub const WHISPER_MEDIUM: ModelDefinition = ModelDefinition {
+    name: "whisper-medium",
+    display_name: "Whisper Medium INT8 (902M)",
+    size_mb: 902,
+    speed_score: 5,
+    accuracy_score: 9,
+    engine_type: EngineType::Whisper,
+    repository: Some("csukuangfj/sherpa-onnx-whisper-medium"),
+    files: &[
+        &ModelFile::from_source(
+            "medium-encoder.onnx",
+            "medium-encoder.int8.onnx",
+            374_196_283,
+        ),
+        &ModelFile::from_source(
+            "medium-decoder.onnx",
+            "medium-decoder.int8.onnx",
+            571_059_257,
+        ),
+        &ModelFile::new("medium-tokens.txt", 816_730),
+    ],
+    prefer_lang: &[],
+    description: "Whisper Medium INT8 for higher-accuracy multilingual transcription",
+};
+
+/// Whisper Large v3 INT8 - highest-accuracy Whisper option
+pub const WHISPER_LARGE_V3: ModelDefinition = ModelDefinition {
+    name: "whisper-large-v3",
+    display_name: "Whisper Large v3 INT8 (1.69G)",
+    size_mb: 1_694,
+    speed_score: 2,
+    accuracy_score: 10,
+    engine_type: EngineType::Whisper,
+    repository: Some("csukuangfj/sherpa-onnx-whisper-large-v3"),
+    files: &[
+        &ModelFile::from_source(
+            "large-v3-encoder.onnx",
+            "large-v3-encoder.int8.onnx",
+            766_671_985,
+        ),
+        &ModelFile::from_source(
+            "large-v3-decoder.onnx",
+            "large-v3-decoder.int8.onnx",
+            1_008_265_203,
+        ),
+        &ModelFile::new("large-v3-tokens.txt", 816_730),
+    ],
+    prefer_lang: &[],
+    description: "Whisper Large v3 INT8 for maximum multilingual accuracy",
+};
+
+/// Whisper Turbo INT8 - Large v3 quality with a smaller decoder
+pub const WHISPER_TURBO: ModelDefinition = ModelDefinition {
+    name: "whisper-turbo",
+    display_name: "Whisper Turbo INT8 (989M)",
+    size_mb: 989,
+    speed_score: 5,
+    accuracy_score: 10,
+    engine_type: EngineType::Whisper,
+    repository: Some("csukuangfj/sherpa-onnx-whisper-turbo"),
+    files: &[
+        &ModelFile::from_source("turbo-encoder.onnx", "turbo-encoder.int8.onnx", 674_716_297),
+        &ModelFile::from_source("turbo-decoder.onnx", "turbo-decoder.int8.onnx", 361_080_764),
+        &ModelFile::new("turbo-tokens.txt", 816_730),
+    ],
+    prefer_lang: &[],
+    description: "Whisper Turbo INT8 for high-accuracy multilingual transcription",
 };
 
 /// Qwen3-ASR 0.6B INT8 - high accuracy multilingual ASR via sherpa-onnx
@@ -125,31 +224,14 @@ pub const QWEN3_ASR_0_6B_INT8: ModelDefinition = ModelDefinition {
     speed_score: 6,
     accuracy_score: 9,
     engine_type: EngineType::Qwen3Asr,
+    repository: None,
     files: &[
-        &ModelFile {
-            filename: "conv_frontend.onnx",
-            size_mb: 43,
-        },
-        &ModelFile {
-            filename: "encoder.int8.onnx",
-            size_mb: 174,
-        },
-        &ModelFile {
-            filename: "decoder.int8.onnx",
-            size_mb: 520,
-        },
-        &ModelFile {
-            filename: "tokenizer/vocab.json",
-            size_mb: 3,
-        },
-        &ModelFile {
-            filename: "tokenizer/tokenizer_config.json",
-            size_mb: 1,
-        },
-        &ModelFile {
-            filename: "tokenizer/merges.txt",
-            size_mb: 2,
-        },
+        &ModelFile::new("conv_frontend.onnx", 44_148_281),
+        &ModelFile::new("encoder.int8.onnx", 182_491_662),
+        &ModelFile::new("decoder.int8.onnx", 755_914_231),
+        &ModelFile::new("tokenizer/vocab.json", 2_776_833),
+        &ModelFile::new("tokenizer/tokenizer_config.json", 12_487),
+        &ModelFile::new("tokenizer/merges.txt", 1_671_853),
     ],
     prefer_lang: &[],
     description: "Qwen3-ASR 0.6B INT8 for high-accuracy multilingual transcription",
@@ -160,10 +242,14 @@ pub const DEFAULT: &ModelDefinition = &SENSE_VOICE_SMALL;
 
 /// All available local models
 pub const ALL: &[&ModelDefinition] = &[
+    &WHISPER_TINY,
     &SENSE_VOICE_SMALL,
     &WHISPER_BASE,
-    &WHISPER_SMALL,
     &QWEN3_ASR_0_6B_INT8,
+    &WHISPER_MEDIUM,
+    &WHISPER_SMALL,
+    &WHISPER_TURBO,
+    &WHISPER_LARGE_V3,
 ];
 
 // ============================================================================
@@ -189,7 +275,7 @@ pub fn recommend_by_language(lang: &str) -> Vec<&'static ModelDefinition> {
     if lang == "auto" {
         // Return all models for auto-detect, sorted by accuracy
         let mut models: Vec<_> = ALL.to_vec();
-        models.sort_by(|a, b| b.accuracy_score.cmp(&a.accuracy_score));
+        models.sort_by_key(|model| std::cmp::Reverse(model.accuracy_score));
         return models;
     }
 
@@ -251,7 +337,22 @@ mod tests {
         assert_eq!(QWEN3_ASR_0_6B_INT8.engine_type, EngineType::Qwen3Asr);
         assert_eq!(QWEN3_ASR_0_6B_INT8.files.len(), 6);
 
-        assert_eq!(ALL.len(), 4);
+        assert_eq!(ALL.len(), 8);
+        assert!(find_by_name("whisper-tiny").is_some());
+        assert!(find_by_name("whisper-medium").is_some());
+        assert!(find_by_name("whisper-large-v3").is_some());
+        assert!(find_by_name("whisper-turbo").is_some());
+    }
+
+    #[test]
+    fn qwen_auxiliary_files_accept_the_sizes_from_the_official_archive() {
+        let merges = QWEN3_ASR_0_6B_INT8
+            .files
+            .iter()
+            .find(|file| file.filename == "tokenizer/merges.txt")
+            .unwrap();
+
+        assert!(merges.minimum_complete_bytes() <= 1_671_853);
     }
 
     #[test]
@@ -336,7 +437,7 @@ mod tests {
     #[test]
     fn test_recommend_by_language_auto() {
         let auto_models = recommend_by_language("auto");
-        assert_eq!(auto_models.len(), 4);
+        assert_eq!(auto_models.len(), 8);
         // Should be sorted by accuracy descending
         assert!(auto_models[0].accuracy_score >= auto_models[1].accuracy_score);
         assert!(auto_models[1].accuracy_score >= auto_models[2].accuracy_score);

@@ -2,8 +2,10 @@
 
 Evaluation of local STT models available via [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) for AriaType's desktop voice typing use case. Focus: Chinese-English bilingual accuracy, inference speed on consumer hardware, and model size constraints.
 
-**Date**: 2026-04-08
-**Status**: Active research — Qwen3-ASR 0.6B INT8 integrated as a manual local STT option
+**Date**: 2026-08-23
+**Status**: Active research — Qwen3-ASR 0.6B INT8 and multilingual Whisper Tiny, Base, Small, Medium INT8, Turbo INT8, and Large v3 INT8 are available as local options
+
+The application catalogue is intentionally curated to model exports already supported by the sherpa-onnx runtime. Large and high-accuracy variants remain manual, opt-in downloads; onboarding does not fetch them automatically.
 
 ---
 

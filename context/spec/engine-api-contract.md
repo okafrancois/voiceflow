@@ -59,12 +59,18 @@ All local STT models are defined in `stt_engine/models.rs`:
 
 | Model | Name | Engine | Size | Preferred Languages |
 |-------|------|--------|------|---------------------|
+| Whisper Tiny INT8 | `whisper-tiny` | Whisper | 99M | All languages |
 | SenseVoice Small | `sense-voice-small` | SenseVoice | 234M | zh, yue, ja, ko, en |
-| Whisper Base | `whisper-base` | Whisper | 74M | All languages |
-| Whisper Small | `whisper-small` | Whisper | 244M | All languages |
+| Whisper Base | `whisper-base` | Whisper | 279M | All languages |
 | Qwen3-ASR 0.6B INT8 | `qwen3-asr-0.6b-int8` | Qwen3Asr | 838M | Manual selection |
+| Whisper Medium INT8 | `whisper-medium` | Whisper | 902M | All languages |
+| Whisper Small | `whisper-small` | Whisper | 925M | All languages |
+| Whisper Turbo INT8 | `whisper-turbo` | Whisper | 989M | All languages |
+| Whisper Large v3 INT8 | `whisper-large-v3` | Whisper | 1.69G | All languages |
 
-Model recommendation: `is_sensevoice_preferred(lang)` returns true for zh/yue/ja/ko/en — these languages get SenseVoice Small. All others get Whisper Base. Qwen3-ASR is available as a higher-accuracy, larger manual choice and is not auto-downloaded during onboarding.
+Model recommendation: `is_sensevoice_preferred(lang)` returns true for zh/yue/ja/ko/en — these languages get SenseVoice Small. All others get Whisper Base. Qwen3-ASR and the additional Whisper sizes are manual, opt-in choices and are not auto-downloaded during onboarding.
+
+Each model definition owns its repository, exact source filenames, runtime filenames, and verified file sizes. Downloads emit completion only after the installed files pass the model definition's completeness check. Small support files are required to be non-empty instead of being compared against rounded megabyte estimates.
 
 ## Auth Error Verification Pattern
 

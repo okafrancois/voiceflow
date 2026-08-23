@@ -676,37 +676,6 @@ pub fn run() {
                 commands::window::update_pill_visibility(app.handle());
             }
 
-            std::thread::spawn(move || {
-                std::thread::sleep(std::time::Duration::from_millis(500));
-
-                let permission = crate::permissions::PermissionKind::Microphone;
-                let status = crate::permissions::check_permission(permission);
-
-                if status == crate::permissions::PermissionStatus::NotDetermined {
-                    info!(
-                        permission = permission.as_str(),
-                        status = status.as_str(),
-                        "app_permission_requesting"
-                    );
-                    if let Err(error) = crate::permissions::apply_permission(permission) {
-                        warn!(
-                            permission = permission.as_str(),
-                            error = %error,
-                            "app_permission_request_failed"
-                        );
-                    }
-                    let _ = crate::permissions::report_permission_snapshot_if_changed(
-                        "microphone_permission_request",
-                    );
-                } else {
-                    info!(
-                        permission = permission.as_str(),
-                        status = status.as_str(),
-                        "app_permission_request_skipped"
-                    );
-                }
-            });
-
             // Initialize ShortcutManager and register all profiles from settings
             let profiles = {
                 let state = app.state::<AppState>();

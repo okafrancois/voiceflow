@@ -26,6 +26,7 @@
     "test:e2e:debug": "npm run clean:e2e-capability && playwright test --config=tests/e2e/playwright.config.ts --debug",
     "tauri": "tauri",
     "tauri:dev": "npm run clean:e2e-capability && tauri dev --config src-tauri/tauri.dev.conf.json",
+    "tauri:dev:mac-permissions": "node ../../scripts/run-macos-permission-dev.mjs",
     "build:all": "node ../../scripts/build-all-platforms.mjs",
     "build:all:unsigned": "node ../../scripts/build-all-platforms.mjs --unsigned",
     "tauri:build:mac": "node ../../scripts/prepare-tauri-runtime-resources.mjs --platform macos --require-runtime && node ../../scripts/sign-macos-binaries.mjs && node ../../scripts/run-tauri-build-with-updater-signing.mjs -- tauri build --config src-tauri/tauri.macos.conf.json --config src-tauri/tauri.updater.conf.json --config src-tauri/tauri.runtime.generated.conf.json",

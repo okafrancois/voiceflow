@@ -23,11 +23,7 @@ function getModelLanguageHint(modelName: string, t: (key: string) => string): st
   if (modelName === "sense-voice-small") {
     return " · " + t("model.hint.cjkBest");
   }
-  if (
-    modelName === "whisper-base" ||
-    modelName === "whisper-small" ||
-    modelName === "qwen3-asr-0.6b-int8"
-  ) {
+  if (modelName.startsWith("whisper-") || modelName === "qwen3-asr-0.6b-int8") {
     return " · " + t("model.hint.multiLang");
   }
   return "";

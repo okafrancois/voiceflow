@@ -78,9 +78,6 @@ pub struct RecommendedModel {
     pub downloaded: bool,
 }
 
-const SENSEVOICE_REPO: &str = "csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17";
-const WHISPER_BASE_REPO: &str = "csukuangfj/sherpa-onnx-whisper-base";
-const WHISPER_SMALL_REPO: &str = "csukuangfj/sherpa-onnx-whisper-small";
 const QWEN3_ASR_MODEL_NAME: &str = "qwen3-asr-0.6b-int8";
 const QWEN3_ASR_ARCHIVE_TOP_DIR: &str = "sherpa-onnx-qwen3-asr-0.6B-int8-2026-03-25";
 const QWEN3_ASR_ARCHIVE_FILE: &str = "sherpa-onnx-qwen3-asr-0.6B-int8-2026-03-25.tar.bz2";
@@ -381,20 +378,9 @@ impl UnifiedEngineManager {
                 .await;
         }
 
-        let repo = match engine_type {
-            EngineType::SenseVoice => SENSEVOICE_REPO,
-            EngineType::Whisper => {
-                if model_name == "whisper-small" {
-                    WHISPER_SMALL_REPO
-                } else {
-                    WHISPER_BASE_REPO
-                }
-            }
-            EngineType::Qwen3Asr => unreachable!("Qwen3-ASR archive download handled above"),
-            EngineType::Cloud => {
-                return Err("Cloud models do not need to be downloaded".to_string());
-            }
-        };
+        let repo = model_def
+            .repository
+            .ok_or_else(|| format!("Model '{}' has no download repository", model_name))?;
 
         let model_subdir = self.models_dir.join(model_name);
         std::fs::create_dir_all(&model_subdir)
@@ -403,7 +389,7 @@ impl UnifiedEngineManager {
         let total_size_bytes: u64 = model_def
             .files
             .iter()
-            .map(|f| u64::from(f.size_mb) * 1024 * 1024)
+            .map(|file| file.estimated_size_bytes())
             .sum();
 
         let mut last_output_path: Option<PathBuf> = None;
@@ -440,7 +426,7 @@ impl UnifiedEngineManager {
                 "downloading_model_file"
             );
 
-            let source = HuggingFaceSource::new(repo, model_file.filename).into_source();
+            let source = HuggingFaceSource::new(repo, model_file.source_filename).into_source();
             let urls = source.urls();
 
             let cb = progress_cb.clone();
@@ -461,6 +447,13 @@ impl UnifiedEngineManager {
             let result = download(options).await?;
             completed_bytes.fetch_add(result.bytes, std::sync::atomic::Ordering::Relaxed);
             last_output_path = Some(result.path);
+        }
+
+        if !self.is_model_downloaded(engine_type, model_name) {
+            return Err(format!(
+                "Model '{}' downloaded but failed completeness validation",
+                model_name
+            ));
         }
 
         let output_path = last_output_path.unwrap_or(model_subdir);
@@ -817,10 +810,14 @@ mod tests {
 
     #[test]
     fn test_model_definitions() {
-        assert_eq!(models::ALL.len(), 4);
+        assert_eq!(models::ALL.len(), 8);
         assert_eq!(models::SENSE_VOICE_SMALL.name, "sense-voice-small");
+        assert_eq!(models::WHISPER_TINY.name, "whisper-tiny");
         assert_eq!(models::WHISPER_BASE.name, "whisper-base");
         assert_eq!(models::WHISPER_SMALL.name, "whisper-small");
+        assert_eq!(models::WHISPER_MEDIUM.name, "whisper-medium");
+        assert_eq!(models::WHISPER_LARGE_V3.name, "whisper-large-v3");
+        assert_eq!(models::WHISPER_TURBO.name, "whisper-turbo");
         assert_eq!(models::QWEN3_ASR_0_6B_INT8.name, "qwen3-asr-0.6b-int8");
     }
 

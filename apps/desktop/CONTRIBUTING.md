@@ -31,6 +31,9 @@ pnpm install
 # Start development server
 pnpm --filter @ariatype/desktop tauri:dev
 
+# Build and launch the entitled macOS app for permission testing
+pnpm --filter @ariatype/desktop tauri:dev:mac-permissions
+
 # Build frontend only
 pnpm --filter @ariatype/desktop build
 
@@ -44,6 +47,8 @@ pnpm --filter @ariatype/desktop tauri:build:win
 ### Dev / Inhouse Build Conventions
 
 - `pnpm --filter @ariatype/desktop tauri:dev` starts the inhouse/dev desktop variant.
+- The standard dev command runs a raw executable. macOS can attribute privacy requests to the parent terminal or editor. Use `tauri:dev:mac-permissions` to test microphone and screen-recording access with an ad-hoc signed `Voice Flow Dev.app` carrying `entitlements.plist`.
+- The permission-test command treats the local polish sidecar as optional and automatically selects a working full Xcode installation through `DEVELOPER_DIR` without changing the machine-wide `xcode-select` setting.
 - The `tauri:dev` script regenerates inhouse icon assets before launching Tauri. Do not hand-edit generated files in `apps/desktop/assets/icons/inhouse/`.
 - The canonical generator is `scripts/generate-inhouse-icons.sh`. Change the corner marker style there, then regenerate assets.
 - Dev bundle icons are wired through `src-tauri/tauri.dev.conf.json`.
