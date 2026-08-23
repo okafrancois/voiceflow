@@ -20,7 +20,7 @@ Both modules share a unified product brand ("your Ghost learns and helps") but a
 |-----------|----------|
 | **Product simplicity** | One concept: "Ghost follows you, learns your habits, helps you" |
 | **User mental model** | Ghost-Language = learns your words; Ghost-Action = learns your workflows |
-| **Brand coherence** | Ghost (幽灵) implies invisible companion, continuous learning, silent help |
+| **Brand coherence** | Ghost implies an invisible companion, continuous learning, and silent help |
 | **Technical independence** | Two modules don't share state; can be enabled/disabled separately |
 
 ### Ghost-Action: Why MCP process integration

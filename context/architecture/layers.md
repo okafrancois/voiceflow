@@ -5,7 +5,7 @@
 Within each domain, code depends "forward" through layers. Cross-cutting concerns enter through a single explicit interface.
 
 ```
-                sensors/  ←  基础设施层，只依赖 types + 外部 crate
+                sensors/  ←  infrastructure layer; depends only on types and external crates
                   ↓
 Types → Config → State → Services → Engines → Commands → Events
 ```

@@ -50,7 +50,7 @@ To verify the fix:
 
 Example test input:
 ```
-系统性的梳理我们当前产品中的功能，然后用这些汇总信息重新整理我们的 README 文件。
+Review the features in the current product, then reorganize the README from that summary.
 ```
 
 Expected output: Complete markdown with headers, lists, and formatting intact.

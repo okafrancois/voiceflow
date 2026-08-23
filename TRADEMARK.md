@@ -1,9 +1,5 @@
 # AriaType Trademark Policy
 
-[English](TRADEMARK.md) | [简体中文](TRADEMARK.zh-CN.md)
-
----
-
 ## Overview
 
 This document outlines the terms for using AriaType trademarks and brand assets. While AriaType's source code is open source under GNU Affero General Public License v3.0 (AGPL-3.0), AriaType's trademarks, logos, and brand identity are separately protected.

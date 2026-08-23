@@ -282,7 +282,7 @@ Not-tested: Full desktop e2e suite
 | Implementation-focused (`refactor engine trait`) | `refactor(desktop): faster model loading on startup` |
 | Invented scope (`feat(stt): ...`) | `feat(desktop): ...` |
 | Too long subject (>72 chars) | Move detail to body |
-| Non-English (`添加重试功能`) | `feat(desktop): retry failed transcriptions` |
+| Non-English (`ajouter la reprise`) | `feat(desktop): retry failed transcriptions` |
 | Scope for docs (`docs(context): ...`) | `docs: ...` (omit scope for repo-wide) |
 
 ---

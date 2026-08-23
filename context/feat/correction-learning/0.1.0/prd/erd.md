@@ -3,7 +3,7 @@
 ## Version
 
 - Feature: `correction-learning`
-- User-visible name: Correction Memory / 纠错记忆
+- User-visible name: Correction Memory
 - Version: `0.1.0`
 - Status: Active
 
@@ -170,9 +170,9 @@ interface AppSettings {
 
 ### Learn a correction pair
 
-Given AriaType delivered `这个分析错误需要修复`
-When the focused editor later contains `这个分词错误需要修复`
-Then the shared correction file stores `分析 -> 分词`
+Given AriaType delivered `Please right the report`
+When the focused editor later contains `Please write the report`
+Then the shared correction file stores `right -> write`
 And the pill window receives a correction learned event.
 
 ### Ignore non-correction edits
@@ -183,28 +183,28 @@ Then no correction mapping is stored.
 
 ### Learn a compact whole-output replacement
 
-Given AriaType delivered `搜题`
+Given AriaType delivered `sue tea`
 When the user deletes that output and retypes `sootie`
-Then the shared correction file stores `搜题 -> sootie`.
+Then the shared correction file stores `sue tea -> sootie`.
 
 ### Ignore deletion without replacement
 
-Given AriaType delivered `搜题`
+Given AriaType delivered `sue tea`
 When the focused editor later contains no replacement text
 Then no correction mapping is stored.
 
 ### Apply learned corrections
 
-Given the shared correction file contains `分析 -> 分词`
+Given the shared correction file contains `right -> write`
 And the mapping frequency is at least 2
-When future STT output contains `这个分析错误需要修复`
-Then AriaType sends `这个分词错误需要修复` into polish and delivery.
+When future STT output contains `Please right the report`
+Then AriaType sends `Please write the report` into polish and delivery.
 
 ### Do not apply first observation
 
-Given the shared correction file contains `分析 -> 分词`
+Given the shared correction file contains `right -> write`
 And the mapping frequency is 1
-When future STT output contains `这个分析错误需要修复`
+When future STT output contains `Please right the report`
 Then AriaType keeps the text unchanged.
 
 ### Clear local memory

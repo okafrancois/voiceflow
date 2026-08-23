@@ -51,7 +51,7 @@ CapsWriter-Offline sources used for this analysis:
 | Area | Source |
 |------|--------|
 | README performance and feature overview | [README](https://github.com/HaujetZhao/CapsWriter-Offline/blob/4e4e16bbabdb5b4ebd522cc9f58528b48c87e08e/README.md) |
-| LLM role user documentation | [docs/角色功能如何使用.md](https://github.com/HaujetZhao/CapsWriter-Offline/blob/4e4e16bbabdb5b4ebd522cc9f58528b48c87e08e/docs/%E8%A7%92%E8%89%B2%E5%8A%9F%E8%83%BD%E5%A6%82%E4%BD%95%E4%BD%BF%E7%94%A8.md) |
+| LLM role user documentation | [Chinese LLM role guide](https://github.com/HaujetZhao/CapsWriter-Offline/blob/4e4e16bbabdb5b4ebd522cc9f58528b48c87e08e/docs/%E8%A7%92%E8%89%B2%E5%8A%9F%E8%83%BD%E5%A6%82%E4%BD%BF%E7%94%A8.md) |
 | Default polish role | [LLM/default.py](https://github.com/HaujetZhao/CapsWriter-Offline/blob/4e4e16bbabdb5b4ebd522cc9f58528b48c87e08e/LLM/default.py) |
 | Role matching | [llm_role_detector.py](https://github.com/HaujetZhao/CapsWriter-Offline/blob/4e4e16bbabdb5b4ebd522cc9f58528b48c87e08e/core/client/llm/llm_role_detector.py) |
 | LLM orchestration | [llm_handler.py](https://github.com/HaujetZhao/CapsWriter-Offline/blob/4e4e16bbabdb5b4ebd522cc9f58528b48c87e08e/core/client/llm/llm_handler.py) |

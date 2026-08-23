@@ -23,13 +23,13 @@ Whether reasoning/thinking mode can be disabled for major LLM providers and thei
 | | Gemini 3.1 Flash, Flash-Lite | Dynamic (on) | ✅ Yes | `thinkingLevel: "low"` | |
 | **DeepSeek** | deepseek-reasoner (R1) | Always on | ❌ No | Dedicated endpoint | [api-docs.deepseek.com/guides/thinking_mode](https://api-docs.deepseek.com/guides/thinking_mode) |
 | | deepseek-chat (V3.2) | Off by default | ✅ Yes | `extra_body={"thinking": {"type": "enabled"}}` to opt-in | |
-| **Zhipu (智谱)** | GLM-5, GLM-4.7 | Always on | ❌ **No** | `thinking: {"type": "disabled"}` accepted but **forced** by model design | [docs.bigmodel.cn/cn/guide/capabilities/thinking](https://docs.bigmodel.cn/cn/guide/capabilities/thinking) |
+| **Zhipu** | GLM-5, GLM-4.7 | Always on | ❌ **No** | `thinking: {"type": "disabled"}` accepted but **forced** by model design | [docs.bigmodel.cn/cn/guide/capabilities/thinking](https://docs.bigmodel.cn/cn/guide/capabilities/thinking) |
 | | GLM-4.5, GLM-4.6 | Dynamic (on) | ✅ Yes | `thinking: {"type": "disabled"}` | |
-| **Qwen (通义千问)** | QwQ-Plus, QwQ-32B | Always on | ❌ No | Thinking-only model | [www.alibabacloud.com/help/en/model-studio/qwq](https://www.alibabacloud.com/help/en/model-studio/qwq) |
+| **Qwen** | QwQ-Plus, QwQ-32B | Always on | ❌ No | Thinking-only model | [www.alibabacloud.com/help/en/model-studio/qwq](https://www.alibabacloud.com/help/en/model-studio/qwq) |
 | | Qwen3 (hybrid variants) | Mixed* | ✅ Yes | `extra_body={"enable_thinking": false}` | |
 | | Qwen3 (thinking-only variants) | Always on | ❌ No | Model name ends with `-thinking` | |
 | | Qwen2.5, Qwen2 | No thinking | N/A | — | |
-| **ByteDance (豆包)** | Doubao-1.5-pro, 1.5-lite | No thinking | N/A | — | [www.volcengine.com/context/6492/2165101](https://www.volcengine.com/context/6492/2165101) |
+| **ByteDance** | Doubao-1.5-pro, 1.5-lite | No thinking | N/A | — | [www.volcengine.com/context/6492/2165101](https://www.volcengine.com/context/6492/2165101) |
 | | Doubao-1.5-thinking-pro | Always on | ✅ Yes | `thinking: {"type": "disabled"}` | |
 | | Doubao-Seed-1.6, 1.6-flash | Dynamic (auto) | ✅ Yes | `thinking: {"type": "disabled"}` | |
 | | Doubao-Seed-1.6-thinking | Always on | ✅ Yes | `thinking: {"type": "disabled"}` | |
@@ -123,7 +123,7 @@ response = client.chat.completions.create(
 )
 ```
 
-### Zhipu (智谱)
+### Zhipu
 
 Official docs: https://docs.bigmodel.cn/cn/guide/capabilities/thinking
 
@@ -136,13 +136,13 @@ response = client.chat.completions.create(
 )
 
 # GLM-5, GLM-4.7 — cannot disable
-# Official docs: "glm-5 glm-4.7 glm-4.5v 为强制思考" (forced thinking)
+# Official docs state that GLM-5, GLM-4.7, and GLM-4.5V force thinking
 # sending {"type": "disabled"} is accepted but model still thinks
 ```
 
-> **GLM-5 and GLM-4.7**: Official documentation explicitly states these are "forced deep thinking" (`强制思考`). The `thinking.type: disabled` parameter is listed in the API schema but the models always produce thinking content. This mirrors MiniMax's behavior.
+> **GLM-5 and GLM-4.7**: Official documentation explicitly states these models force deep thinking. The `thinking.type: disabled` parameter is listed in the API schema, but the models always produce thinking content. This mirrors MiniMax's behavior.
 
-### Qwen (通义千问)
+### Qwen
 
 Official docs: https://www.alibabacloud.com/help/en/model-studio/qwq
 
@@ -166,7 +166,7 @@ extra_body={"enable_thinking": True, "thinking_budget": 500}
 | Qwen3-Omni-Turbo | No thinking | N/A |
 | Model names ending in `-thinking` | Always on | ❌ No (thinking-only) |
 
-### ByteDance (豆包)
+### ByteDance
 
 Official docs: https://www.volcengine.com/context/6492/2165101
 

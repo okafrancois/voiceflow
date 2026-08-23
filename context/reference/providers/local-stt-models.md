@@ -958,7 +958,7 @@ Offer users a choice between speed (SenseVoice) and accuracy/coverage (Qwen3-ASR
 
 ### Phase 3: Evaluate Paraformer streaming
 
-If real-time streaming (边说边出字) becomes a priority, integrate Paraformer bilingual streaming as the streaming engine.
+If live transcription while speaking becomes a priority, integrate Paraformer bilingual streaming as the streaming engine.
 
 ### Not Recommended
 

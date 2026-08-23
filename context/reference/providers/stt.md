@@ -61,8 +61,8 @@ wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_nostream
 **Volcengine configuration:**
 ```json
 {
-  "enable_itn": true,     // Numbers: "一九七八" → "1978" — Polish engine handles formatting
-  "enable_punc": true,   // Punctuation: "今天天气好" → "今天天气好。" — Polish engine handles formatting
+  "enable_itn": true,     // Spoken digits → "1978" — Polish engine handles formatting
+  "enable_punc": true,   // Sentence punctuation — Polish engine handles formatting
   "enable_ddc": false    // Disfluency/deduplication — OFF: preserve raw output
 }
 ```
