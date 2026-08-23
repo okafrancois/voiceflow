@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from 'node:fs';
 
 const workflow = readFileSync(new URL('../.github/workflows/test.yml', import.meta.url), 'utf8');
 const websiteWorkflowUrl = new URL('../.github/workflows/deploy-website.yml', import.meta.url);
+const cargoConfigUrl = new URL('../apps/desktop/src-tauri/.cargo/config.toml', import.meta.url);
 
 test('desktop CI runs on master and can be started manually', () => {
   assert.match(workflow, /workflow_dispatch:/);
@@ -28,6 +29,14 @@ test('desktop CI validates frontend contracts', () => {
 test('desktop CI keeps Rust checks blocking and serializes tests', () => {
   assert.doesNotMatch(workflow, /\|\| true/);
   assert.match(workflow, /--test-threads=1/);
+});
+
+test('Windows builds use the static MSVC runtime required by sherpa-onnx', () => {
+  assert.equal(existsSync(cargoConfigUrl), true);
+
+  const cargoConfig = readFileSync(cargoConfigUrl, 'utf8');
+  assert.match(cargoConfig, /target\.x86_64-pc-windows-msvc/);
+  assert.match(cargoConfig, /target-feature=\+crt-static/);
 });
 
 test('website deployment workflow is disabled', () => {

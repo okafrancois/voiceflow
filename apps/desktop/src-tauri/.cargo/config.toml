@@ -1,0 +1,4 @@
+[target.x86_64-pc-windows-msvc]
+# sherpa-onnx ships static-MT native libraries on Windows. Match their CRT
+# linkage so test and application binaries do not mix LIBCMT with MSVCRT.
+rustflags = ["-C", "target-feature=+crt-static"]
