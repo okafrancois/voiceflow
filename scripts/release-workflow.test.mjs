@@ -41,6 +41,13 @@ test('release workflow builds and publishes macOS assets only', () => {
   );
 });
 
+test('release workflow flattens downloaded macOS assets before publishing', () => {
+  assert.match(
+    releaseWorkflow,
+    /name: Flatten macOS release assets[\s\S]*find dist -mindepth 2 -type f -exec mv -t dist -- \{\} \+[\s\S]*find dist -mindepth 1 -type d -empty -delete/,
+  );
+});
+
 test('release workflow publishes Voice Flow desktop assets only', () => {
   assert.match(releaseWorkflow, /--title "Voice Flow v\$\{\{ env\.VERSION \}\}"/);
   assert.doesNotMatch(releaseWorkflow, /Homebrew|HOMEBREW_TAP_TOKEN/i);

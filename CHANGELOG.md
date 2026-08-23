@@ -2,14 +2,7 @@
 
 All notable changes to the desktop application will be documented in this file.
 
-## Unreleased
-
-### Bug Fixes
-
-- Embed manifest in Windows tests (d972d55)
-- Restore macOS permissions and model downloads (fd0df15)
-
-## v1.0.5 (2026-07-06)
+## v1.0.5 (2026-08-23)
 
 ### Features
 
@@ -17,6 +10,9 @@ All notable changes to the desktop application will be documented in this file.
 
 ### Bug Fixes
 
+- Exclude E2E tool from release bundle (a9fbe79)
+- Embed manifest in Windows tests (d972d55)
+- Restore macOS permissions and model downloads (fd0df15)
 - Allow fn modifier chord hotkeys (802ad3a)
 
 ## v1.0.4 (2026-07-02)

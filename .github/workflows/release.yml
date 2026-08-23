@@ -177,6 +177,11 @@ jobs:
           name: macos-release-assets
           path: dist/
 
+      - name: Flatten macOS release assets
+        run: |
+          find dist -mindepth 2 -type f -exec mv -t dist -- {} +
+          find dist -mindepth 1 -type d -empty -delete
+
       - name: Generate GitHub release manifests
         run: |
           git log -1 --pretty=%B > /tmp/voice-flow-release-notes.md
