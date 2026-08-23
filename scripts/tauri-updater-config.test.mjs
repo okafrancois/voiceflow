@@ -25,6 +25,6 @@ test('release updater overlay provides signed-update configuration', () => {
   assert.notEqual(config.plugins.updater, null);
   assert.equal(config.plugins.updater.pubkey, '${TAURI_UPDATER_PUBKEY}');
   assert.deepEqual(config.plugins.updater.endpoints, [
-    'https://github.com/joe223/AriaType/releases/latest/download/latest.updater.json',
+    'https://github.com/okafrancois/voiceflow/releases/latest/download/latest.updater.json',
   ]);
 });

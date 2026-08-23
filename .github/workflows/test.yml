@@ -1,24 +1,63 @@
-name: Test & Coverage
+name: Desktop CI
 
 on:
+  workflow_dispatch:
   push:
-    branches: [main, develop]
+    branches: [master]
     paths:
-      - 'apps/desktop/src-tauri/**'
+      - '.github/workflows/test.yml'
+      - '.github/workflows/release.yml'
+      - 'apps/desktop/**'
+      - 'packages/shared/**'
+      - 'scripts/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
   pull_request:
-    branches: [main]
+    branches: [master]
     paths:
-      - 'apps/desktop/src-tauri/**'
+      - '.github/workflows/test.yml'
+      - '.github/workflows/release.yml'
+      - 'apps/desktop/**'
+      - 'packages/shared/**'
+      - 'scripts/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+
+permissions:
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
 
 jobs:
+  frontend:
+    name: Frontend contracts
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 8.15.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @ariatype/desktop build
+      - run: pnpm --filter @ariatype/shared typecheck
+      - run: pnpm check:i18n
+
   test-macos:
-    name: Test & Coverage (macOS)
+    name: Rust tests and coverage (macOS)
     runs-on: macos-latest
-    
+
     steps:
       - uses: actions/checkout@v4
 
@@ -27,7 +66,7 @@ jobs:
         with:
           components: llvm-tools-preview
 
-      - name: Cache cargo registry
+      - name: Cache Cargo
         uses: actions/cache@v4
         with:
           path: |
@@ -43,44 +82,38 @@ jobs:
 
       - name: Generate coverage report
         working-directory: apps/desktop/src-tauri
-        run: |
-          cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
-        with:
-          files: apps/desktop/src-tauri/lcov.info
-          fail_ci_if_error: false
-          token: ${{ secrets.CODECOV_TOKEN }}
-          flags: unittests
-          name: cargo-llvm-cov
+        run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info -- --test-threads=1
 
       - name: Display coverage summary
         working-directory: apps/desktop/src-tauri
-        run: |
-          cargo llvm-cov --all-features --workspace --summary-only || true
+        run: cargo llvm-cov report --summary-only
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-coverage-macos
+          path: apps/desktop/src-tauri/lcov.info
+          retention-days: 7
 
       - name: Run clippy
         working-directory: apps/desktop/src-tauri
-        run: |
-          cargo clippy --all-features -- -D warnings || true
+        run: cargo clippy --all-features -- -D warnings
 
       - name: Check formatting
         working-directory: apps/desktop/src-tauri
-        run: |
-          cargo fmt -- --check || true
+        run: cargo fmt -- --check
 
   test-windows:
-    name: Test (Windows)
+    name: Rust tests (Windows)
     runs-on: windows-latest
-    
+
     steps:
       - uses: actions/checkout@v4
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache cargo registry
+      - name: Cache Cargo
         uses: actions/cache@v4
         with:
           path: |
@@ -93,7 +126,7 @@ jobs:
 
       - name: Run tests
         working-directory: apps/desktop/src-tauri
-        run: cargo test --all-features --workspace
+        run: cargo test --all-features --workspace -- --test-threads=1
 
       - name: Run clippy
         working-directory: apps/desktop/src-tauri
@@ -103,14 +136,10 @@ jobs:
         working-directory: apps/desktop/src-tauri
         run: cargo fmt -- --check
 
-      - name: Build Rust backend (Windows)
-        working-directory: apps/desktop/src-tauri
-        run: cargo build --release --all-features
-
   build-windows:
-    name: Build Windows Bundle
+    name: Build unsigned Windows installer
     runs-on: windows-latest
-    
+
     steps:
       - uses: actions/checkout@v4
 
@@ -118,26 +147,25 @@ jobs:
 
       - uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 8.15.0
 
       - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: pnpm
 
-      - run: pnpm install
+      - run: pnpm install --frozen-lockfile
 
       - name: Build Windows NSIS installer
         working-directory: apps/desktop
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: pnpm tauri:build:win:unsigned
 
-      - name: Verify installer exists
-        shell: bash
-        run: |
-          EXE=$(find apps/desktop/src-tauri/target/release/bundle/nsis -name "*.exe" | head -1)
-          if [ -z "$EXE" ]; then
-            echo "ERROR: No NSIS installer found!"
-            exit 1
-          fi
-          echo "Installer built successfully: $EXE"
-          ls -la "$EXE"
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: voice-flow-windows-unsigned
+          path: apps/desktop/src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: error
+          retention-days: 7

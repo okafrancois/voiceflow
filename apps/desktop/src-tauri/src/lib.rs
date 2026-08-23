@@ -750,10 +750,8 @@ pub fn run() {
             tauri::RunEvent::Reopen {
                 has_visible_windows,
                 ..
-            } => {
-                if should_show_main_window_on_reopen(has_visible_windows) {
-                    show_main_window_best_effort(app, "dock_reopen");
-                }
+            } if should_show_main_window_on_reopen(has_visible_windows) => {
+                show_main_window_best_effort(app, "dock_reopen");
             }
             _ => {}
         });

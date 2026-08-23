@@ -341,7 +341,10 @@ impl StreamAudioProcessor {
         let mut buf_out = [0.0f32; FRAME_SIZE];
         let processable_len = self.rnnoise_buffer.len() - (self.rnnoise_buffer.len() % FRAME_SIZE);
 
-        for chunk in self.rnnoise_buffer[..processable_len].chunks_exact(FRAME_SIZE) {
+        for chunk in self.rnnoise_buffer[..processable_len]
+            .as_chunks::<FRAME_SIZE>()
+            .0
+        {
             let _ = self.rnnoise_state.process_frame(&mut buf_out, chunk);
             denoised.extend_from_slice(&buf_out);
         }

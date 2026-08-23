@@ -61,7 +61,7 @@ function readNotes() {
 
 const releaseDir = resolve(readArg('--release-dir', process.env.RELEASE_DIR || 'dist'));
 const version = readArg('--version', process.env.VERSION || '');
-const baseUrl = readArg('--base-url', process.env.RELEASE_BASE_URL || `https://github.com/joe223/AriaType/releases/download/v${version}`);
+const baseUrl = readArg('--base-url', process.env.RELEASE_BASE_URL || `https://github.com/okafrancois/voiceflow/releases/download/v${version}`);
 const pubDate = readArg('--pub-date', new Date().toISOString());
 const notes = readNotes();
 const requireUpdater = hasFlag('--require-updater');

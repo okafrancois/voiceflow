@@ -191,7 +191,7 @@ function generateGithubReleaseAssets(results) {
     '--version',
     version,
     '--base-url',
-    `https://github.com/joe223/AriaType/releases/download/v${version}`,
+    `https://github.com/okafrancois/voiceflow/releases/download/v${version}`,
     '--require-updater',
   ];
   for (const platform of requiredPlatforms) {

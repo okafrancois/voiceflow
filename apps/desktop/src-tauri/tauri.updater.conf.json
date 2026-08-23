@@ -7,7 +7,7 @@
     "updater": {
       "pubkey": "${TAURI_UPDATER_PUBKEY}",
       "endpoints": [
-        "https://github.com/joe223/AriaType/releases/latest/download/latest.updater.json"
+        "https://github.com/okafrancois/voiceflow/releases/latest/download/latest.updater.json"
       ]
     }
   }

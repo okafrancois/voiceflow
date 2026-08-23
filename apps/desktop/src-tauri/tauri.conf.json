@@ -56,8 +56,6 @@
       "entitlements": "./entitlements.plist",
       "hardenedRuntime": true,
       "infoPlist": "./Info.plist",
-      "signingIdentity": "${APPLE_SIGNING_IDENTITY}",
-      "providerShortName": "${APPLE_TEAM_ID}",
       "dmg": {
         "background": "../assets/background.png",
         "windowSize": {

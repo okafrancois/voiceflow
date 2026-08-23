@@ -311,7 +311,9 @@ async fn test_cloud_stt_schema() {
 
 ## CI Integration
 
-Tests run on push to `main`/`develop` and on PRs.
+Desktop tests run on push and pull requests to `master`, and the workflow can be
+started manually. It covers the Rust backend, the desktop frontend, shared
+types, i18n, and an unsigned Windows installer build.
 
 ```yaml
 # .github/workflows/test.yml
@@ -320,7 +322,7 @@ cargo clippy --all-features -- -D warnings
 cargo fmt -- --check
 ```
 
-Coverage uploads to Codecov on macOS CI.
+The macOS job stores the Rust LCOV report as a GitHub Actions artifact.
 
 ---
 
