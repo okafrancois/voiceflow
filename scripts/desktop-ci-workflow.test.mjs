@@ -5,6 +5,11 @@ import { existsSync, readFileSync } from 'node:fs';
 const workflow = readFileSync(new URL('../.github/workflows/test.yml', import.meta.url), 'utf8');
 const websiteWorkflowUrl = new URL('../.github/workflows/deploy-website.yml', import.meta.url);
 const cargoConfigUrl = new URL('../apps/desktop/src-tauri/.cargo/config.toml', import.meta.url);
+const desktopBuildScriptUrl = new URL('../apps/desktop/src-tauri/build.rs', import.meta.url);
+const windowsManifestUrl = new URL(
+  '../apps/desktop/src-tauri/windows-app-manifest.xml',
+  import.meta.url,
+);
 
 test('desktop CI runs on master and can be started manually', () => {
   assert.match(workflow, /workflow_dispatch:/);
@@ -37,6 +42,18 @@ test('Windows builds use the static MSVC runtime required by sherpa-onnx', () =>
   const cargoConfig = readFileSync(cargoConfigUrl, 'utf8');
   assert.match(cargoConfig, /target\.x86_64-pc-windows-msvc/);
   assert.match(cargoConfig, /target-feature=\+crt-static/);
+});
+
+test('Windows test binaries receive the Common Controls v6 manifest', () => {
+  assert.equal(existsSync(windowsManifestUrl), true);
+
+  const buildScript = readFileSync(desktopBuildScriptUrl, 'utf8');
+  const windowsManifest = readFileSync(windowsManifestUrl, 'utf8');
+  assert.match(buildScript, /new_without_app_manifest/);
+  assert.match(buildScript, /cargo:rustc-link-arg=\/MANIFEST:EMBED/);
+  assert.match(buildScript, /cargo:rustc-link-arg=\/MANIFESTINPUT:/);
+  assert.match(windowsManifest, /Microsoft\.Windows\.Common-Controls/);
+  assert.match(windowsManifest, /version="6\.0\.0\.0"/);
 });
 
 test('website deployment workflow is disabled', () => {

@@ -1,5 +1,13 @@
 fn main() {
     let target = std::env::var("TARGET").unwrap_or_default();
+    let mut attributes = tauri_build::Attributes::new();
+
+    if target.contains("windows") {
+        attributes = attributes
+            .windows_attributes(tauri_build::WindowsAttributes::new_without_app_manifest());
+        embed_windows_manifest();
+    }
+
     if target.contains("apple-darwin") {
         println!("cargo:rustc-env=MACOSX_DEPLOYMENT_TARGET=12.0");
 
@@ -19,5 +27,16 @@ fn main() {
             }
         }
     }
-    tauri_build::build()
+
+    tauri_build::try_build(attributes).expect("failed to build Tauri application resources");
+}
+
+fn embed_windows_manifest() {
+    let manifest = std::env::current_dir()
+        .expect("failed to resolve the Tauri source directory")
+        .join("windows-app-manifest.xml");
+
+    println!("cargo:rerun-if-changed={}", manifest.display());
+    println!("cargo:rustc-link-arg=/MANIFEST:EMBED");
+    println!("cargo:rustc-link-arg=/MANIFESTINPUT:{}", manifest.display());
 }
