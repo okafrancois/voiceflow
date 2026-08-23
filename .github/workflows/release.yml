@@ -182,6 +182,15 @@ jobs:
           find dist -mindepth 2 -type f -exec mv -t dist -- {} +
           find dist -mindepth 1 -type d -empty -delete
 
+      - name: Normalize macOS release asset names
+        run: |
+          for file in dist/*; do
+            normalized="${file// /.}"
+            if [ "$file" != "$normalized" ]; then
+              mv "$file" "$normalized"
+            fi
+          done
+
       - name: Generate GitHub release manifests
         run: |
           git log -1 --pretty=%B > /tmp/voice-flow-release-notes.md

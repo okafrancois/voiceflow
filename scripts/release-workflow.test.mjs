@@ -41,10 +41,14 @@ test('release workflow builds and publishes macOS assets only', () => {
   );
 });
 
-test('release workflow flattens downloaded macOS assets before publishing', () => {
+test('release workflow flattens and normalizes macOS assets before publishing', () => {
   assert.match(
     releaseWorkflow,
     /name: Flatten macOS release assets[\s\S]*find dist -mindepth 2 -type f -exec mv -t dist -- \{\} \+[\s\S]*find dist -mindepth 1 -type d -empty -delete/,
+  );
+  assert.match(
+    releaseWorkflow,
+    /name: Normalize macOS release asset names[\s\S]*normalized="\$\{file\/\/ \/\.\}"[\s\S]*mv "\$file" "\$normalized"/,
   );
 });
 
