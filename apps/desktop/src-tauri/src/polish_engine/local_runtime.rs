@@ -1175,7 +1175,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(command, binary_path.to_string_lossy());
+        assert_eq!(PathBuf::from(command), binary_path);
     }
 
     #[test]
