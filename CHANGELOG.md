@@ -2,15 +2,11 @@
 
 All notable changes to the desktop application will be documented in this file.
 
-## Unreleased
+## v1.1.0 (2026-08-24)
 
 ### Features
 
 - Add contextual voice workflows (ae8d826)
-
-### Bug Fixes
-
-- Prevent long recordings from being truncated (ced1d10)
 
 ## v1.0.7 (2026-08-23)
 
