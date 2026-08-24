@@ -2,6 +2,12 @@
 
 All notable changes to the desktop application will be documented in this file.
 
+## v1.1.1 (2026-08-24)
+
+### Bug Fixes
+
+- Bundle universal developer CLI (e4925eb)
+
 ## v1.1.0 (2026-08-24)
 
 ### Features
