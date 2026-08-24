@@ -10,7 +10,7 @@ fn test_downloader_invalid_url() {
         let output_path = PathBuf::from("/tmp/test_download_invalid.bin");
         let cancel_flag = Arc::new(AtomicBool::new(false));
 
-        ariatype_lib::utils::downloader::download_file(url, &output_path, cancel_flag, |_, _| {})
+        voiceflow_lib::utils::downloader::download_file(url, &output_path, cancel_flag, |_, _| {})
             .await
     });
 
@@ -27,7 +27,7 @@ fn test_downloader_cancel_flag() {
         let url = "http://example.com/file.bin";
         let output_path = PathBuf::from("/tmp/test_download_cancel.bin");
 
-        ariatype_lib::utils::downloader::download_file(url, &output_path, cancel_flag, |_, _| {})
+        voiceflow_lib::utils::downloader::download_file(url, &output_path, cancel_flag, |_, _| {})
             .await
     });
 
@@ -54,7 +54,7 @@ fn test_downloader_progress_callback() {
         let url = "https://httpbin.org/bytes/1024";
         let output_path = PathBuf::from("/tmp/test_download_progress.bin");
 
-        ariatype_lib::utils::downloader::download_file(
+        voiceflow_lib::utils::downloader::download_file(
             url,
             &output_path,
             cancel_flag,
@@ -81,7 +81,7 @@ fn test_downloader_output_path_handling() {
         let output_path = PathBuf::from("/tmp/nonexistent_dir/test.bin");
         let cancel_flag = Arc::new(AtomicBool::new(false));
 
-        ariatype_lib::utils::downloader::download_file(url, &output_path, cancel_flag, |_, _| {})
+        voiceflow_lib::utils::downloader::download_file(url, &output_path, cancel_flag, |_, _| {})
             .await
     });
 

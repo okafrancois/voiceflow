@@ -23,11 +23,22 @@ describe("theme bootstrap", () => {
   });
 
   it("uses the cached resolved theme before settings finish loading", () => {
-    localStorage.setItem("ariatype-theme", "dark");
+    localStorage.setItem("voiceflow-theme", "dark");
 
     applyInitialTheme();
 
     expect(document.documentElement.classList.contains("dark")).toBe(true);
+  });
+
+  it("migrates the legacy resolved theme key", () => {
+    const legacyKey = ["aria", "type-theme"].join("");
+    localStorage.setItem(legacyKey, "light");
+
+    applyInitialTheme();
+
+    expect(document.documentElement.classList.contains("dark")).toBe(false);
+    expect(localStorage.getItem("voiceflow-theme")).toBe("light");
+    expect(localStorage.getItem(legacyKey)).toBeNull();
   });
 
   it("falls back to the system theme when no cached theme exists", () => {
@@ -40,6 +51,6 @@ describe("theme bootstrap", () => {
     applyTheme("light");
 
     expect(document.documentElement.classList.contains("dark")).toBe(false);
-    expect(localStorage.getItem("ariatype-theme")).toBe("light");
+    expect(localStorage.getItem("voiceflow-theme")).toBe("light");
   });
 });

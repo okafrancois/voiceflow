@@ -1,10 +1,12 @@
 use super::{
-    classify_cloud_check_error, migrate_platform_shortcut_defaults_for_test,
-    migrate_to_profiles_map_for_test, normalize_pill_background_color,
-    normalize_pill_background_opacity, polish_runtime_action_for_setting_update,
-    validate_cloud_polish_config_for_check, validate_cloud_stt_config_for_check, AppSettings,
-    CloudProviderConfig, CloudSttConfig, LocalPolishRuntimeSettingAction,
+    classify_cloud_check_error, migrate_context_workflows_for_test,
+    migrate_platform_shortcut_defaults_for_test, migrate_to_profiles_map_for_test,
+    normalize_pill_background_color, normalize_pill_background_opacity,
+    polish_runtime_action_for_setting_update, validate_cloud_polish_config_for_check,
+    validate_cloud_stt_config_for_check, AppSettings, CloudProviderConfig, CloudSttConfig,
+    LocalPolishRuntimeSettingAction,
 };
+use crate::history::RetentionPolicy;
 use serde_json::json;
 
 #[test]
@@ -215,6 +217,52 @@ fn migrate_platform_shortcut_defaults_keeps_macos_and_customized_values() {
 }
 
 #[test]
+fn context_workflow_migration_preserves_legacy_profile_assignments() {
+    let mut json = json!({
+        "shortcut_profiles": {
+            "dictate": {
+                "hotkey": "Cmd+D",
+                "trigger_mode": "hold",
+                "action": { "Record": { "polish_template_id": null } }
+            },
+            "riff": {
+                "hotkey": "Cmd+R",
+                "trigger_mode": "toggle",
+                "action": { "Record": { "polish_template_id": "filler" } }
+            },
+            "custom": {
+                "hotkey": "Cmd+C",
+                "trigger_mode": "double_tap",
+                "action": { "Record": { "polish_template_id": "formal" } }
+            }
+        },
+        "window_context_enabled": true
+    });
+
+    assert!(migrate_context_workflows_for_test(&mut json));
+    assert_eq!(json["workflow_profiles"].as_array().unwrap().len(), 3);
+    assert_eq!(json["workflow_profiles"][0]["hotkey"], "Cmd+D");
+    assert_eq!(json["workflow_profiles"][2]["hotkey"], "Cmd+C");
+    assert_eq!(json["workflow_profiles"][2]["polish_template_id"], "formal");
+    assert_eq!(json["context_capture"]["clipboard"], false);
+    assert_eq!(json["context_capture"]["ocr_fallback"], false);
+    assert_eq!(json["window_context_enabled"], false);
+}
+
+#[test]
+fn workflow_settings_default_to_structured_context_without_sensitive_fallbacks() {
+    let settings: AppSettings = serde_json::from_value(json!({})).unwrap();
+
+    assert_eq!(settings.workflow_profiles.len(), 2);
+    assert!(settings.workflow_profiles[0].protected);
+    assert!(settings.context_capture.application_metadata);
+    assert!(settings.context_capture.selected_text);
+    assert!(!settings.context_capture.clipboard);
+    assert!(!settings.context_capture.ocr_fallback);
+    assert!(!settings.window_context_enabled);
+}
+
+#[test]
 fn missing_pill_background_color_uses_default() {
     let settings: AppSettings = serde_json::from_value(json!({})).unwrap();
 
@@ -253,6 +301,23 @@ fn direct_stream_typing_defaults_disabled() {
     let settings: AppSettings = serde_json::from_value(json!({})).unwrap();
 
     assert!(!settings.polish_stream_direct_typing_enabled);
+}
+
+#[test]
+fn retention_defaults_preserve_text_for_ninety_days_and_delete_audio() {
+    let settings: AppSettings = serde_json::from_value(json!({})).unwrap();
+
+    assert_eq!(settings.text_retention, RetentionPolicy::Days90);
+    assert_eq!(settings.audio_retention, RetentionPolicy::Never);
+}
+
+#[test]
+fn retention_settings_reject_unknown_policy_values() {
+    let result = serde_json::from_value::<AppSettings>(json!({
+        "text_retention": "sometimes"
+    }));
+
+    assert!(result.is_err());
 }
 
 #[test]

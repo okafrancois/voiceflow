@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { OnboardingGuide } from "../OnboardingGuide";
+import { OnboardingGuide, OnboardingPresetControl } from "../OnboardingGuide";
 
 const mocks = vi.hoisted(() => {
   const onModelDownloadProgressMock = vi.fn(async () => () => undefined);
@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => {
 
   return {
     applyPermissionMock: vi.fn(async () => undefined),
+    applyPresetMock: vi.fn(async () => undefined),
     checkPermissionMock: vi.fn(async () => "granted"),
     downloadModelMock: vi.fn(async () => undefined),
     isModelDownloadedMock: vi.fn(async () => false),
@@ -73,6 +74,7 @@ vi.mock("@/lib/logger", () => ({
 }));
 
 vi.mock("@/lib/toast", () => ({
+  showErrorToast: vi.fn(),
   showToast: vi.fn(),
 }));
 
@@ -82,6 +84,9 @@ vi.mock("@/components/ui/hotkey-input", () => ({
 }));
 
 vi.mock("@/lib/tauri", () => ({
+  platformQualityCommands: {
+    applyPreset: mocks.applyPresetMock,
+  },
   audioCommands: {
     startRecording: mocks.startRecordingMock,
     stopRecording: mocks.stopRecordingMock,
@@ -164,5 +169,13 @@ describe("OnboardingGuide model download flow", () => {
 
     expect(mocks.onModelDownloadProgressMock).toHaveBeenCalledTimes(1);
     expect(mocks.onModelDownloadCompleteMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("lets users apply a setup preset before leaving onboarding", async () => {
+    render(<OnboardingPresetControl />);
+
+    fireEvent.click(screen.getByRole("button", { name: "platformQuality.presets.private" }));
+
+    await waitFor(() => expect(mocks.applyPresetMock).toHaveBeenCalledWith("private"));
   });
 });

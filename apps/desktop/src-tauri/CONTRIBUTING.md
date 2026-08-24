@@ -1,4 +1,4 @@
-# Contributing to @ariatype/desktop (STT Engine)
+# Contributing to @voiceflow/desktop (STT Engine)
 
 This document covers the Speech-to-Text (STT) engine architecture for contributors working on transcription functionality.
 

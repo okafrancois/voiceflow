@@ -9,7 +9,9 @@ use crate::commands::settings::CloudProviderConfig;
 use crate::runtime_context::window::{WindowContextBundle, WindowContextSource};
 use crate::state::app_state::AppState;
 
-use super::capture::should_cancel_window_context_capture;
+use super::capture::{
+    should_cancel_window_context_capture, workflow_delivery_plan, WorkflowDeliveryPlan,
+};
 use super::polish::maybe_polish_transcription_text;
 use super::shared::{
     await_streaming_task_in_background, discard_canceled_result, flush_pending_chunk_for_stop,
@@ -316,6 +318,25 @@ fn error_recovery_idle_skips_after_a_new_recording_starts() {
 fn recording_chunk_size_uses_200ms_of_device_audio() {
     assert_eq!(recording_chunk_size_samples(16_000, 1), 3_200);
     assert_eq!(recording_chunk_size_samples(48_000, 2), 19_200);
+}
+
+#[test]
+fn workflow_profile_output_action_controls_real_recording_delivery() {
+    use crate::services::product_workflows::OutputAction;
+
+    assert_eq!(workflow_delivery_plan(None), WorkflowDeliveryPlan::Insert);
+    assert_eq!(
+        workflow_delivery_plan(Some(OutputAction::Insert)),
+        WorkflowDeliveryPlan::Insert
+    );
+    assert_eq!(
+        workflow_delivery_plan(Some(OutputAction::Preview)),
+        WorkflowDeliveryPlan::Preview
+    );
+    assert_eq!(
+        workflow_delivery_plan(Some(OutputAction::Copy)),
+        WorkflowDeliveryPlan::Copy
+    );
 }
 
 #[test]

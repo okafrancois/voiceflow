@@ -1,5 +1,14 @@
 use serde::Serialize;
 
+use crate::polish_engine::{ANTHROPIC_MESSAGES_ENDPOINT, OPENAI_CHAT_COMPLETIONS_ENDPOINT};
+use crate::stt_engine::cloud::aliyun_stream::{ALIYUN_REALTIME_ENDPOINT, ALIYUN_REALTIME_MODEL};
+use crate::stt_engine::cloud::elevenlabs::{
+    ELEVENLABS_REALTIME_ENDPOINT, ELEVENLABS_REALTIME_MODEL,
+};
+use crate::stt_engine::cloud::volcengine_streaming::{
+    DEFAULT_VOLCENGINE_RESOURCE_ID, URL_BIGMODEL_NOSTREAM,
+};
+
 #[derive(Debug, Clone, Serialize)]
 pub struct ProviderFieldSchema {
     pub name: &'static str,
@@ -48,8 +57,16 @@ pub static STT_SCHEMAS: &[ProviderSchema] = &[
                 name: "Base URL",
                 key: "base_url",
                 required: false,
-                default_value: "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_nostream",
-                example: "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_nostream",
+                default_value: URL_BIGMODEL_NOSTREAM,
+                example: URL_BIGMODEL_NOSTREAM,
+                secret: false,
+            },
+            ProviderFieldSchema {
+                name: "Resource ID",
+                key: "model",
+                required: false,
+                default_value: DEFAULT_VOLCENGINE_RESOURCE_ID,
+                example: DEFAULT_VOLCENGINE_RESOURCE_ID,
                 secret: false,
             },
         ],
@@ -70,16 +87,16 @@ pub static STT_SCHEMAS: &[ProviderSchema] = &[
                 name: "Base URL",
                 key: "base_url",
                 required: false,
-                default_value: "wss://dashscope.aliyuncs.com/api-ws/v1/realtime",
-                example: "wss://dashscope.aliyuncs.com/api-ws/v1/realtime",
+                default_value: ALIYUN_REALTIME_ENDPOINT,
+                example: ALIYUN_REALTIME_ENDPOINT,
                 secret: false,
             },
             ProviderFieldSchema {
                 name: "Model",
                 key: "model",
-                required: true,
-                default_value: "qwen3-asr-flash-realtime",
-                example: "qwen3-asr-flash-realtime",
+                required: false,
+                default_value: ALIYUN_REALTIME_MODEL,
+                example: ALIYUN_REALTIME_MODEL,
                 secret: false,
             },
         ],
@@ -100,8 +117,16 @@ pub static STT_SCHEMAS: &[ProviderSchema] = &[
                 name: "Base URL",
                 key: "base_url",
                 required: false,
-                default_value: "wss://api.elevenlabs.io/v1/speech-to-text/realtime",
-                example: "wss://api.elevenlabs.io/v1/speech-to-text/realtime",
+                default_value: ELEVENLABS_REALTIME_ENDPOINT,
+                example: ELEVENLABS_REALTIME_ENDPOINT,
+                secret: false,
+            },
+            ProviderFieldSchema {
+                name: "Model",
+                key: "model",
+                required: false,
+                default_value: ELEVENLABS_REALTIME_MODEL,
+                example: ELEVENLABS_REALTIME_MODEL,
                 secret: false,
             },
         ],
@@ -125,8 +150,8 @@ pub static POLISH_SCHEMAS: &[ProviderSchema] = &[
                 name: "Base URL",
                 key: "base_url",
                 required: false,
-                default_value: "https://api.anthropic.com/v1/messages",
-                example: "https://api.anthropic.com/v1/messages",
+                default_value: ANTHROPIC_MESSAGES_ENDPOINT,
+                example: ANTHROPIC_MESSAGES_ENDPOINT,
                 secret: false,
             },
             ProviderFieldSchema {
@@ -155,8 +180,8 @@ pub static POLISH_SCHEMAS: &[ProviderSchema] = &[
                 name: "Base URL",
                 key: "base_url",
                 required: false,
-                default_value: "https://api.openai.com/v1/chat/completions",
-                example: "https://api.openai.com/v1/chat/completions",
+                default_value: OPENAI_CHAT_COMPLETIONS_ENDPOINT,
+                example: OPENAI_CHAT_COMPLETIONS_ENDPOINT,
                 secret: false,
             },
             ProviderFieldSchema {
@@ -175,5 +200,101 @@ pub fn get_schemas() -> CloudProviderSchemas {
     CloudProviderSchemas {
         stt: STT_SCHEMAS,
         polish: POLISH_SCHEMAS,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn shipped_provider_ids_are_exact() {
+        let schemas = get_schemas();
+        let stt_ids = schemas
+            .stt
+            .iter()
+            .map(|schema| schema.id)
+            .collect::<Vec<_>>();
+        let polish_ids = schemas
+            .polish
+            .iter()
+            .map(|schema| schema.id)
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            stt_ids,
+            ["volcengine-streaming", "aliyun-stream", "elevenlabs"]
+        );
+        assert_eq!(polish_ids, ["anthropic", "openai"]);
+    }
+
+    #[test]
+    fn volcengine_schema_defaults_to_bigmodel_nostream() {
+        let schema = STT_SCHEMAS
+            .iter()
+            .find(|schema| schema.id == "volcengine-streaming")
+            .unwrap();
+        let base_url = schema
+            .fields
+            .iter()
+            .find(|field| field.key == "base_url")
+            .unwrap();
+
+        assert_eq!(base_url.default_value, URL_BIGMODEL_NOSTREAM);
+    }
+
+    #[test]
+    fn stt_schema_defaults_match_runtime_contracts() {
+        let expected = [
+            (
+                "volcengine-streaming",
+                URL_BIGMODEL_NOSTREAM,
+                DEFAULT_VOLCENGINE_RESOURCE_ID,
+            ),
+            (
+                "aliyun-stream",
+                ALIYUN_REALTIME_ENDPOINT,
+                ALIYUN_REALTIME_MODEL,
+            ),
+            (
+                "elevenlabs",
+                ELEVENLABS_REALTIME_ENDPOINT,
+                ELEVENLABS_REALTIME_MODEL,
+            ),
+        ];
+
+        for (provider_id, endpoint, model) in expected {
+            let schema = STT_SCHEMAS
+                .iter()
+                .find(|schema| schema.id == provider_id)
+                .unwrap();
+            let field = |key| schema.fields.iter().find(|field| field.key == key).unwrap();
+
+            assert_eq!(field("base_url").default_value, endpoint);
+            assert_eq!(field("model").default_value, model);
+        }
+    }
+
+    #[test]
+    fn polish_schema_defaults_match_runtime_contracts() {
+        let anthropic = POLISH_SCHEMAS
+            .iter()
+            .find(|schema| schema.id == "anthropic")
+            .unwrap();
+        let openai = POLISH_SCHEMAS
+            .iter()
+            .find(|schema| schema.id == "openai")
+            .unwrap();
+        let endpoint = |schema: &ProviderSchema| {
+            schema
+                .fields
+                .iter()
+                .find(|field| field.key == "base_url")
+                .unwrap()
+                .default_value
+        };
+
+        assert_eq!(endpoint(anthropic), ANTHROPIC_MESSAGES_ENDPOINT);
+        assert_eq!(endpoint(openai), OPENAI_CHAT_COMPLETIONS_ENDPOINT);
     }
 }

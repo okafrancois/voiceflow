@@ -3,8 +3,8 @@
 //! Provides a configurable mock implementation of the Polish engine trait
 //! for use in integration and unit tests.
 
-use ariatype_lib::polish_engine::{PolishEngine, PolishEngineType, PolishRequest, PolishResult};
 use async_trait::async_trait;
+use voiceflow_lib::polish_engine::{PolishEngine, PolishEngineType, PolishRequest, PolishResult};
 
 /// Mock Polish engine with configurable behavior
 ///
@@ -168,7 +168,7 @@ impl PolishEngine for MockPolishEngineWithTracking {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ariatype_lib::polish_engine::PolishEngineType;
+    use voiceflow_lib::polish_engine::PolishEngineType;
 
     #[tokio::test]
     async fn test_mock_polish_default() {

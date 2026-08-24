@@ -341,7 +341,14 @@ fn canonical_case_mapping(term: &str) -> Option<CorrectionPair> {
         return None;
     }
 
-    let wrong = term.to_lowercase();
+    // Speech engines commonly collapse product names made of multiple words
+    // into a single token. Keep the glossary's canonical spelling while using
+    // that compact form as the correction alias.
+    let wrong: String = term
+        .chars()
+        .filter(|character| !character.is_whitespace())
+        .flat_map(char::to_lowercase)
+        .collect();
     if wrong == term {
         return None;
     }
@@ -531,11 +538,11 @@ mod tests {
 
     #[test]
     fn creates_case_correction_for_canonical_ascii_terms() {
-        let mappings = parse_glossary_correction_mappings("AriaType,sootie,Node.js");
+        let mappings = parse_glossary_correction_mappings("Voice Flow,sootie,Node.js");
 
         assert_eq!(mappings.len(), 2);
-        assert_eq!(mappings[0].wrong, "ariatype");
-        assert_eq!(mappings[0].corrected, "AriaType");
+        assert_eq!(mappings[0].wrong, "voiceflow");
+        assert_eq!(mappings[0].corrected, "Voice Flow");
         assert_eq!(mappings[1].wrong, "node.js");
         assert_eq!(mappings[1].corrected, "Node.js");
     }
@@ -543,29 +550,29 @@ mod tests {
     #[test]
     fn keeps_custom_dictionary_hotwords_separate_from_user_glossary() {
         let result = apply_post_stt_processing(
-            "open 搜题 with ariatype",
+            "open 搜题 with voiceflow",
             false,
-            "AriaType",
+            "Voice Flow",
             "sootie",
             10,
             "test",
         );
 
-        assert_eq!(result.text, "open sootie with AriaType");
+        assert_eq!(result.text, "open sootie with Voice Flow");
         assert_eq!(result.hotwords_applied, 1);
         assert_eq!(result.glossary_applied, 1);
     }
 
     #[test]
     fn applies_glossary_after_correction_memory() {
-        let mappings = parse_glossary_correction_mappings("搜题 -> sootie, AriaType");
+        let mappings = parse_glossary_correction_mappings("搜题 -> sootie, Voice Flow");
         let result = finish_post_stt_processing(PostSttFinishInput {
-            raw_text: "open 搜题 with ariatype",
-            normalized_input_text: "open 搜题 with ariatype",
+            raw_text: "open 搜题 with voiceflow",
+            normalized_input_text: "open 搜题 with voiceflow",
             input_normalization_applied: 0,
             correction_memory_enabled: true,
             correction_result: Ok(CorrectionApplyResult {
-                text: "open 搜题 with ariatype".to_string(),
+                text: "open 搜题 with voiceflow".to_string(),
                 applied: Vec::new(),
             }),
             custom_hotword_entries: &[],
@@ -575,7 +582,7 @@ mod tests {
             context: "test",
         });
 
-        assert_eq!(result.text, "open sootie with AriaType");
+        assert_eq!(result.text, "open sootie with Voice Flow");
         assert_eq!(result.corrections_applied, 0);
         assert_eq!(result.hotwords_applied, 0);
         assert_eq!(result.glossary_applied, 2);

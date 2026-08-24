@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { GeneralSettings } from "../GeneralSettings";
 import type { AppSettings } from "@/lib/tauri";
@@ -7,11 +7,13 @@ const {
   getAudioDevicesMock,
   getIdentifierMock,
   getPlatformMock,
+  getRetentionStatusMock,
   updateSettingMock,
 } = vi.hoisted(() => ({
   getAudioDevicesMock: vi.fn(),
   getIdentifierMock: vi.fn(),
   getPlatformMock: vi.fn(),
+  getRetentionStatusMock: vi.fn(),
   updateSettingMock: vi.fn(),
 }));
 
@@ -37,6 +39,9 @@ vi.mock("@/lib/tauri", () => ({
   systemCommands: {
     getAudioDevices: getAudioDevicesMock,
     getPlatform: getPlatformMock,
+  },
+  historyCommands: {
+    getRetentionStatus: getRetentionStatusMock,
   },
 }));
 
@@ -73,6 +78,7 @@ const testSettings: AppSettings = {
   active_cloud_polish_provider: "openai",
   active_cloud_stt_provider: "volcengine",
   analytics_opt_in: false,
+  audio_retention: "never",
   audio_device: "default",
   auto_start: false,
   beep_on_record: true,
@@ -118,6 +124,16 @@ const testSettings: AppSettings = {
       action: { Record: { polish_template_id: null } },
     },
   },
+  workflow_profiles: [],
+  application_rules: [],
+  voice_snippets: [],
+  context_capture: {
+    application_metadata: true,
+    focused_field: true,
+    selected_text: true,
+    clipboard: false,
+    ocr_fallback: false,
+  },
   stay_in_tray: false,
   stt_engine: "sherpa",
   stt_engine_initial_prompt: "",
@@ -128,6 +144,7 @@ const testSettings: AppSettings = {
   stt_engine_work_domain_prompt: "",
   stt_engine_work_subdomain: "general",
   theme_mode: "system",
+  text_retention: "days_90",
   vad_enabled: false,
   window_context_enabled: false,
 };
@@ -137,11 +154,13 @@ describe("GeneralSettings correction memory directory entry", () => {
     getAudioDevicesMock.mockResolvedValue(["default"]);
     getPlatformMock.mockResolvedValue("macos");
     getIdentifierMock.mockReset();
+    getRetentionStatusMock.mockResolvedValue({ text_entries: 0, audio_files: 0, audio_bytes: 0 });
     updateSettingMock.mockReset();
   });
 
   it("hides the correction memory folder button outside in-house builds", async () => {
-    getIdentifierMock.mockResolvedValue("com.ariatype.voicetotext");
+    getIdentifierMock.mockResolvedValue("com.voiceflow.voicetotext");
+    getRetentionStatusMock.mockResolvedValue({ text_entries: 3, audio_files: 0, audio_bytes: 0 });
 
     render(<GeneralSettings />);
 
@@ -153,10 +172,41 @@ describe("GeneralSettings correction memory directory entry", () => {
   });
 
   it("shows the correction memory folder button in in-house builds", async () => {
-    getIdentifierMock.mockResolvedValue("com.ariatype.voicetotext.inhouse");
+    getIdentifierMock.mockResolvedValue("com.voiceflow.voicetotext.inhouse");
 
     render(<GeneralSettings />);
 
     expect(await screen.findByText("general.privacy.correctionMemoryOpenAction")).toBeInTheDocument();
+  });
+});
+
+describe("GeneralSettings retention controls", () => {
+  beforeEach(() => {
+    getAudioDevicesMock.mockResolvedValue(["default"]);
+    getPlatformMock.mockResolvedValue("macos");
+    getIdentifierMock.mockResolvedValue("com.voiceflow.voicetotext");
+    updateSettingMock.mockReset();
+  });
+
+  it("shows independent text and audio retention selectors", async () => {
+    render(<GeneralSettings />);
+
+    expect(await screen.findByText("general.privacy.retentionStatus")).toBeInTheDocument();
+    expect(screen.getByLabelText("general.privacy.textRetention")).toHaveValue("days_90");
+    expect(screen.getByLabelText("general.privacy.audioRetention")).toHaveValue("never");
+  });
+
+  it("persists each retention policy through its backend setting key", async () => {
+    render(<GeneralSettings />);
+
+    fireEvent.click(screen.getByLabelText("general.privacy.textRetention"));
+    fireEvent.click(screen.getByText("general.privacy.retention.days30"));
+    fireEvent.click(screen.getByLabelText("general.privacy.audioRetention"));
+    fireEvent.click(screen.getByText("general.privacy.retention.days7"));
+
+    await waitFor(() => {
+      expect(updateSettingMock).toHaveBeenCalledWith("text_retention", "days_30");
+      expect(updateSettingMock).toHaveBeenCalledWith("audio_retention", "days_7");
+    });
   });
 });

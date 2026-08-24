@@ -3,6 +3,8 @@ pub mod hotkey;
 pub mod model;
 pub mod model_cache;
 pub mod permissions;
+pub mod platform_quality;
+pub mod product_workflows;
 pub mod settings;
 pub mod system;
 pub mod text;

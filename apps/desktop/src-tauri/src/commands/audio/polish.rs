@@ -507,13 +507,33 @@ pub(super) async fn maybe_polish_transcription_text(
     accumulated_text: String,
     resolved_polish_template_id: Option<String>,
 ) -> PolishProcessingResult {
+    maybe_polish_transcription_text_for_profile(
+        event_target,
+        state,
+        task_id,
+        accumulated_text,
+        resolved_polish_template_id,
+        None,
+    )
+    .await
+}
+
+pub(super) async fn maybe_polish_transcription_text_for_profile(
+    event_target: &ProcessingEventTarget<'_>,
+    state: &AppState,
+    task_id: u64,
+    accumulated_text: String,
+    resolved_polish_template_id: Option<String>,
+    profile: Option<&crate::services::product_workflows::WorkflowProfile>,
+) -> PolishProcessingResult {
     let polish_decision_started = Instant::now();
-    match resolved_polish_template_id {
-        None => {
+    let workflow_instruction = profile.and_then(workflow_profile_instruction);
+    match (resolved_polish_template_id, workflow_instruction) {
+        (None, None) => {
             info!(task_id, "polish_skipped-no_template");
             PolishProcessingResult::skipped(accumulated_text, "no polish template")
         }
-        Some(template_id) => {
+        (template_id, workflow_instruction) => {
             let (
                 system_prompt,
                 language,
@@ -524,23 +544,29 @@ pub(super) async fn maybe_polish_transcription_text(
             ) = {
                 let settings = state.settings.lock();
 
-                let system_prompt: String = get_template_by_id(&template_id)
-                    .map(|t| t.system_prompt.to_string())
+                let mut system_prompt: String = template_id
+                    .as_deref()
+                    .and_then(get_template_by_id)
+                    .map(|template| template.system_prompt.to_string())
                     .or_else(|| {
-                        settings
-                            .polish_custom_templates
-                            .iter()
-                            .find(|t| t.id == template_id)
-                            .map(|t| t.system_prompt.clone())
+                        template_id.as_deref().and_then(|id| {
+                            settings
+                                .polish_custom_templates
+                                .iter()
+                                .find(|template| template.id == id)
+                                .map(|template| template.system_prompt.clone())
+                        })
                     })
-                    .unwrap_or_else(|| {
-                        warn!(task_id, template_id = %template_id, "template_not_found_fallback");
-                        get_template_by_id("filler")
-                            .map(|t| t.system_prompt.to_string())
-                            .unwrap_or_else(|| DEFAULT_POLISH_PROMPT.to_string())
-                    });
+                    .unwrap_or_else(|| DEFAULT_POLISH_PROMPT.to_string());
+                if let Some(workflow_instruction) = workflow_instruction.as_deref() {
+                    system_prompt.push_str("\n\nWORKFLOW OUTPUT RULES:\n");
+                    system_prompt.push_str(workflow_instruction);
+                }
 
-                let language = settings.stt_engine_language.clone();
+                let language = profile
+                    .and_then(|profile| profile.language.clone())
+                    .filter(|language| !language.trim().is_empty())
+                    .unwrap_or_else(|| settings.stt_engine_language.clone());
                 let provider_type = settings.active_cloud_polish_provider.clone();
                 let cloud_config = settings.cloud_polish_configs.get(&provider_type).cloned();
                 let polish_model_id = settings.polish_model.clone();
@@ -709,11 +735,39 @@ pub(super) async fn maybe_polish_transcription_text(
     }
 }
 
+fn workflow_profile_instruction(
+    profile: &crate::services::product_workflows::WorkflowProfile,
+) -> Option<String> {
+    let mut instructions = Vec::new();
+    if let Some(target) = profile
+        .translation_target
+        .as_deref()
+        .map(str::trim)
+        .filter(|target| !target.is_empty())
+    {
+        instructions.push(format!(
+            "Translate the complete output to {target}. Do not keep it in the source language."
+        ));
+    }
+    if profile.code_aware {
+        let mut context = crate::services::platform_quality::get_active_code_context()
+            .ok()
+            .flatten()
+            .unwrap_or_default();
+        if context.language.is_none() {
+            context.language = profile.language.clone();
+        }
+        instructions
+            .push(crate::services::platform_quality::build_code_aware_instruction(&context));
+    }
+    (!instructions.is_empty()).then(|| instructions.join("\n"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         classify_polish_failure_reason, local_polish_timeout, should_reject_question_answer_polish,
-        LOCAL_POLISH_BASE_TIMEOUT, LOCAL_POLISH_MAX_TIMEOUT,
+        workflow_profile_instruction, LOCAL_POLISH_BASE_TIMEOUT, LOCAL_POLISH_MAX_TIMEOUT,
     };
 
     #[test]
@@ -740,6 +794,28 @@ mod tests {
         let output = "我觉得这个功能现在已经完整了。";
 
         assert!(!should_reject_question_answer_polish(input, output));
+    }
+
+    #[test]
+    fn workflow_profile_adds_translation_and_shared_code_aware_instruction() {
+        let profile = crate::services::product_workflows::WorkflowProfile {
+            id: "code-fr".to_string(),
+            name: "Code French".to_string(),
+            hotkey: "Cmd+1".to_string(),
+            trigger_mode: crate::shortcut::ShortcutTriggerMode::Toggle,
+            language: Some("en".to_string()),
+            polish_template_id: None,
+            translation_target: Some("French".to_string()),
+            output_action: crate::services::product_workflows::OutputAction::Preview,
+            code_aware: true,
+            protected: false,
+        };
+
+        let instruction = workflow_profile_instruction(&profile).unwrap();
+
+        assert!(instruction.contains("Translate the complete output to French"));
+        assert!(instruction.contains("Preserve code identifiers and casing"));
+        assert!(instruction.contains("Do not wrap the result in a Markdown code fence"));
     }
 
     #[test]

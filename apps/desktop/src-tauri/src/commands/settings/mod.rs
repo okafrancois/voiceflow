@@ -8,9 +8,31 @@ use tracing::{info, warn};
 
 use crate::commands::window::position_pill_window;
 use crate::events::EventName;
+use crate::history::RetentionPolicy;
+use crate::services::product_workflows::{
+    apply_profile_registration_transaction, default_workflow_profiles, migrate_legacy_profiles,
+    project_legacy_profiles, ApplicationRule, ContextCaptureSettings, VoiceSnippet,
+    WorkflowProfile, WorkflowProfileRegistrar,
+};
 use crate::shortcut::ShortcutProfilesMap;
 use crate::state::app_state::AppState;
 use crate::utils::AppPaths;
+
+struct ShortcutManagerRegistrar<'a>(&'a crate::shortcut::ShortcutManager);
+
+impl WorkflowProfileRegistrar for ShortcutManagerRegistrar<'_> {
+    fn register(
+        &mut self,
+        id: &str,
+        profile: &crate::shortcut::ShortcutProfile,
+    ) -> Result<(), String> {
+        self.0.register_profile(id, profile)
+    }
+
+    fn unregister(&mut self, id: &str) -> Result<(), String> {
+        self.0.unregister_profile(id)
+    }
+}
 
 /// Cloud provider configuration for polish
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -91,8 +113,16 @@ struct LegacyCloudSttConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AppSettings {
-    /// Shortcut profiles map with fixed keys: { dictate, riff, custom? }
+    /// Legacy shortcut projection kept while old clients migrate to workflow profiles.
     pub shortcut_profiles: ShortcutProfilesMap,
+    /// Canonical unlimited recording profiles.
+    pub workflow_profiles: Vec<WorkflowProfile>,
+    /// Ordered application matchers selecting a workflow profile.
+    pub application_rules: Vec<ApplicationRule>,
+    /// Deterministic spoken snippet expansions.
+    pub voice_snippets: Vec<VoiceSnippet>,
+    /// Consent switches for structured and sensitive context sources.
+    pub context_capture: ContextCaptureSettings,
     pub recording_mode: String,
     pub model: String,
     pub stt_engine: String,
@@ -117,6 +147,10 @@ pub struct AppSettings {
     pub stt_engine_user_glossary: String,
     pub custom_dictionary: String,
     pub analytics_opt_in: bool,
+    /// How long transcription text and history metadata remain on this device.
+    pub text_retention: RetentionPolicy,
+    /// How long captured WAV files remain on this device.
+    pub audio_retention: RetentionPolicy,
     pub cloud_stt_enabled: bool,
     pub active_cloud_stt_provider: String,
     pub cloud_stt_configs: HashMap<String, CloudSttConfig>,
@@ -401,6 +435,10 @@ impl Default for AppSettings {
     fn default() -> Self {
         Self {
             shortcut_profiles: ShortcutProfilesMap::default(),
+            workflow_profiles: default_workflow_profiles(),
+            application_rules: Vec::new(),
+            voice_snippets: Vec::new(),
+            context_capture: ContextCaptureSettings::default(),
             recording_mode: "hold".to_string(),
             model: "whisper-base".to_string(),
             stt_engine: "whisper".to_string(),
@@ -425,6 +463,8 @@ impl Default for AppSettings {
             stt_engine_user_glossary: String::new(),
             custom_dictionary: String::new(),
             analytics_opt_in: false,
+            text_retention: RetentionPolicy::Days90,
+            audio_retention: RetentionPolicy::Never,
             cloud_stt_enabled: false,
             active_cloud_stt_provider: "volcengine-streaming".to_string(),
             cloud_stt_configs: HashMap::new(),
@@ -436,7 +476,7 @@ impl Default for AppSettings {
             vad_enabled: false,
             stay_in_tray: default_stay_in_tray(),
             polish_custom_templates: Vec::new(),
-            window_context_enabled: true,
+            window_context_enabled: false,
             pill_size: 2,
             pill_background_color: default_pill_background_color(),
             pill_background_opacity: default_pill_background_opacity(),
@@ -895,24 +935,53 @@ fn migrate_profile_hotkey(
     true
 }
 
-/// Migrate window_context_enabled from old default (false) to new default (true).
-/// This field was introduced with default=false, then changed to default=true.
-/// We migrate false -> true because users likely never intentionally set it to false
-/// (it was just the old default). If they want it disabled, they can toggle it off after.
-fn migrate_window_context_enabled(json: &mut serde_json::Value) -> bool {
-    match json.get("window_context_enabled") {
-        None => {
-            json["window_context_enabled"] = serde_json::Value::Bool(true);
-            tracing::info!("window_context_enabled_migrated-missing_added_true");
-            true
-        }
-        Some(serde_json::Value::Bool(false)) => {
-            json["window_context_enabled"] = serde_json::Value::Bool(true);
-            tracing::info!("window_context_enabled_migrated-false_to_true");
-            true
-        }
-        _ => false,
+#[cfg(test)]
+pub fn migrate_context_workflows_for_test(json: &mut serde_json::Value) -> bool {
+    migrate_context_workflows(json)
+}
+
+fn migrate_context_workflows(json: &mut serde_json::Value) -> bool {
+    let mut migrated = false;
+
+    if json.get("workflow_profiles").is_none() {
+        let profiles = json
+            .get("shortcut_profiles")
+            .cloned()
+            .and_then(|value| serde_json::from_value::<ShortcutProfilesMap>(value).ok())
+            .map(|legacy| migrate_legacy_profiles(&legacy))
+            .unwrap_or_else(default_workflow_profiles);
+        json["workflow_profiles"] = serde_json::to_value(profiles).unwrap_or_default();
+        migrated = true;
     }
+
+    if json.get("context_capture").is_none() {
+        json["context_capture"] =
+            serde_json::to_value(ContextCaptureSettings::default()).unwrap_or_default();
+        migrated = true;
+    }
+
+    if json.get("application_rules").is_none() {
+        json["application_rules"] = serde_json::json!([]);
+        migrated = true;
+    }
+    if json.get("voice_snippets").is_none() {
+        json["voice_snippets"] = serde_json::json!([]);
+        migrated = true;
+    }
+
+    if json
+        .get("window_context_enabled")
+        .and_then(serde_json::Value::as_bool)
+        != Some(false)
+    {
+        json["window_context_enabled"] = serde_json::Value::Bool(false);
+        migrated = true;
+    }
+
+    if migrated {
+        tracing::info!("context_workflows_migrated");
+    }
+    migrated
 }
 
 fn profile_trigger_mode(profile_key: &str, legacy_recording_mode: Option<&str>) -> &'static str {
@@ -954,12 +1023,12 @@ pub fn load_settings_from_disk() -> AppSettings {
             let migrated_model = validate_model_name(&mut json_value);
             let migrated_profiles = migrate_to_profiles_map(&mut json_value);
             let migrated_platform_shortcuts = migrate_platform_shortcut_defaults(&mut json_value);
-            let migrated_window_context = migrate_window_context_enabled(&mut json_value);
+            let migrated_context_workflows = migrate_context_workflows(&mut json_value);
             let migrated = migrated_cloud
                 || migrated_model
                 || migrated_profiles
                 || migrated_platform_shortcuts
-                || migrated_window_context;
+                || migrated_context_workflows;
 
             match serde_json::from_value::<AppSettings>(json_value.clone()) {
                 Ok(settings) => {
@@ -1003,8 +1072,42 @@ pub fn update_settings(
     let mut stay_in_tray_to_apply: Option<bool> = None;
     let mut local_polish_runtime_to_apply: Option<LocalPolishRuntimeSettings> = None;
     let mut local_polish_runtime_action = LocalPolishRuntimeSettingAction::None;
+    let mut retention_to_apply: Option<(RetentionPolicy, RetentionPolicy)> = None;
     let preset_to_apply: Option<String>;
     let indicator_mode_to_apply: Option<String>;
+    let workflow_profile_transaction = if key == "workflow_profiles" || key == "shortcut_profiles" {
+        let requested = if key == "workflow_profiles" {
+            serde_json::from_value::<Vec<WorkflowProfile>>(value.clone())
+                .map_err(|error| format!("Invalid workflow profiles: {error}"))?
+        } else {
+            let legacy = serde_json::from_value::<ShortcutProfilesMap>(value.clone())
+                .map_err(|error| format!("Invalid shortcut profiles: {error}"))?;
+            migrate_legacy_profiles(&legacy)
+        };
+        crate::services::product_workflows::validate_profiles(&requested)?;
+        let (previous, previous_legacy) = {
+            let settings = state.settings.lock();
+            crate::services::product_workflows::validate_application_rules(
+                &settings.application_rules,
+                &requested,
+            )?;
+            (
+                settings.workflow_profiles.clone(),
+                settings.shortcut_profiles.clone(),
+            )
+        };
+        let manager = app
+            .try_state::<crate::shortcut::ShortcutManager>()
+            .ok_or_else(|| "Shortcut manager not available".to_string())?;
+        apply_profile_registration_transaction(
+            &mut ShortcutManagerRegistrar(&manager),
+            &previous,
+            &requested,
+        )?;
+        Some((previous, requested, previous_legacy))
+    } else {
+        None
+    };
 
     {
         let mut settings = state.settings.lock();
@@ -1017,9 +1120,43 @@ pub fn update_settings(
                 }
             }
             "shortcut_profiles" => {
-                if let Ok(profiles) = serde_json::from_value::<ShortcutProfilesMap>(value.clone()) {
-                    settings.shortcut_profiles = profiles;
-                }
+                let profiles = serde_json::from_value::<ShortcutProfilesMap>(value.clone())
+                    .map_err(|error| format!("Invalid shortcut profiles: {error}"))?;
+                let (_, requested, _) = workflow_profile_transaction
+                    .as_ref()
+                    .ok_or_else(|| "Workflow profile transaction is missing".to_string())?;
+                settings.workflow_profiles = requested.clone();
+                settings.shortcut_profiles = profiles;
+            }
+            "workflow_profiles" => {
+                let (_, requested, _) = workflow_profile_transaction
+                    .as_ref()
+                    .ok_or_else(|| "Workflow profile transaction is missing".to_string())?;
+                settings.workflow_profiles = requested.clone();
+                settings.shortcut_profiles =
+                    project_legacy_profiles(&settings.shortcut_profiles, requested);
+            }
+            "application_rules" => {
+                let rules = serde_json::from_value::<Vec<ApplicationRule>>(value.clone())
+                    .map_err(|error| format!("Invalid application rules: {error}"))?;
+                crate::services::product_workflows::validate_application_rules(
+                    &rules,
+                    &settings.workflow_profiles,
+                )?;
+                settings.application_rules = rules;
+            }
+            "voice_snippets" => {
+                let snippets = serde_json::from_value::<Vec<VoiceSnippet>>(value.clone())
+                    .map_err(|error| format!("Invalid voice snippets: {error}"))?;
+                crate::services::product_workflows::validate_snippets(&snippets)?;
+                settings.voice_snippets = snippets;
+            }
+            "context_capture" => {
+                let context_capture =
+                    serde_json::from_value::<ContextCaptureSettings>(value.clone())
+                        .map_err(|error| format!("Invalid context capture settings: {error}"))?;
+                settings.window_context_enabled = context_capture.ocr_fallback;
+                settings.context_capture = context_capture;
             }
             "recording_mode" => {
                 if let Some(v) = value.as_str() {
@@ -1170,6 +1307,18 @@ pub fn update_settings(
                     settings.analytics_opt_in = v;
                 }
             }
+            "text_retention" => {
+                let policy = serde_json::from_value::<RetentionPolicy>(value.clone())
+                    .map_err(|e| format!("Invalid text retention policy: {e}"))?;
+                settings.text_retention = policy;
+                retention_to_apply = Some((settings.text_retention, settings.audio_retention));
+            }
+            "audio_retention" => {
+                let policy = serde_json::from_value::<RetentionPolicy>(value.clone())
+                    .map_err(|e| format!("Invalid audio retention policy: {e}"))?;
+                settings.audio_retention = policy;
+                retention_to_apply = Some((settings.text_retention, settings.audio_retention));
+            }
             "vad_enabled" => {
                 if let Some(v) = value.as_bool() {
                     settings.vad_enabled = v;
@@ -1243,6 +1392,7 @@ pub fn update_settings(
             "window_context_enabled" => {
                 if let Some(v) = value.as_bool() {
                     settings.window_context_enabled = v;
+                    settings.context_capture.ocr_fallback = v;
                 }
             }
             "pill_size" => {
@@ -1276,11 +1426,34 @@ pub fn update_settings(
         }
 
         let path = get_settings_path();
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        let persist_result = (|| {
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+            }
+            let json = serde_json::to_string_pretty(&*settings).map_err(|e| e.to_string())?;
+            fs::write(&path, json).map_err(|e| e.to_string())
+        })();
+        if let Err(error) = persist_result {
+            if let Some((previous, requested, previous_legacy)) =
+                workflow_profile_transaction.as_ref()
+            {
+                settings.workflow_profiles = previous.clone();
+                settings.shortcut_profiles = previous_legacy.clone();
+                if let Some(manager) = app.try_state::<crate::shortcut::ShortcutManager>() {
+                    let rollback = apply_profile_registration_transaction(
+                        &mut ShortcutManagerRegistrar(&manager),
+                        requested,
+                        previous,
+                    );
+                    if let Err(rollback_error) = rollback {
+                        return Err(format!(
+                            "{error}; workflow profile rollback failed: {rollback_error}"
+                        ));
+                    }
+                }
+            }
+            return Err(error);
         }
-        let json = serde_json::to_string_pretty(&*settings).map_err(|e| e.to_string())?;
-        fs::write(&path, json).map_err(|e| e.to_string())?;
 
         preset_to_apply = if key == "pill_position" {
             Some(settings.pill_position.clone())
@@ -1310,6 +1483,17 @@ pub fn update_settings(
 
     if local_polish_runtime_action == LocalPolishRuntimeSettingAction::StopManagedRuntime {
         state.polish_manager.stop_local_runtime();
+    }
+
+    if let Some((text_policy, audio_policy)) = retention_to_apply {
+        let store = state.history_store.lock();
+        let report = store.cleanup_retention(text_policy, audio_policy)?;
+        info!(
+            text_entries_deleted = report.text_entries_deleted,
+            audio_files_deleted = report.audio_files_deleted,
+            missing_audio_references_cleared = report.missing_audio_references_cleared,
+            "retention_policy_applied"
+        );
     }
 
     if let Some(preset) = preset_to_apply {

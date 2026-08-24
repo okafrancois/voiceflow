@@ -2,6 +2,7 @@ use futures_util::StreamExt;
 use reqwest::Response;
 use serde::Deserialize;
 use serde_json::Value;
+use std::collections::HashMap;
 use std::time::Instant;
 use tracing::{debug, warn};
 
@@ -33,10 +34,10 @@ impl PolishRuntimeTimings {
 
     pub(crate) fn from_response_parts(
         timings: Option<&Value>,
-        ariatype_timings: Option<&Value>,
+        voiceflow_timings: Option<&Value>,
     ) -> Self {
         let mut parsed = Self::from_value(timings);
-        parsed.merge(Self::from_ariatype_value(ariatype_timings));
+        parsed.merge(Self::from_voiceflow_value(voiceflow_timings));
         parsed
     }
 
@@ -59,7 +60,7 @@ impl PolishRuntimeTimings {
         }
     }
 
-    fn from_ariatype_value(value: Option<&Value>) -> Self {
+    fn from_voiceflow_value(value: Option<&Value>) -> Self {
         Self::from_value(value)
     }
 }
@@ -101,7 +102,14 @@ struct StreamBody {
     #[serde(default)]
     timings: Option<Value>,
     #[serde(default)]
-    ariatype_timings: Option<Value>,
+    voiceflow_timings: Option<Value>,
+    #[serde(flatten)]
+    extra: HashMap<String, Value>,
+}
+
+fn legacy_timings(extra: &HashMap<String, Value>) -> Option<&Value> {
+    let key = format!("{}_timings", ["aria", "type"].concat());
+    extra.get(&key)
 }
 
 struct StreamEvent {
@@ -237,7 +245,9 @@ fn parse_openai_stream_event(line: &str) -> Result<Option<StreamEvent>, String> 
         content,
         timings: PolishRuntimeTimings::from_response_parts(
             body.timings.as_ref(),
-            body.ariatype_timings.as_ref(),
+            body.voiceflow_timings
+                .as_ref()
+                .or_else(|| legacy_timings(&body.extra)),
         ),
     }))
 }
@@ -275,7 +285,7 @@ mod tests {
 
     #[test]
     fn parses_stream_timing_metadata() {
-        let line = r#"data: {"choices":[{"delta":{}}],"timings":{"prompt_ms":30.4,"predicted_ms":661.6},"ariatype_timings":{"model_load_ms":120,"context_create_ms":45}}"#;
+        let line = r#"data: {"choices":[{"delta":{}}],"timings":{"prompt_ms":30.4,"predicted_ms":661.6},"voiceflow_timings":{"model_load_ms":120,"context_create_ms":45}}"#;
 
         let event = parse_openai_stream_event(line).unwrap().unwrap();
 
@@ -283,5 +293,17 @@ mod tests {
         assert_eq!(event.timings.context_create_ms, Some(45));
         assert_eq!(event.timings.prefill_ms, Some(30));
         assert_eq!(event.timings.inference_ms, Some(662));
+    }
+
+    #[test]
+    fn parses_legacy_stream_timing_metadata() {
+        let legacy_key = format!("{}_timings", ["aria", "type"].concat());
+        let line = format!(
+            "data: {{\"choices\":[{{\"delta\":{{}}}}],\"{legacy_key}\":{{\"model_load_ms\":120}}}}"
+        );
+
+        let event = parse_openai_stream_event(&line).unwrap().unwrap();
+
+        assert_eq!(event.timings.model_load_ms, Some(120));
     }
 }

@@ -1,4 +1,4 @@
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 use tracing::{debug, info, warn};
 
 use super::diff::{
@@ -161,9 +161,21 @@ fn learn_and_emit(app: &AppHandle, before: &str, after: &str, reason: &str) {
         Ok(Some(mapping)) => {
             let event = CorrectionLearnedEvent::from(&mapping);
             let _ = app.emit(EventName::CORRECTION_LEARNED, event);
+            let application_id = app
+                .try_state::<crate::services::product_workflows::WorkflowRuntime>()
+                .and_then(|runtime| runtime.context())
+                .and_then(|context| context.application_id);
+            crate::commands::platform_quality::record_quality_event(
+                &crate::services::platform_quality::QualityEvent::correction(
+                    application_id.as_deref(),
+                ),
+            );
             emit_pill_tooltip(
                 app,
-                format!("已记录纠错词：{} -> {}", mapping.wrong, mapping.corrected),
+                format!(
+                    "Correction learned: {} → {}",
+                    mapping.wrong, mapping.corrected
+                ),
                 CORRECTION_TOOLTIP_DURATION_MS,
                 None,
             );
@@ -357,7 +369,7 @@ mod tests {
     #[test]
     fn accepts_whole_output_term_replacement_after_user_retypes() {
         assert!(looks_like_direct_edit("搜题", "sootie"));
-        assert!(looks_like_direct_edit("Air Tap", "AriaType"));
+        assert!(looks_like_direct_edit("Air Tap", "Voice Flow"));
     }
 
     #[test]
@@ -427,7 +439,7 @@ mod tests {
     fn does_not_wait_for_completed_replacement_or_unrelated_text() {
         assert!(!should_wait_for_pending_replacement_edit(
             "Before Air Tap After",
-            "Before AriaType After"
+            "Before Voice Flow After"
         ));
         assert!(!should_wait_for_pending_replacement_edit(
             "Before Air Tap After",

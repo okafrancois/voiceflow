@@ -32,7 +32,8 @@ use crate::stt_engine::traits::{
 };
 
 /// Eleven Labs Scribe v2 Realtime WebSocket endpoint
-const ELEVENLABS_REALTIME_ENDPOINT: &str = "wss://api.elevenlabs.io/v1/speech-to-text/realtime";
+pub const ELEVENLABS_REALTIME_ENDPOINT: &str = "wss://api.elevenlabs.io/v1/speech-to-text/realtime";
+pub const ELEVENLABS_REALTIME_MODEL: &str = "scribe_v2_realtime";
 
 /// Recommended chunk size: 1 second of audio at 16kHz = 16000 samples
 /// This matches Eleven Labs' optimal streaming chunk size
@@ -145,9 +146,12 @@ impl ElevenLabsStreamingClient {
         if !self.language.is_empty() {
             endpoint = format!("{}&language_code={}", endpoint, self.language);
         }
-        if !self.config.model.is_empty() {
-            endpoint = format!("{}&model_id={}", endpoint, self.config.model);
-        }
+        let model = if self.config.model.is_empty() {
+            ELEVENLABS_REALTIME_MODEL
+        } else {
+            &self.config.model
+        };
+        endpoint = format!("{}&model_id={}", endpoint, model);
 
         info!("[ElevenLabs] Connecting to {}", endpoint);
 

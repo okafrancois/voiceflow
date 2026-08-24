@@ -1,5 +1,5 @@
-use ariatype_lib::polish_engine::lfm::LfmPolishEngine;
-use ariatype_lib::polish_engine::{PolishEngine, PolishEngineType, PolishRequest};
+use voiceflow_lib::polish_engine::lfm::LfmPolishEngine;
+use voiceflow_lib::polish_engine::{PolishEngine, PolishEngineType, PolishRequest};
 
 #[tokio::test]
 async fn test_lfm_engine_creation() {

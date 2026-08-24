@@ -23,10 +23,11 @@ interface SelectProps {
   className?: string;
   placeholder?: string;
   disabled?: boolean;
+  "aria-label"?: string;
 }
 
 const Select = React.forwardRef<HTMLButtonElement, SelectProps>(
-  ({ className, options, value, onChange, placeholder, disabled }, ref) => {
+  ({ className, options, value, onChange, placeholder, disabled, "aria-label": ariaLabel }, ref) => {
     const [open, setOpen] = React.useState(false);
     const [search, setSearch] = React.useState("");
     const searchRef = React.useRef<HTMLInputElement>(null);
@@ -72,6 +73,8 @@ const Select = React.forwardRef<HTMLButtonElement, SelectProps>(
         <button
           type="button"
           disabled
+          aria-label={ariaLabel}
+          value={value}
           className={cn(
             "flex h-10 w-full items-center justify-between rounded-2xl border border-border bg-background px-4 py-2 text-sm opacity-50 cursor-not-allowed",
             className
@@ -108,6 +111,8 @@ const Select = React.forwardRef<HTMLButtonElement, SelectProps>(
             else if (ref) ref.current = node;
           }}
           type="button"
+          aria-label={ariaLabel}
+          value={value}
           data-state={open ? "open" : "closed"}
           className={cn(
             "flex h-10 w-full items-center justify-between rounded-2xl border border-border bg-background px-4 py-2 text-sm transition-colors hover:bg-backgroundHover data-[state=open]:border-primary focus-visible:border-primary focus-visible:outline-none",

@@ -185,6 +185,95 @@ export interface ShortcutProfilesMap {
   custom?: ShortcutProfile;
 }
 
+export type WorkflowOutputAction = "insert" | "preview" | "copy";
+export type ContextSource = "accessibility" | "clipboard" | "window_metadata" | "ocr";
+export type VoiceActionKind = "shorten" | "translate" | "reply" | "list" | "custom";
+export type QuickControlKind =
+  | "undo_last_insertion"
+  | "reinsert_raw"
+  | "reinsert_final"
+  | "copy_raw"
+  | "copy_final"
+  | "repolish"
+  | "submit_enter"
+  | "cancel_active_task";
+
+export interface ContextCaptureSettings {
+  application_metadata: boolean;
+  focused_field: boolean;
+  selected_text: boolean;
+  clipboard: boolean;
+  ocr_fallback: boolean;
+}
+
+export interface CapturedContext {
+  application_id: string | null;
+  application_name: string | null;
+  window_title: string | null;
+  focused_field_role: string | null;
+  selected_text: string | null;
+  clipboard_text: string | null;
+  ocr_text: string | null;
+  sources: ContextSource[];
+  captured_at_ms: number;
+}
+
+export interface WorkflowProfile {
+  id: string;
+  name: string;
+  hotkey: string;
+  trigger_mode: ShortcutTriggerMode;
+  language: string | null;
+  polish_template_id: string | null;
+  translation_target: string | null;
+  output_action: WorkflowOutputAction;
+  code_aware: boolean;
+  protected: boolean;
+}
+
+export interface ApplicationRule {
+  id: string;
+  application_id: string;
+  title_contains: string | null;
+  profile_id: string;
+  enabled: boolean;
+}
+
+export interface VoiceSnippet {
+  id: string;
+  spoken_trigger: string;
+  template: string;
+  enabled: boolean;
+}
+
+export interface WorkflowSettingsSnapshot {
+  context_capture: ContextCaptureSettings;
+  profiles: WorkflowProfile[];
+  application_rules: ApplicationRule[];
+  snippets: VoiceSnippet[];
+}
+
+export interface VoiceActionRequest {
+  kind: VoiceActionKind;
+  selected_text: string | null;
+  translation_target: string | null;
+  custom_instruction: string | null;
+  output_action: WorkflowOutputAction;
+}
+
+export interface VoiceActionPreview {
+  kind: VoiceActionKind;
+  source_text: string;
+  result_text: string;
+  translation_target: string | null;
+  output_action: WorkflowOutputAction;
+}
+
+export interface QuickControlResult {
+  action: QuickControlKind;
+  text: string | null;
+}
+
 export interface LocalPolishRuntimeSettings {
   provider_type: string;
   base_url: string;
@@ -220,6 +309,8 @@ export interface AppSettings {
   stt_engine_user_glossary: string;
   custom_dictionary: string;
   analytics_opt_in: boolean;
+  text_retention: RetentionPolicy;
+  audio_retention: RetentionPolicy;
   cloud_stt_enabled: boolean;
   active_cloud_stt_provider: string;
   cloud_stt_configs: Record<string, CloudSttConfig>;
@@ -232,11 +323,23 @@ export interface AppSettings {
   stay_in_tray: boolean;
   polish_custom_templates: CustomPolishTemplate[];
   shortcut_profiles: ShortcutProfilesMap;
+  workflow_profiles: WorkflowProfile[];
+  application_rules: ApplicationRule[];
+  voice_snippets: VoiceSnippet[];
+  context_capture: ContextCaptureSettings;
   window_context_enabled: boolean;
   pill_size: number;
   pill_background_color: string;
   pill_background_opacity: number;
   correction_memory_enabled: boolean;
+}
+
+export type RetentionPolicy = "never" | "days_7" | "days_30" | "days_90" | "forever";
+
+export interface RetentionStatus {
+  text_entries: number;
+  audio_files: number;
+  audio_bytes: number;
 }
 
 export interface ModelInfo {
@@ -301,6 +404,94 @@ export interface RecommendedModel {
   speed_score: number;
   accuracy_score: number;
   downloaded: boolean;
+}
+
+export type SetupPreset = "private" | "balanced" | "maximum_accuracy";
+
+export interface MicrophoneCheck {
+  ready: boolean;
+  device_name: string | null;
+  sample_rate_hz: number | null;
+  channels: number | null;
+  peak_level: number | null;
+  error: string | null;
+}
+
+export interface HardwareSnapshot {
+  total_memory_mb: number | null;
+  logical_cpu_count: number;
+  architecture: string;
+}
+
+export interface ModelRecommendation {
+  model_name: string;
+  reason: string;
+}
+
+export interface LatencySample {
+  stt_ms: number;
+  polish_ms: number | null;
+  total_ms: number;
+  model_name: string;
+}
+
+export interface DiagnosticReport {
+  microphone: MicrophoneCheck;
+  hardware: HardwareSnapshot;
+  recommended_model: ModelRecommendation;
+  recommended_preset: SetupPreset;
+  recommendation_reason: string;
+  latency: LatencySample | null;
+}
+
+export interface CodeContext {
+  language?: string | null;
+  file_path?: string | null;
+  symbol?: string | null;
+  editor_id?: string | null;
+}
+
+export type QualityEventKind =
+  | "transcription_success"
+  | "transcription_failure"
+  | "injection_failure"
+  | "correction";
+
+export interface QualityEvent {
+  kind: QualityEventKind;
+  application_id: string | null;
+  stt_ms: number | null;
+  polish_ms: number | null;
+  total_ms: number | null;
+  is_cloud: boolean | null;
+  created_at_ms: number;
+}
+
+export interface QualityQuery {
+  since_ms?: number | null;
+  until_ms?: number | null;
+  application_id?: string | null;
+  kind?: QualityEventKind | null;
+  is_cloud?: boolean | null;
+}
+
+export interface LatencyPercentiles {
+  p50: number | null;
+  p95: number | null;
+}
+
+export interface QualitySummary {
+  total_transcriptions: number;
+  transcription_failures: number;
+  injection_failures: number;
+  corrections: number;
+  correction_rate_percent: number | null;
+  local_transcriptions: number;
+  cloud_transcriptions: number;
+  stt_latency_ms: LatencyPercentiles;
+  polish_latency_ms: LatencyPercentiles;
+  total_latency_ms: LatencyPercentiles;
+  application_injection_failures: Record<string, number>;
 }
 
 export const windowCommands = {
@@ -376,6 +567,56 @@ export const hotkeyCommands = {
     invokeWithLogging<void>("create_custom_profile", { profile }),
   deleteCustom: () =>
     invokeWithLogging<void>("delete_custom_profile"),
+};
+
+export const workflowCommands = {
+  getSettings: () => invokeWithLogging<WorkflowSettingsSnapshot>("get_workflow_settings"),
+  captureContext: () => invokeWithLogging<CapturedContext>("capture_workflow_context"),
+  getLatestContext: () =>
+    invokeWithLogging<CapturedContext | null>("get_latest_workflow_context"),
+  resolveProfile: (requestedProfileId?: string | null) =>
+    invokeWithLogging<WorkflowProfile>("resolve_workflow_profile", {
+      requestedProfileId: requestedProfileId ?? null,
+    }),
+  createProfile: (profile: WorkflowProfile) =>
+    invokeWithLogging<void>("create_workflow_profile", { profile }),
+  updateProfile: (profile: WorkflowProfile) =>
+    invokeWithLogging<void>("update_workflow_profile", { profile }),
+  deleteProfile: (profileId: string) =>
+    invokeWithLogging<void>("delete_workflow_profile", { profileId }),
+  setApplicationRules: (rules: ApplicationRule[]) =>
+    invokeWithLogging<void>("set_application_rules", { rules }),
+  upsertApplicationRule: (rule: ApplicationRule) =>
+    invokeWithLogging<void>("upsert_application_rule", { rule }),
+  deleteApplicationRule: (ruleId: string) =>
+    invokeWithLogging<void>("delete_application_rule", { ruleId }),
+  setVoiceSnippets: (snippets: VoiceSnippet[]) =>
+    invokeWithLogging<void>("set_voice_snippets", { snippets }),
+  upsertVoiceSnippet: (snippet: VoiceSnippet) =>
+    invokeWithLogging<void>("upsert_voice_snippet", { snippet }),
+  deleteVoiceSnippet: (snippetId: string) =>
+    invokeWithLogging<void>("delete_voice_snippet", { snippetId }),
+  setContextCapture: (settingsValue: ContextCaptureSettings) =>
+    invokeWithLogging<void>("set_context_capture_settings", { settingsValue }),
+  expandVoiceSnippet: (spokenText: string) =>
+    invokeWithLogging<string | null>("expand_voice_snippet", { spokenText }),
+  runVoiceAction: (request: VoiceActionRequest) =>
+    invokeWithLogging<VoiceActionPreview>("run_voice_action", { request }),
+  replaceVoiceActionPreview: () =>
+    invokeWithLogging<VoiceActionPreview>("replace_voice_action_preview"),
+  recordDelivery: (
+    rawText: string,
+    finalText: string,
+    insertedText: string,
+    applicationId?: string | null,
+  ) => invokeWithLogging<void>("record_workflow_delivery", {
+    rawText,
+    finalText,
+    insertedText,
+    applicationId: applicationId ?? null,
+  }),
+  runQuickControl: (action: QuickControlKind) =>
+    invokeWithLogging<QuickControlResult>("run_quick_control", { action }),
 };
 
 export const systemCommands = {
@@ -483,6 +724,52 @@ export interface TranscriptionEntry {
   status: string;
   /** Error message if transcription failed. */
   error: string | null;
+  source_kind: "recording" | "file" | string;
+  source_path: string | null;
+  translation_target: string | null;
+  timed_segments: TimedSegment[];
+  delivery_status: string;
+}
+
+export interface TimedSegment {
+  start_ms: number;
+  end_ms: number;
+  text: string;
+}
+
+export type ExportFormat = "txt" | "markdown" | "srt";
+export type HistoryTextVersion = "raw" | "final";
+
+export interface FileTranscriptionRequest {
+  path: string;
+  profile_id?: string | null;
+  translation_target?: string | null;
+}
+
+export interface FileTranscriptionResult {
+  history_entry_id: string | null;
+  raw_text: string;
+  final_text: string;
+  source_path: string;
+  translation_target: string | null;
+  output_action: "preview" | "insert" | "copy" | string;
+  delivery_status: string;
+}
+
+export type FileJobState = "queued" | "running" | "completed" | "error" | "canceled";
+
+export interface FileTranscriptionJob {
+  id: string;
+  state: FileJobState;
+  progress_percent: number;
+  request: FileTranscriptionRequest;
+  result: FileTranscriptionResult | null;
+  error: string | null;
+}
+
+export interface HistoryAudioPayload {
+  mime_type: string;
+  bytes: number[];
 }
 
 export interface DashboardStats {
@@ -542,15 +829,91 @@ export const historyCommands = {
     invokeWithLogging<DailyUsage[]>("get_daily_usage", { days }),
   getEngineUsage: () =>
     invokeWithLogging<EngineUsage[]>("get_engine_usage"),
+  getRetentionStatus: () =>
+    invokeWithLogging<RetentionStatus>("get_retention_status"),
   deleteEntry: (id: string) =>
     invokeWithLogging<void>("delete_transcription_entry", { id }),
   clearAll: () =>
     invokeWithLogging<void>("clear_transcription_history"),
   retryTranscription: (id: string) =>
     invokeWithLogging<string>("retry_transcription", { id }),
+  selectMediaFile: () =>
+    invokeWithLogging<string | null>("select_media_file"),
+  selectExportFile: (format: ExportFormat) =>
+    invokeWithLogging<string | null>("select_export_file", { format }),
+  transcribeMediaFile: (request: FileTranscriptionRequest) =>
+    invokeWithLogging<FileTranscriptionResult>("transcribe_media_file", { request }),
+  startFileJob: (request: FileTranscriptionRequest) =>
+    invokeWithLogging<FileTranscriptionJob>("start_file_transcription_job", { request }),
+  getFileJob: (id: string) =>
+    invokeWithLogging<FileTranscriptionJob>("get_file_transcription_job", { id }),
+  listFileJobs: () =>
+    invokeWithLogging<FileTranscriptionJob[]>("list_file_transcription_jobs"),
+  cancelFileJob: (id: string) =>
+    invokeWithLogging<FileTranscriptionJob>("cancel_file_transcription_job", { id }),
+  retranscribeEntry: (id: string) =>
+    invokeWithLogging<TranscriptionEntry>("retranscribe_history_entry", { id }),
+  repolishEntry: (
+    id: string,
+    templateId?: string | null,
+    translationTarget?: string | null,
+  ) =>
+    invokeWithLogging<TranscriptionEntry>("repolish_history_entry", {
+      id,
+      templateId: templateId ?? null,
+      translationTarget: translationTarget ?? null,
+    }),
+  exportEntry: (
+    id: string,
+    format: ExportFormat,
+    outputPath: string,
+    overwrite: boolean,
+  ) =>
+    invokeWithLogging<string>("export_history_entry", {
+      id,
+      format,
+      outputPath,
+      overwrite,
+    }),
+  getAudio: (id: string) =>
+    invokeWithLogging<HistoryAudioPayload>("get_history_audio", { id }),
+  copyEntry: (id: string, version: HistoryTextVersion) =>
+    invokeWithLogging<void>("copy_history_entry", { id, version }),
+  reinsertEntry: (id: string, version: HistoryTextVersion) =>
+    invokeWithLogging<string>("reinsert_history_entry", { id, version }),
+};
+
+export const platformQualityCommands = {
+  runDiagnostics: (microphoneSampleMs = 500) =>
+    invokeWithLogging<DiagnosticReport>("run_setup_diagnostics", {
+      microphoneSampleMs,
+    }),
+  runLatencyTest: (mediaPath: string) =>
+    invokeWithLogging<LatencySample>("run_setup_latency_test", { mediaPath }),
+  applyPreset: (preset: SetupPreset) =>
+    invokeWithLogging<AppSettings>("apply_setup_preset", { preset }),
+  setCodeContext: (context: CodeContext) =>
+    invokeWithLogging<CodeContext>("set_code_context", { context }),
+  getCodeContext: () =>
+    invokeWithLogging<CodeContext | null>("get_code_context"),
+  clearCodeContext: () => invokeWithLogging<void>("clear_code_context"),
+  formatCodeTranscript: (text: string, language?: string | null) =>
+    invokeWithLogging<string>("format_code_transcript", {
+      text,
+      language: language ?? null,
+    }),
+  getSummary: (query: QualityQuery) =>
+    invokeWithLogging<QualitySummary>("get_quality_summary", { query }),
+  getEvents: (query: QualityQuery) =>
+    invokeWithLogging<QualityEvent[]>("get_quality_events", { query }),
+  clearMetrics: () => invokeWithLogging<number>("clear_quality_metrics"),
+  exportMetrics: (path: string, query: QualityQuery, overwrite = false) =>
+    invokeWithLogging<string>("export_quality_metrics", { path, query, overwrite }),
 };
 
 export const events = {
+  onFileTranscriptionJobChanged: (callback: (job: FileTranscriptionJob) => void) =>
+    listen<FileTranscriptionJob>("file-transcription-job-changed", (event) => callback(event.payload)),
   onRecordingStateChanged: (callback: (event: RecordingStateEvent) => void) => {
     return listen<RecordingStateEvent>("recording-state-changed", (event) => {
       const { task_id, status } = event.payload;

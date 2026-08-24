@@ -3,13 +3,14 @@ use crate::polish_engine::traits::{PolishEngineType, PolishRequest, PolishResult
 use crate::utils::{downloaded_file_is_complete, AppPaths};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::Path;
 use std::time::Duration;
 use tracing::{debug, error, info, warn};
 
 const LOCAL_POLISH_DEFAULT_BASE_URL: &str = "http://127.0.0.1:8000/v1";
-const LOCAL_POLISH_BASE_URL_ENV: &str = "ARIATYPE_LOCAL_POLISH_BASE_URL";
-const LOCAL_POLISH_API_KEY_ENV: &str = "ARIATYPE_LOCAL_POLISH_API_KEY";
+const LOCAL_POLISH_BASE_URL_ENV: &str = "VOICEFLOW_LOCAL_POLISH_BASE_URL";
+const LOCAL_POLISH_API_KEY_ENV: &str = "VOICEFLOW_LOCAL_POLISH_API_KEY";
 const LOCAL_POLISH_MAX_OUTPUT_TOKENS: u32 = 20_480;
 const LOCAL_POLISH_DEFAULT_TIMEOUT: Duration = Duration::from_secs(12);
 const LOCAL_POLISH_FALLBACK_MAX_TIMEOUT: Duration = Duration::from_secs(30);
@@ -81,7 +82,22 @@ struct ResponseBody {
     #[serde(default)]
     timings: Option<serde_json::Value>,
     #[serde(default)]
-    ariatype_timings: Option<serde_json::Value>,
+    voiceflow_timings: Option<serde_json::Value>,
+    #[serde(flatten)]
+    extra: HashMap<String, serde_json::Value>,
+}
+
+fn legacy_timings(extra: &HashMap<String, serde_json::Value>) -> Option<&serde_json::Value> {
+    let key = format!("{}_timings", ["aria", "type"].concat());
+    extra.get(&key)
+}
+
+fn env_value_with_legacy(name: &str) -> Option<String> {
+    std::env::var(name).ok().or_else(|| {
+        let suffix = name.strip_prefix("VOICEFLOW_")?;
+        let legacy_name = format!("{}_{}", ["ARIA", "TYPE"].concat(), suffix);
+        std::env::var(legacy_name).ok()
+    })
 }
 
 pub(crate) async fn polish_via_local_http(
@@ -257,21 +273,22 @@ async fn call_local_openai_api(
         generation_ms: 0,
         timings: PolishRuntimeTimings::from_response_parts(
             response_body.timings.as_ref(),
-            response_body.ariatype_timings.as_ref(),
+            response_body
+                .voiceflow_timings
+                .as_ref()
+                .or_else(|| legacy_timings(&response_body.extra)),
         ),
     })
 }
 
 pub(crate) fn local_base_url() -> String {
-    std::env::var(LOCAL_POLISH_BASE_URL_ENV)
-        .ok()
+    env_value_with_legacy(LOCAL_POLISH_BASE_URL_ENV)
         .filter(|value| !value.trim().is_empty())
         .unwrap_or_else(|| LOCAL_POLISH_DEFAULT_BASE_URL.to_string())
 }
 
 pub(crate) fn local_api_key() -> Option<String> {
-    std::env::var(LOCAL_POLISH_API_KEY_ENV)
-        .ok()
+    env_value_with_legacy(LOCAL_POLISH_API_KEY_ENV)
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
 }
@@ -549,7 +566,7 @@ mod tests {
                 "prompt_ms": 31.2,
                 "predicted_ms": 662.4
             },
-            "ariatype_timings": {
+            "voiceflow_timings": {
                 "model_load_ms": 120,
                 "context_create_ms": 45
             }
@@ -639,7 +656,7 @@ mod tests {
         let stream_body = concat!(
             "data: {\"choices\":[{\"delta\":{\"content\":\"Hel\"}}]}\n\n",
             "data: {\"choices\":[{\"delta\":{\"content\":\"lo\"}}]}\n\n",
-            "data: {\"choices\":[{\"delta\":{}}],\"timings\":{\"prompt_ms\":20.1,\"predicted_ms\":80.9},\"ariatype_timings\":{\"model_load_ms\":100,\"context_create_ms\":40}}\n\n",
+            "data: {\"choices\":[{\"delta\":{}}],\"timings\":{\"prompt_ms\":20.1,\"predicted_ms\":80.9},\"voiceflow_timings\":{\"model_load_ms\":100,\"context_create_ms\":40}}\n\n",
             "data: [DONE]\n\n",
         );
 

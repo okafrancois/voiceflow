@@ -1,4 +1,4 @@
-use ariatype_lib::audio::beep_generator;
+use voiceflow_lib::audio::beep_generator;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     beep_generator::generate_beep_files()?;

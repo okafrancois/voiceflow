@@ -1,4 +1,4 @@
-use ariatype_lib::commands::settings::CloudSttConfig;
+use voiceflow_lib::commands::settings::CloudSttConfig;
 
 #[test]
 fn test_migration_from_volcengine_streaming() {

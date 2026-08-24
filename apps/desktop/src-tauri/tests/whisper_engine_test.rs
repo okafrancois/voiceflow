@@ -3,9 +3,9 @@
 //! These tests cover both unit tests (which always run) and integration tests
 //! that use real models (marked with #[ignore] for CI but can be run locally).
 
-use ariatype_lib::stt_engine::{traits::TranscriptionRequest, EngineType, UnifiedEngineManager};
 use hound::{WavSpec, WavWriter};
 use std::io::Cursor;
+use voiceflow_lib::stt_engine::{traits::TranscriptionRequest, EngineType, UnifiedEngineManager};
 
 fn create_speech_like_wav(sample_rate: u32, channels: u16, duration_secs: f32) -> Vec<u8> {
     let samples_per_channel = (sample_rate as f32 * duration_secs) as usize;
@@ -59,7 +59,7 @@ fn wav_to_samples_mono_16khz(wav_data: &[u8]) -> Vec<f32> {
     };
 
     if spec.sample_rate != 16000 {
-        ariatype_lib::audio::resampler::resample_to_16khz(&mono, spec.sample_rate).unwrap()
+        voiceflow_lib::audio::resampler::resample_to_16khz(&mono, spec.sample_rate).unwrap()
     } else {
         mono
     }
@@ -240,10 +240,10 @@ fn test_whisper_engine_transcribe_with_language() {
 #[test]
 #[ignore = "Requires a long French WAV fixture and the Whisper Turbo model"]
 fn test_whisper_engine_transcribes_the_end_of_long_audio() {
-    let fixture_path = std::env::var("ARIATYPE_LONG_WHISPER_FIXTURE")
-        .expect("ARIATYPE_LONG_WHISPER_FIXTURE must point to a WAV file");
-    let models_dir = std::env::var("ARIATYPE_LONG_WHISPER_MODEL_DIR")
-        .expect("ARIATYPE_LONG_WHISPER_MODEL_DIR must point to the models directory");
+    let fixture_path = std::env::var("VOICEFLOW_LONG_WHISPER_FIXTURE")
+        .expect("VOICEFLOW_LONG_WHISPER_FIXTURE must point to a WAV file");
+    let models_dir = std::env::var("VOICEFLOW_LONG_WHISPER_MODEL_DIR")
+        .expect("VOICEFLOW_LONG_WHISPER_MODEL_DIR must point to the models directory");
     let wav_data = std::fs::read(&fixture_path).expect("long Whisper fixture should be readable");
     let samples = wav_to_samples_mono_16khz(&wav_data);
     assert!(

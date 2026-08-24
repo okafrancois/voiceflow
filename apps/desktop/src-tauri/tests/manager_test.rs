@@ -1,8 +1,8 @@
-use ariatype_lib::stt_engine::{EngineType, UnifiedEngineManager};
 use std::path::PathBuf;
+use voiceflow_lib::stt_engine::{EngineType, UnifiedEngineManager};
 
 fn temp_models_dir() -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("ariatype_test_models_{}", uuid::Uuid::new_v4()));
+    let dir = std::env::temp_dir().join(format!("voiceflow_test_models_{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&dir).ok();
     dir
 }

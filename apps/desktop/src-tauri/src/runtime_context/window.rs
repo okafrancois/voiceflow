@@ -4,6 +4,7 @@ const MAX_POLISH_CONTEXT_CHARS: usize = 900;
 const MAX_STT_TERMS: usize = 18;
 const MAX_TOPIC_KEYWORDS: usize = 12;
 const MIN_TOPIC_KEYWORD_COUNT: usize = 2;
+const PRODUCT_CONTEXT_TERM: &str = "Voice Flow";
 const FULL_CONTEXT_CONFIDENCE_RATIO: f64 = 0.80;
 const MINIMAL_CONTEXT_CONFIDENCE_RATIO: f64 = 0.65;
 const STRUCTURED_TERM_SUFFIXES: &[&str] = &[
@@ -30,6 +31,7 @@ impl WindowContextSource {
 pub struct WindowContextBundle {
     pub raw_ocr_text: String,
     pub filtered_text: String,
+    pub structured_reference_text: Option<String>,
     pub source: WindowContextSource,
     pub window_title: Option<String>,
     pub image_width: u32,
@@ -123,6 +125,7 @@ impl WindowContextBundle {
         Some(Self {
             raw_ocr_text: raw_ocr_text.trim().to_string(),
             filtered_text,
+            structured_reference_text: None,
             source,
             window_title: clean_optional_text(window_title),
             image_width,
@@ -132,12 +135,41 @@ impl WindowContextBundle {
         })
     }
 
+    pub fn from_structured_reference(
+        reference: impl Into<String>,
+        window_title: Option<String>,
+    ) -> Option<Self> {
+        let reference = normalize_ocr_text(&reference.into(), MAX_CONTEXT_CHARS);
+        if reference.is_empty() {
+            return None;
+        }
+        Some(Self {
+            raw_ocr_text: String::new(),
+            filtered_text: String::new(),
+            structured_reference_text: Some(reference),
+            source: WindowContextSource::FocusedWindow,
+            window_title: clean_optional_text(window_title),
+            image_width: 0,
+            image_height: 0,
+            ocr_confidence: None,
+            captured_at_ms: chrono::Utc::now().timestamp_millis(),
+        })
+    }
+
+    pub fn with_structured_reference(mut self, reference: impl Into<String>) -> Self {
+        self.structured_reference_text = clean_optional_text(Some(reference.into()));
+        self
+    }
+
     pub fn to_stt_prompt_hint(&self) -> Option<String> {
         let mut parts = Vec::new();
         let detail = self.context_detail();
 
         if let Some(title) = self.window_title.as_deref() {
             parts.push(format!("Active window: {title}"));
+        }
+        if let Some(reference) = self.structured_reference_text.as_deref() {
+            parts.push(reference.to_string());
         }
 
         let terms = extract_terms(&self.filtered_text, detail.max_terms());
@@ -172,6 +204,9 @@ impl WindowContextBundle {
         let mut lines = vec![format!("Source: {}", self.source.as_str())];
         if let Some(title) = self.window_title.as_deref() {
             lines.push(format!("Window title: {title}"));
+        }
+        if let Some(reference) = self.structured_reference_text.as_deref() {
+            lines.push(reference.to_string());
         }
         let terms = extract_terms(&self.filtered_text, detail.max_terms());
         if !terms.is_empty() {
@@ -282,9 +317,21 @@ fn truncate_chars(text: &str, max_chars: usize) -> String {
 
 fn extract_terms(text: &str, max_terms: usize) -> Vec<String> {
     let mut terms: Vec<(String, String, u8, usize)> = Vec::new();
+    let product_occurrences = product_term_occurrence_count(text);
+    if product_occurrences > 0 {
+        terms.push((
+            PRODUCT_CONTEXT_TERM.to_string(),
+            normalize_context_term_key(PRODUCT_CONTEXT_TERM),
+            6,
+            0,
+        ));
+    }
 
     for (position, token) in split_context_tokens(text) {
         let term = normalize_candidate_term(&clean_context_token(token));
+        if product_occurrences > 0 && is_product_term_fragment(&term) {
+            continue;
+        }
         let Some(score) = score_context_term(&term) else {
             continue;
         };
@@ -313,9 +360,21 @@ fn extract_terms(text: &str, max_terms: usize) -> Vec<String> {
 
 fn extract_frequent_keywords(text: &str, max_keywords: usize) -> Vec<String> {
     let mut keywords: Vec<(String, String, usize, usize)> = Vec::new();
+    let product_occurrences = product_term_occurrence_count(text);
+    if product_occurrences >= MIN_TOPIC_KEYWORD_COUNT {
+        keywords.push((
+            PRODUCT_CONTEXT_TERM.to_string(),
+            normalize_keyword(PRODUCT_CONTEXT_TERM),
+            product_occurrences,
+            0,
+        ));
+    }
 
     for (position, token) in split_context_tokens(text) {
         let term = normalize_candidate_term(&clean_context_token(token));
+        if product_occurrences > 0 && is_product_term_fragment(&term) {
+            continue;
+        }
         if !looks_like_topic_keyword(&term) {
             continue;
         }
@@ -346,6 +405,18 @@ fn extract_frequent_keywords(text: &str, max_keywords: usize) -> Vec<String> {
 
 fn split_context_tokens(text: &str) -> impl Iterator<Item = (usize, &str)> {
     text.split(is_context_separator).enumerate()
+}
+
+fn product_term_occurrence_count(text: &str) -> usize {
+    let normalized = normalize_spaces(&text.to_lowercase());
+    normalized.matches("voice flow").count() + normalized.matches("voiceflow").count()
+}
+
+fn is_product_term_fragment(term: &str) -> bool {
+    matches!(
+        term.to_ascii_lowercase().as_str(),
+        "voice" | "flow" | "voiceflow"
+    )
 }
 
 fn is_context_separator(c: char) -> bool {
@@ -784,7 +855,10 @@ fn should_replace_keyword_display(existing: &str, candidate: &str) -> bool {
 }
 
 fn normalize_context_term_key(term: &str) -> String {
-    term.to_lowercase()
+    term.chars()
+        .filter(|character| !character.is_whitespace())
+        .flat_map(char::to_lowercase)
+        .collect()
 }
 
 fn has_mixed_case(term: &str) -> bool {
@@ -1033,7 +1107,7 @@ mod tests {
     fn extract_terms_rejects_mixed_script_and_joined_digit_noise() {
         let terms = extract_terms(
             "ArаТуpеЕX Bookmarks19333SyntaxV2EX AІT5K.10121FSSTTS RÆtItMarkdown \
-             GitHubFlavored Markdown V2EX window_context.rs AriaType81 0.64.3AriaType",
+             GitHubFlavored Markdown V2EX window_context.rs Voice Flow81 0.64.3Voice Flow",
             12,
         );
 
@@ -1041,8 +1115,8 @@ mod tests {
         assert!(terms.contains(&"Markdown".to_string()));
         assert!(terms.contains(&"V2EX".to_string()));
         assert!(terms.contains(&"window_context.rs".to_string()));
-        assert!(terms.contains(&"AriaType".to_string()));
-        assert!(!terms.contains(&"AriaType81".to_string()));
+        assert!(terms.contains(&"Voice Flow".to_string()));
+        assert!(!terms.contains(&"Voice Flow81".to_string()));
         assert!(!terms.contains(&"ArаТуpеЕX".to_string()));
         assert!(!terms.contains(&"Bookmarks19333SyntaxV2EX".to_string()));
         assert!(!terms.contains(&"AІT5K.10121FSSTTS".to_string()));
@@ -1052,13 +1126,13 @@ mod tests {
     #[test]
     fn extract_terms_normalizes_latest_log_glued_terms() {
         let terms = extract_terms(
-            "sootieAriaTypeAriaType window_context.rsM window.rsUpdated Xapps Planv OR \
-             Inspect Implement Add Run xAriaType NAriaTypePlanv Users Ran Waited \
+            "sootieVoice FlowVoice Flow window_context.rsM window.rsUpdated Xapps Planv OR \
+             Inspect Implement Add Run xVoice Flow NVoice FlowPlanv Users Ran Waited \
              A1EmE T\u{00FD}0ele o0p V2EX SDK juejin.cn confidence-aware Rust",
             16,
         );
 
-        assert!(terms.contains(&"AriaType".to_string()));
+        assert!(terms.contains(&"Voice Flow".to_string()));
         assert!(terms.contains(&"window_context.rs".to_string()));
         assert!(terms.contains(&"window.rs".to_string()));
         assert!(terms.contains(&"V2EX".to_string()));
@@ -1066,7 +1140,7 @@ mod tests {
         assert!(terms.contains(&"juejin.cn".to_string()));
         assert!(terms.contains(&"confidence-aware".to_string()));
         assert!(terms.contains(&"Rust".to_string()));
-        assert!(!terms.contains(&"sootieAriaTypeAriaType".to_string()));
+        assert!(!terms.contains(&"sootieVoice FlowVoice Flow".to_string()));
         assert!(!terms.contains(&"window_context.rsM".to_string()));
         assert!(!terms.contains(&"window.rsUpdated".to_string()));
         assert!(!terms.contains(&"Xapps".to_string()));
@@ -1076,8 +1150,8 @@ mod tests {
         assert!(!terms.contains(&"Implement".to_string()));
         assert!(!terms.contains(&"Add".to_string()));
         assert!(!terms.contains(&"Run".to_string()));
-        assert!(!terms.contains(&"xAriaType".to_string()));
-        assert!(!terms.contains(&"NAriaTypePlanv".to_string()));
+        assert!(!terms.contains(&"xVoice Flow".to_string()));
+        assert!(!terms.contains(&"NVoice FlowPlanv".to_string()));
         assert!(!terms.contains(&"Users".to_string()));
         assert!(!terms.contains(&"Ran".to_string()));
         assert!(!terms.contains(&"Waited".to_string()));
@@ -1089,11 +1163,11 @@ mod tests {
     #[test]
     fn extract_terms_removes_decorative_punctuation() {
         let terms = extract_terms(
-            "\"AriaType,\" vision-sid. ...refactor serv...refactor --log-level README.md",
+            "\"Voice Flow,\" vision-sid. ...refactor serv...refactor --log-level README.md",
             8,
         );
 
-        assert!(terms.contains(&"AriaType".to_string()));
+        assert!(terms.contains(&"Voice Flow".to_string()));
         assert!(terms.contains(&"vision-sid".to_string()));
         assert!(terms.contains(&"log-level".to_string()));
         assert!(terms.contains(&"README.md".to_string()));
@@ -1106,14 +1180,14 @@ mod tests {
     #[test]
     fn extract_terms_deduplicates_candidate_terms() {
         let terms = extract_terms(
-            "Ariatype AriaType ariatype README.md README.md_ VAD vad ProjectNebula projectnebula",
+            "Voiceflow Voice Flow voiceflow README.md README.md_ VAD vad ProjectNebula projectnebula",
             12,
         );
 
         assert_eq!(
             terms
                 .iter()
-                .filter(|term| term.eq_ignore_ascii_case("ariatype"))
+                .filter(|term| normalize_context_term_key(term) == "voiceflow")
                 .count(),
             1
         );
@@ -1138,7 +1212,7 @@ mod tests {
                 .count(),
             1
         );
-        assert!(terms.contains(&"AriaType".to_string()));
+        assert!(terms.contains(&"Voice Flow".to_string()));
     }
 
     #[test]
@@ -1159,11 +1233,11 @@ mod tests {
     #[test]
     fn extract_frequent_keywords_counts_contained_keyword_variants() {
         let keywords = extract_frequent_keywords(
-            "AriaType4 sootieAriaType AriaType ProjectNebula2 ProjectNebula type prototype",
+            "Voice Flow4 sootieVoice Flow Voice Flow ProjectNebula2 ProjectNebula type prototype",
             8,
         );
 
-        assert!(keywords.contains(&"AriaType".to_string()));
+        assert!(keywords.contains(&"Voice Flow".to_string()));
         assert!(keywords.contains(&"ProjectNebula".to_string()));
         assert!(!keywords.contains(&"type".to_string()));
         assert!(!keywords.contains(&"prototype".to_string()));

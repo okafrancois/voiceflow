@@ -9,7 +9,7 @@ use crate::state::app_state::AppState;
 
 use super::capture::start_unified_recording;
 
-const RECORDING_CONFIRM_TOOLTIP: &str = "ESC 取消，Enter 确认";
+const RECORDING_CONFIRM_TOOLTIP: &str = "Esc: cancel · Enter: confirm";
 const RECORDING_CONFIRM_TOOLTIP_DURATION_MS: u64 = 3_200;
 
 #[tauri::command]
@@ -72,7 +72,43 @@ pub(crate) fn start_recording_sync_internal(
     }
 
     tracing::info!("start_recording_sync_reading_settings");
-    let prepared = prepare_recording_start(&state, profile);
+    let context_settings = state.settings.lock().context_capture.clone();
+    let application_context = if context_settings.application_metadata {
+        crate::sensors::focused_context::capture_application_context()
+            .filtered_by(&context_settings)
+    } else {
+        crate::services::product_workflows::CapturedContext::default()
+    };
+    let effective_workflow_profile = {
+        let settings = state.settings.lock();
+        crate::services::product_workflows::resolve_recording_profile(
+            &settings.workflow_profiles,
+            &settings.application_rules,
+            profile,
+            &application_context,
+        )
+        .cloned()
+    };
+    let effective_shortcut_profile = effective_workflow_profile
+        .as_ref()
+        .map(crate::services::product_workflows::WorkflowProfile::shortcut_profile);
+    let effective_profile = effective_shortcut_profile.as_ref().or(profile);
+    let mut prepared = prepare_recording_start(&state, effective_profile);
+    if let Some(language) = effective_workflow_profile
+        .as_ref()
+        .and_then(|profile| profile.language.as_ref())
+        .filter(|language| !language.trim().is_empty())
+    {
+        prepared.language = language.clone();
+    }
+    if let Some(runtime) = app.try_state::<crate::services::product_workflows::WorkflowRuntime>() {
+        runtime.set_context(application_context);
+        if let Some(profile) = effective_workflow_profile.clone() {
+            runtime.start_profile_session(prepared.task_id, profile);
+        } else {
+            runtime.mark_task_active(prepared.task_id);
+        }
+    }
     tracing::info!(
         cloud_stt_enabled = prepared.cloud_stt_enabled,
         language = %prepared.language,
@@ -108,7 +144,7 @@ pub(crate) fn start_recording_sync_internal(
         "recording_started"
     );
     emit_recording_state(app, RecordingStatus::Recording, prepared.task_id);
-    if should_show_recording_confirm_tooltip(profile) {
+    if should_show_recording_confirm_tooltip(effective_profile) {
         emit_pill_tooltip(
             app,
             RECORDING_CONFIRM_TOOLTIP,

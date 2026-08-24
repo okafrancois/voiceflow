@@ -2,6 +2,17 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>com.voiceflow.voicetotext</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>voiceflow</string>
+            </array>
+        </dict>
+    </array>
     <key>NSMicrophoneUsageDescription</key>
     <string>Voice Flow needs access to your microphone to record audio for voice-to-text transcription.</string>
     <key>NSSpeechRecognitionUsageDescription</key>

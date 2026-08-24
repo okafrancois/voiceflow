@@ -5,7 +5,7 @@
 //! streaming RecordingConsumer trait (send_chunk + finish), making batch cloud STT
 //! impossible by design.
 
-use ariatype_lib::polish_engine::{PolishRequest, UnifiedPolishManager};
+use voiceflow_lib::polish_engine::{PolishRequest, UnifiedPolishManager};
 
 mod mock_credentials {
     pub const API_KEY: &str = "mock_api_key";
@@ -14,6 +14,7 @@ mod mock_credentials {
 // ==================== Polish Engine Tests ====================
 
 #[tokio::test]
+#[ignore = "requires access to the live OpenAI API"]
 async fn test_polish_openai_schema() {
     let manager = UnifiedPolishManager::default();
     let request = PolishRequest::new("test", "test prompt", "en");
@@ -45,6 +46,7 @@ async fn test_polish_openai_schema() {
 }
 
 #[tokio::test]
+#[ignore = "requires access to the live Anthropic API"]
 async fn test_polish_anthropic_schema() {
     let manager = UnifiedPolishManager::default();
     let request = PolishRequest::new("test", "test prompt", "en");

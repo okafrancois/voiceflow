@@ -29,7 +29,14 @@
       "dangerousDisableAssetCspModification": [
         "style-src"
       ],
-      "csp": "default-src 'self' customprotocol: asset:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: data:; font-src 'self'; connect-src 'self' ipc: http://ipc.localhost asset: https://ariatype.com https://*.ariatype.com https://raw.githubusercontent.com; media-src 'self'"
+      "csp": "default-src 'self' customprotocol: asset:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: data:; font-src 'self'; connect-src 'self' ipc: http://ipc.localhost asset: https://raw.githubusercontent.com; media-src 'self'"
+    }
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["voiceflow"]
+      }
     }
   },
   "bundle": {

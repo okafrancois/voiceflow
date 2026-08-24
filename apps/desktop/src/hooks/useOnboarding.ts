@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
 
 const ONBOARDING_KEY = "onboarding_completed";
-const ONBOARDING_RESET_EVENT = "ariatype:onboarding-reset";
-const ONBOARDING_COMPLETE_EVENT = "ariatype:onboarding-complete";
+const ONBOARDING_RESET_EVENT = "voiceflow:onboarding-reset";
+const ONBOARDING_COMPLETE_EVENT = "voiceflow:onboarding-complete";
 
 export function useOnboarding() {
   const [isFirstVisit, setIsFirstVisit] = useState<boolean | null>(null);

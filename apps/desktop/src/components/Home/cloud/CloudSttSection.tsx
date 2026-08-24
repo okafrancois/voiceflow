@@ -185,7 +185,7 @@ export function CloudSttSection() {
         {isEnabled && (
           <div className="space-y-4 pt-4 border-t border-border">
             <a
-              href="https://github.com/joe223/AriaType/discussions/3"
+              href="https://github.com/okafrancois/voiceflow/discussions/3"
               target="_blank"
               rel="noopener noreferrer"
               className="text-xs text-primary hover:underline flex items-center gap-1"

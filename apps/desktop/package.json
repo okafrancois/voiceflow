@@ -1,5 +1,5 @@
 {
-  "name": "@ariatype/desktop",
+  "name": "@voiceflow/desktop",
   "version": "1.0.6",
   "license": "AGPL-3.0-only",
   "description": "Voice Flow Desktop Application",
@@ -42,8 +42,8 @@
   },
   "dependencies": {
     "@aptabase/tauri": "^0.4.1",
-    "@ariatype/e2e-harness": "workspace:*",
-    "@ariatype/shared": "workspace:*",
+    "@voiceflow/e2e-harness": "workspace:*",
+    "@voiceflow/shared": "workspace:*",
     "@floating-ui/react": "^0.27.19",
     "@phosphor-icons/react": "^2.1.10",
     "@radix-ui/react-dialog": "^1.1.15",

@@ -4,15 +4,15 @@ use tracing::instrument;
 
 /// Shared helper used by both the `insert_text` command and the audio pipeline.
 #[instrument(fields(text_len = text.len()))]
-pub fn do_insert_text(text: &str) {
-    crate::text_injector::insert_text(text);
+pub fn do_insert_text(text: &str) -> Result<crate::text_injector::InjectionMethod, String> {
+    crate::text_injector::insert_text(text)
 }
 
 #[tauri::command]
 #[instrument(skip(app), fields(text_len = text.len()), ret, err)]
 pub async fn insert_text(app: AppHandle, text: String) -> Result<(), String> {
     let _ = app;
-    do_insert_text(&text);
+    do_insert_text(&text)?;
     Ok(())
 }
 

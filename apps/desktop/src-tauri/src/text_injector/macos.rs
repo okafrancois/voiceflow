@@ -332,7 +332,7 @@ fn paste_cmd_v_enigo() -> bool {
 }
 
 impl super::TextInjector for MacosInjector {
-    fn insert(&self, text: &str, _write_clipboard: &dyn Fn()) {
+    fn insert(&self, text: &str) -> Result<super::InjectionMethod, String> {
         let grapheme_count = text.graphemes(true).count();
         let has_newline = text.contains('\n');
         info!(
@@ -344,22 +344,35 @@ impl super::TextInjector for MacosInjector {
             info!("text_injection_clipboard_mode-multiline");
             let ok = try_clipboard_paste(text);
             info!(success = ok, "text_injection_completed-clipboard");
-            return;
+            return if ok {
+                Ok(super::InjectionMethod::Clipboard)
+            } else {
+                Err("macOS clipboard paste failed for multiline text".to_string())
+            };
         }
 
         if grapheme_count > 400 {
             info!(grapheme_count, "text_injection_clipboard_mode-long_text");
             let ok = try_clipboard_paste(text);
             info!(success = ok, "text_injection_completed-clipboard");
-            return;
+            return if ok {
+                Ok(super::InjectionMethod::Clipboard)
+            } else {
+                Err("macOS clipboard paste failed for long text".to_string())
+            };
         }
 
         if try_enigo_key_sequence(text) {
             info!("text_injection_completed-enigo");
-            return;
+            return Ok(super::InjectionMethod::Keyboard);
         }
         info!("text_injection_fallback-clipboard");
         let ok = try_clipboard_paste(text);
         info!(success = ok, "text_injection_completed-clipboard");
+        if ok {
+            Ok(super::InjectionMethod::Clipboard)
+        } else {
+            Err("macOS keyboard and clipboard text injection failed".to_string())
+        }
     }
 }

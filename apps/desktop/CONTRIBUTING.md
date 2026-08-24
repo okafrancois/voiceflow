@@ -1,4 +1,4 @@
-# Contributing to @ariatype/desktop
+# Contributing to @voiceflow/desktop
 
 ## Overview
 
@@ -29,24 +29,24 @@
 pnpm install
 
 # Start development server
-pnpm --filter @ariatype/desktop tauri:dev
+pnpm --filter @voiceflow/desktop tauri:dev
 
 # Build and launch the entitled macOS app for permission testing
-pnpm --filter @ariatype/desktop tauri:dev:mac-permissions
+pnpm --filter @voiceflow/desktop tauri:dev:mac-permissions
 
 # Build frontend only
-pnpm --filter @ariatype/desktop build
+pnpm --filter @voiceflow/desktop build
 
 # Build full application (macOS)
-pnpm --filter @ariatype/desktop tauri:build:mac
+pnpm --filter @voiceflow/desktop tauri:build:mac
 
 # Build full application (Windows)
-pnpm --filter @ariatype/desktop tauri:build:win
+pnpm --filter @voiceflow/desktop tauri:build:win
 ```
 
 ### Dev / Inhouse Build Conventions
 
-- `pnpm --filter @ariatype/desktop tauri:dev` starts the inhouse/dev desktop variant.
+- `pnpm --filter @voiceflow/desktop tauri:dev` starts the inhouse/dev desktop variant.
 - The standard dev command runs a raw executable. macOS can attribute privacy requests to the parent terminal or editor. Use `tauri:dev:mac-permissions` to test microphone and screen-recording access with an ad-hoc signed `Voice Flow Dev.app` carrying `entitlements.plist`.
 - The permission-test command treats the local polish sidecar as optional and automatically selects a working full Xcode installation through `DEVELOPER_DIR` without changing the machine-wide `xcode-select` setting.
 - The `tauri:dev` script regenerates inhouse icon assets before launching Tauri. Do not hand-edit generated files in `apps/desktop/assets/icons/inhouse/`.
@@ -148,13 +148,13 @@ import { invoke } from '@tauri-apps/api/core'; // ❌ Avoid
 
 ```bash
 # Run tests
-pnpm --filter @ariatype/desktop test
+pnpm --filter @voiceflow/desktop test
 
 # Run with coverage
-pnpm --filter @ariatype/desktop test:coverage
+pnpm --filter @voiceflow/desktop test:coverage
 
 # Watch mode
-pnpm --filter @ariatype/desktop test:watch
+pnpm --filter @voiceflow/desktop test:watch
 ```
 
 **Test Location**: `src/**/*.{test,spec}.{ts,tsx}`
@@ -165,10 +165,10 @@ pnpm --filter @ariatype/desktop test:watch
 
 ```bash
 # Run unit tests
-pnpm --filter @ariatype/desktop test:rust
+pnpm --filter @voiceflow/desktop test:rust
 
 # Run with coverage
-pnpm --filter @ariatype/desktop test:rust:coverage
+pnpm --filter @voiceflow/desktop test:rust:coverage
 
 # Coverage report (HTML)
 cd apps/desktop/src-tauri && cargo llvm-cov --html
@@ -190,10 +190,10 @@ cd apps/desktop/src-tauri && cargo llvm-cov --html
 
 ```bash
 # Ordered shared-runtime desktop E2E
-pnpm --filter @ariatype/desktop run test:e2e
+pnpm --filter @voiceflow/desktop run test:e2e
 
 # Update only touched snapshots
-pnpm --filter @ariatype/desktop run test:e2e:update
+pnpm --filter @voiceflow/desktop run test:e2e:update
 ```
 
 - Desktop E2E is real Tauri black-box verification with `@srsholmes/tauri-playwright`.
@@ -218,22 +218,22 @@ pnpm --filter @ariatype/desktop run test:e2e:update
 
 ```bash
 # macOS (signed)
-pnpm --filter @ariatype/desktop tauri:build:mac
+pnpm --filter @voiceflow/desktop tauri:build:mac
 
 # macOS (unsigned, for testing)
-pnpm --filter @ariatype/desktop tauri:build:mac:unsigned
+pnpm --filter @voiceflow/desktop tauri:build:mac:unsigned
 
 # macOS ARM-only
-pnpm --filter @ariatype/desktop tauri:build:mac-arm
+pnpm --filter @voiceflow/desktop tauri:build:mac-arm
 
 # macOS Intel-only
-pnpm --filter @ariatype/desktop tauri:build:mac-intel
+pnpm --filter @voiceflow/desktop tauri:build:mac-intel
 
 # macOS Universal
-pnpm --filter @ariatype/desktop tauri:build:mac-universal
+pnpm --filter @voiceflow/desktop tauri:build:mac-universal
 
 # Windows
-pnpm --filter @ariatype/desktop tauri:build:win
+pnpm --filter @voiceflow/desktop tauri:build:win
 ```
 
 ---
@@ -257,16 +257,16 @@ pnpm --filter @ariatype/desktop tauri:build:win
 
 | Platform | Path |
 |----------|------|
-| macOS | `~/Library/Logs/ariatype/` |
-| Windows | `%LOCALAPPDATA%\ariatype\logs\` |
+| macOS | `~/Library/Logs/voiceflow/` |
+| Windows | `%LOCALAPPDATA%\voiceflow\logs\` |
 
 **Quick Access**:
 ```bash
 # macOS - open log folder
-open ~/Library/Logs/ariatype/
+open ~/Library/Logs/voiceflow/
 
 # macOS - tail latest log
-tail -f ~/Library/Logs/ariatype/ariatype.log.*
+tail -f ~/Library/Logs/voiceflow/voiceflow.log.*
 ```
 
 ---

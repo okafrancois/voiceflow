@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/capabilities/2",
   "identifier": "default",
-  "description": "Default capability for AriaType",
+  "description": "Default capability for Voice Flow",
   "windows": ["main", "pill", "toast"],
   "permissions": [
     "core:default",

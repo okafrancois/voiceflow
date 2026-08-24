@@ -6,8 +6,8 @@
 /// - Actual inference time (slow)
 ///
 /// Run manually with: cargo test --test polish_prompt_quality_test -- --ignored --nocapture
-use ariatype_lib::polish_engine::{get_template_by_id, PolishRequest, UnifiedPolishManager};
-use ariatype_lib::utils::AppPaths;
+use voiceflow_lib::polish_engine::{get_template_by_id, PolishRequest, UnifiedPolishManager};
+use voiceflow_lib::utils::AppPaths;
 
 /// Helper function to check if a model exists
 fn model_exists(model_name: &str) -> bool {

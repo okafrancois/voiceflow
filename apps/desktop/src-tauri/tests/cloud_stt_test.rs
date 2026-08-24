@@ -45,7 +45,7 @@ fn resample_to_16khz_mono(
 
     if input_sample_rate != 16000 {
         let resampled =
-            ariatype_lib::audio::resampler::resample_to_16khz(&audio_f32, input_sample_rate)
+            voiceflow_lib::audio::resampler::resample_to_16khz(&audio_f32, input_sample_rate)
                 .unwrap();
         resampled
             .iter()
@@ -183,17 +183,18 @@ fn test_pcm_to_bytes_conversion() {
 }
 
 #[test]
-fn test_streaming_mode_urls() {
-    use ariatype_lib::stt_engine::cloud::volcengine_streaming::*;
+fn test_volcengine_production_endpoint() {
+    use voiceflow_lib::stt_engine::cloud::volcengine_streaming::*;
 
-    assert!(URL_BIGMODEL_NOSTREAM.contains("nostream"));
-    assert!(URL_BIGMODEL.contains("bigmodel"));
-    assert!(!URL_BIGMODEL.contains("nostream"));
+    assert_eq!(
+        URL_BIGMODEL_NOSTREAM,
+        "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_nostream"
+    );
 }
 
 #[test]
 fn test_recommended_chunk_duration() {
-    use ariatype_lib::stt_engine::cloud::volcengine_streaming::RECOMMENDED_CHUNK_SAMPLES;
+    use voiceflow_lib::stt_engine::cloud::volcengine_streaming::RECOMMENDED_CHUNK_SAMPLES;
 
     let duration_ms = (RECOMMENDED_CHUNK_SAMPLES as f64 / 16000.0) * 1000.0;
     assert!(

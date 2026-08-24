@@ -1,11 +1,15 @@
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InjectionMethod {
+    Keyboard,
+    Clipboard,
+}
+
 pub trait TextInjector: Send + Sync {
     /// Insert `text` at the current cursor position.
-    ///
-    /// `write_clipboard`: called only when the AX layer fails and a
-    ///   clipboard-based paste is needed. The caller supplies this closure so
-    ///   that the injector stays free of any Tauri / platform-clipboard dependency.
-    fn insert(&self, text: &str, write_clipboard: &dyn Fn());
+    fn insert(&self, text: &str) -> Result<InjectionMethod, String>;
 }
+
+pub mod quick_controls;
 
 #[cfg(target_os = "macos")]
 mod macos;
@@ -21,8 +25,7 @@ pub fn create_injector() -> Box<dyn TextInjector> {
     compile_error!("text_injector: unsupported platform");
 }
 
-pub fn insert_text(text: &str) {
+pub fn insert_text(text: &str) -> Result<InjectionMethod, String> {
     let injector = create_injector();
-    // Clipboard handling is implemented inside the platform injector when needed.
-    injector.insert(text, &|| {});
+    injector.insert(text)
 }

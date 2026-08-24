@@ -1,4 +1,4 @@
-import { createTauriFixturesFromConfigModule } from '@ariatype/e2e-harness/playwright';
+import { createTauriFixturesFromConfigModule } from '@voiceflow/e2e-harness/playwright';
 
 const { test, expect } = await createTauriFixturesFromConfigModule('./e2e.config.mjs', {
   sharedRuntimeKey: 'shared',

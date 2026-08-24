@@ -1,6 +1,6 @@
-# AriaType Desktop Design Language
+# Voice Flow Desktop Design Language
 
-AriaType is a quiet, capable voice-to-text utility. Its design should feel
+Voice Flow is a quiet, capable voice-to-text utility. Its design should feel
 native, immediate, and trustworthy: a tool that stays out of the user's way
 while making recording, transcription, correction, and setup feel clear.
 
@@ -11,7 +11,7 @@ guidance.
 
 ## Design North Star
 
-AriaType should feel like a polished desktop utility with a small moment of
+Voice Flow should feel like a polished desktop utility with a small moment of
 magic. The everyday interface is calm and efficient. The recording experience is
 more vivid, tactile, and instantly recognizable.
 
@@ -25,7 +25,7 @@ The design is guided by four qualities:
 
 ## Emotional Tone
 
-AriaType should reduce the anxiety around dictation. Speaking to a computer can
+Voice Flow should reduce the anxiety around dictation. Speaking to a computer can
 feel exposed; the interface should make the user feel in control.
 
 The emotional tone is:
@@ -121,7 +121,7 @@ Use data visualization sparingly:
 
 ## Color Direction
 
-AriaType is neutral-first. Color is used to clarify meaning, not to decorate the
+Voice Flow is neutral-first. Color is used to clarify meaning, not to decorate the
 screen.
 
 The default palette should emphasize:
@@ -161,7 +161,7 @@ belongs to promotional material, not to settings, history, or model management.
 
 ## Shape and Spacing
 
-AriaType uses generous rounding to make utilitarian surfaces feel softer. The
+Voice Flow uses generous rounding to make utilitarian surfaces feel softer. The
 geometry should be friendly without becoming childish.
 
 Use:
@@ -255,7 +255,7 @@ Avoid fear-based framing. The design should say, "You are in control," not
 
 ## Content Voice
 
-AriaType's product language should be concise, factual, and polished.
+Voice Flow's product language should be concise, factual, and polished.
 
 Use:
 
@@ -274,7 +274,7 @@ Avoid:
 - Internal architecture terms.
 - Copy that sounds like an engineer explaining the system.
 
-The best AriaType copy feels like a capable assistant: precise, quiet, and
+The best Voice Flow copy feels like a capable assistant: precise, quiet, and
 respectful of the user's time.
 
 ## Light and Dark Modes

@@ -1,15 +1,30 @@
-//! IPC commands for hotkey recording and profile management.
+//! IPC commands for hotkey recording and legacy profile management.
 //!
-//! Profile management uses map structure: { dictate, riff, custom? }
-//! - dictate/riff: system profiles, cannot be deleted
-//! - custom: optional user profile (max 1)
+//! The workflow profile list is canonical. The fixed profile map remains as a
+//! compatibility projection for older clients.
 
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::commands::settings::save_settings_internal;
 use crate::events::EventName;
-use crate::shortcut::{ShortcutManager, ShortcutProfile, ShortcutProfilesMap, ShortcutTriggerMode};
+use crate::services::product_workflows::{
+    apply_profile_registration_transaction, project_legacy_profiles, OutputAction, WorkflowProfile,
+    WorkflowProfileRegistrar,
+};
+use crate::shortcut::{ShortcutManager, ShortcutProfile, ShortcutProfilesMap};
 use crate::state::app_state::AppState;
+
+struct HotkeyWorkflowRegistrar<'a>(&'a ShortcutManager);
+
+impl WorkflowProfileRegistrar for HotkeyWorkflowRegistrar<'_> {
+    fn register(&mut self, id: &str, profile: &ShortcutProfile) -> Result<(), String> {
+        self.0.register_profile(id, profile)
+    }
+
+    fn unregister(&mut self, id: &str) -> Result<(), String> {
+        self.0.unregister_profile(id)
+    }
+}
 
 /// Starts hotkey capture for a specific profile key.
 ///
@@ -17,7 +32,10 @@ use crate::state::app_state::AppState;
 /// When captured, emits `hotkey-captured` event.
 #[tauri::command]
 pub fn start_hotkey_capture(app: AppHandle, profile_key: String) -> Result<(), String> {
-    validate_profile_key(&profile_key)?;
+    let state = app
+        .try_state::<AppState>()
+        .ok_or_else(|| "app_state_unavailable".to_string())?;
+    validate_workflow_profile_exists(&state, &profile_key)?;
 
     app.try_state::<ShortcutManager>()
         .ok_or_else(|| "shortcut manager not available".to_string())?
@@ -29,10 +47,6 @@ pub fn start_hotkey_capture(app: AppHandle, profile_key: String) -> Result<(), S
 /// Returns the captured hotkey string, or None if no valid hotkey captured.
 #[tauri::command]
 pub fn stop_hotkey_capture(app: AppHandle, profile_key: String) -> Result<String, String> {
-    if validate_profile_key(&profile_key).is_err() {
-        return Err(format!("invalid_profile_key: {}", profile_key));
-    }
-
     let shortcut_manager = app.try_state::<ShortcutManager>();
     let Some(shortcut_manager) = shortcut_manager else {
         return Err("shortcut_manager_not_available".to_string());
@@ -49,80 +63,85 @@ pub fn stop_hotkey_capture(app: AppHandle, profile_key: String) -> Result<String
         return Err("app_state_unavailable".to_string());
     };
 
-    // Validate hotkey uniqueness before registering
-    {
-        let settings = app_state.settings.lock();
-        validate_hotkey_uniqueness(&settings, &profile_key, &hotkey)?;
-    }
-
-    let profile = crate::shortcut::ShortcutProfile {
-        hotkey: hotkey.clone(),
-        trigger_mode: get_current_trigger_mode(&app_state, &profile_key),
-        action: crate::shortcut::ShortcutAction::Record {
-            polish_template_id: get_current_template_id(&app_state, &profile_key),
-        },
-    };
-
-    shortcut_manager
-        .register_profile(&profile_key, &profile)
-        .map_err(|e| format!("register_profile_failed: {}", e))?;
-
-    {
-        let mut settings = app_state.settings.lock();
-        update_profile_in_map(
-            &mut settings.shortcut_profiles,
-            &profile_key,
-            profile.clone(),
-        );
-    }
-
-    crate::commands::settings::save_settings_internal(&app)
-        .map_err(|e| format!("save_settings_failed: {}", e))?;
-
-    let settings = app_state.settings.lock().clone();
-    app.emit(crate::events::EventName::SETTINGS_CHANGED, settings)
-        .map_err(|e| format!("emit_settings_changed_failed: {}", e))?;
+    let mut profiles = app_state.settings.lock().workflow_profiles.clone();
+    let profile = profiles
+        .iter_mut()
+        .find(|profile| profile.id == profile_key)
+        .ok_or_else(|| format!("invalid_profile_key: {profile_key}"))?;
+    profile.hotkey = hotkey.clone();
+    persist_workflow_profiles(&app, &app_state, profiles)?;
 
     Ok(hotkey)
 }
 
-fn get_current_template_id(
-    state: &crate::state::app_state::AppState,
-    profile_key: &str,
-) -> Option<String> {
-    let settings = state.settings.lock();
-    let profiles = &settings.shortcut_profiles;
-    match profile_key {
-        "dictate" => None,
-        "riff" => match &profiles.riff.action {
-            crate::shortcut::ShortcutAction::Record { polish_template_id } => {
-                polish_template_id.clone()
-            }
-        },
-        "custom" => profiles.custom.as_ref().and_then(|p| match &p.action {
-            crate::shortcut::ShortcutAction::Record { polish_template_id } => {
-                polish_template_id.clone()
-            }
-        }),
-        _ => None,
+fn persist_workflow_profiles(
+    app: &AppHandle,
+    state: &AppState,
+    requested: Vec<WorkflowProfile>,
+) -> Result<(), String> {
+    crate::services::product_workflows::validate_profiles(&requested)?;
+    let (previous, previous_legacy) = {
+        let settings = state.settings.lock();
+        crate::services::product_workflows::validate_application_rules(
+            &settings.application_rules,
+            &requested,
+        )?;
+        (
+            settings.workflow_profiles.clone(),
+            settings.shortcut_profiles.clone(),
+        )
+    };
+
+    let manager = app
+        .try_state::<ShortcutManager>()
+        .ok_or_else(|| "shortcut_manager_not_available".to_string())?;
+    apply_profile_registration_transaction(
+        &mut HotkeyWorkflowRegistrar(&manager),
+        &previous,
+        &requested,
+    )?;
+
+    {
+        let mut settings = state.settings.lock();
+        settings.workflow_profiles = requested.clone();
+        settings.shortcut_profiles =
+            project_legacy_profiles(&settings.shortcut_profiles, &requested);
     }
+
+    if let Err(error) = save_settings_internal(app) {
+        {
+            let mut settings = state.settings.lock();
+            settings.workflow_profiles = previous.clone();
+            settings.shortcut_profiles = previous_legacy;
+        }
+        if let Err(rollback_error) = apply_profile_registration_transaction(
+            &mut HotkeyWorkflowRegistrar(&manager),
+            &requested,
+            &previous,
+        ) {
+            return Err(format!(
+                "save_settings_failed: {error}; shortcut rollback failed: {rollback_error}"
+            ));
+        }
+        return Err(format!("save_settings_failed: {error}"));
+    }
+
+    let settings = state.settings.lock().clone();
+    app.emit(EventName::SETTINGS_CHANGED, settings)
+        .map_err(|error| format!("emit_settings_changed_failed: {error}"))?;
+    Ok(())
 }
 
-fn get_current_trigger_mode(
-    state: &crate::state::app_state::AppState,
-    profile_key: &str,
-) -> ShortcutTriggerMode {
+fn validate_workflow_profile_exists(state: &AppState, profile_key: &str) -> Result<(), String> {
     let settings = state.settings.lock();
-    let profiles = &settings.shortcut_profiles;
-    match profile_key {
-        "dictate" => profiles.dictate.trigger_mode,
-        "riff" => profiles.riff.trigger_mode,
-        "custom" => profiles
-            .custom
-            .as_ref()
-            .map(|profile| profile.trigger_mode)
-            .unwrap_or(ShortcutTriggerMode::Toggle),
-        _ => ShortcutTriggerMode::Hold,
+    if settings
+        .workflow_profiles
+        .iter()
+        .any(|profile| profile.id == profile_key)
+    {
+        Ok(())
+    } else {
+        Err(format!("unknown_profile_key: {profile_key}"))
     }
 }
 
@@ -164,35 +183,18 @@ pub fn update_shortcut_profile(
     key: String,
     profile: ShortcutProfile,
 ) -> Result<(), String> {
-    validate_profile_key(&key)?;
     validate_profile_constraints(&key, &profile)?;
-
-    let shortcut_manager = app
-        .try_state::<ShortcutManager>()
-        .ok_or_else(|| "shortcut manager not available".to_string())?;
-
-    {
-        let settings = state.settings.lock();
-        validate_hotkey_uniqueness(&settings, &key, &profile.hotkey)?;
-    }
-
-    // Register if hotkey is not empty, unregister if hotkey is empty
-    if !profile.hotkey.is_empty() {
-        shortcut_manager.register_profile(&key, &profile)?;
-    } else {
-        shortcut_manager.unregister_profile(&key)?;
-    }
-
-    {
-        let mut settings = state.settings.lock();
-        update_profile_in_map(&mut settings.shortcut_profiles, &key, profile.clone());
-    }
-
-    save_settings_internal(&app)?;
-
-    let settings = state.settings.lock().clone();
-    app.emit(EventName::SETTINGS_CHANGED, settings)
-        .map_err(|e| format!("failed to emit settings changed: {}", e))?;
+    let mut profiles = state.settings.lock().workflow_profiles.clone();
+    let workflow_profile = profiles
+        .iter_mut()
+        .find(|workflow_profile| workflow_profile.id == key)
+        .ok_or_else(|| format!("unknown_profile_key: {key}"))?;
+    workflow_profile.hotkey = profile.hotkey.clone();
+    workflow_profile.trigger_mode = profile.trigger_mode;
+    workflow_profile.polish_template_id = match profile.action {
+        crate::shortcut::ShortcutAction::Record { polish_template_id } => polish_template_id,
+    };
+    persist_workflow_profiles(&app, &state, profiles)?;
 
     tracing::info!(key = %key, hotkey = %profile.hotkey, "shortcut_profile_updated");
     Ok(())
@@ -207,35 +209,35 @@ pub fn create_custom_profile(
     state: State<'_, AppState>,
     profile: ShortcutProfile,
 ) -> Result<(), String> {
-    let shortcut_manager = app
-        .try_state::<ShortcutManager>()
-        .ok_or_else(|| "shortcut manager not available".to_string())?;
-
     {
         let settings = state.settings.lock();
 
-        if settings.shortcut_profiles.custom.is_some() {
+        if settings
+            .workflow_profiles
+            .iter()
+            .any(|workflow_profile| workflow_profile.id == "custom")
+        {
             return Err("custom_profile_already_exists".to_string());
         }
-
-        validate_hotkey_uniqueness(&settings, "custom", &profile.hotkey)?;
     }
 
-    // Only register if hotkey is not empty
-    if !profile.hotkey.is_empty() {
-        shortcut_manager.register_profile("custom", &profile)?;
-    }
-
-    {
-        let mut settings = state.settings.lock();
-        settings.shortcut_profiles.custom = Some(profile.clone());
-    }
-
-    save_settings_internal(&app)?;
-
-    let settings = state.settings.lock().clone();
-    app.emit(EventName::SETTINGS_CHANGED, settings)
-        .map_err(|e| format!("failed to emit settings changed: {}", e))?;
+    let mut profiles = state.settings.lock().workflow_profiles.clone();
+    let polish_template_id = match profile.action {
+        crate::shortcut::ShortcutAction::Record { polish_template_id } => polish_template_id,
+    };
+    profiles.push(WorkflowProfile {
+        id: "custom".to_string(),
+        name: "Custom".to_string(),
+        hotkey: profile.hotkey,
+        trigger_mode: profile.trigger_mode,
+        language: None,
+        polish_template_id,
+        translation_target: None,
+        output_action: OutputAction::Insert,
+        code_aware: false,
+        protected: false,
+    });
+    persist_workflow_profiles(&app, &state, profiles)?;
 
     tracing::info!("custom_profile_created");
     Ok(())
@@ -246,35 +248,27 @@ pub fn create_custom_profile(
 /// Cannot delete dictate or riff (system profiles).
 #[tauri::command]
 pub fn delete_custom_profile(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
-    let shortcut_manager = app
-        .try_state::<ShortcutManager>()
-        .ok_or_else(|| "shortcut manager not available".to_string())?;
-
-    {
-        let mut settings = state.settings.lock();
-        if settings.shortcut_profiles.custom.is_none() {
-            return Err("custom_profile_not_found".to_string());
-        }
-        settings.shortcut_profiles.custom = None;
-    }
-
-    save_settings_internal(&app)?;
-
-    shortcut_manager.unregister_profile("custom")?;
-
     let settings = state.settings.lock().clone();
-    app.emit(EventName::SETTINGS_CHANGED, settings)
-        .map_err(|e| format!("failed to emit settings changed: {}", e))?;
+    if settings
+        .application_rules
+        .iter()
+        .any(|rule| rule.profile_id == "custom")
+    {
+        return Err("custom_profile_is_used_by_application_rule".to_string());
+    }
+    let previous_len = settings.workflow_profiles.len();
+    let profiles = settings
+        .workflow_profiles
+        .into_iter()
+        .filter(|profile| profile.id != "custom")
+        .collect::<Vec<_>>();
+    if profiles.len() == previous_len {
+        return Err("custom_profile_not_found".to_string());
+    }
+    persist_workflow_profiles(&app, &state, profiles)?;
 
     tracing::info!("custom_profile_deleted");
     Ok(())
-}
-
-fn validate_profile_key(key: &str) -> Result<(), String> {
-    match key {
-        "dictate" | "riff" | "custom" => Ok(()),
-        _ => Err(format!("unknown_profile_key: {}", key)),
-    }
 }
 
 fn validate_profile_constraints(key: &str, profile: &ShortcutProfile) -> Result<(), String> {
@@ -295,41 +289,4 @@ fn validate_profile_constraints(key: &str, profile: &ShortcutProfile) -> Result<
         },
     }
     Ok(())
-}
-
-fn validate_hotkey_uniqueness(
-    settings: &crate::commands::settings::AppSettings,
-    exclude_key: &str,
-    hotkey: &str,
-) -> Result<(), String> {
-    if hotkey.is_empty() {
-        return Ok(());
-    }
-
-    let profiles = &settings.shortcut_profiles;
-
-    if exclude_key != "dictate" && profiles.dictate.hotkey == hotkey {
-        return Err("hotkey_conflict:dictate".to_string());
-    }
-
-    if exclude_key != "riff" && profiles.riff.hotkey == hotkey {
-        return Err("hotkey_conflict:riff".to_string());
-    }
-
-    if let Some(custom) = &profiles.custom {
-        if exclude_key != "custom" && custom.hotkey == hotkey {
-            return Err("hotkey_conflict:custom".to_string());
-        }
-    }
-
-    Ok(())
-}
-
-fn update_profile_in_map(map: &mut ShortcutProfilesMap, key: &str, profile: ShortcutProfile) {
-    match key {
-        "dictate" => map.dictate = profile,
-        "riff" => map.riff = profile,
-        "custom" => map.custom = Some(profile),
-        _ => {}
-    }
 }

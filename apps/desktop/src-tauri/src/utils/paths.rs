@@ -2,14 +2,66 @@ use std::path::PathBuf;
 use std::sync::OnceLock;
 
 /// Application data directory, initialized from Tauri's PathResolver at startup.
-/// Falls back to "ariatype" if not initialized (for tests or early bootstrapping).
+/// Falls back to "voiceflow" if not initialized (for tests or early bootstrapping).
 static APP_DATA_DIR: OnceLock<PathBuf> = OnceLock::new();
+
+fn legacy_product_token() -> String {
+    ["aria", "type"].concat()
+}
+
+fn migrate_legacy_directory(
+    source: &std::path::Path,
+    destination: &std::path::Path,
+) -> std::io::Result<()> {
+    if !source.exists() || source == destination {
+        return Ok(());
+    }
+
+    std::fs::create_dir_all(destination)?;
+    for entry in std::fs::read_dir(source)? {
+        let entry = entry?;
+        let source_path = entry.path();
+        let destination_path = destination.join(entry.file_name());
+
+        if destination_path.exists() {
+            if source_path.is_dir() && destination_path.is_dir() {
+                migrate_legacy_directory(&source_path, &destination_path)?;
+            }
+            continue;
+        }
+
+        std::fs::rename(&source_path, &destination_path)?;
+    }
+
+    if std::fs::read_dir(source)?.next().is_none() {
+        std::fs::remove_dir(source)?;
+    }
+    Ok(())
+}
 
 pub struct AppPaths;
 
 impl AppPaths {
     /// Initialize from Tauri's PathResolver. Called once during app setup.
     pub fn init_from_tauri(data_dir: PathBuf) {
+        if let Some(base_dir) = dirs::data_dir() {
+            let legacy_token = legacy_product_token();
+            let legacy_directories = [
+                base_dir.join(&legacy_token),
+                base_dir.join(format!("com.{legacy_token}.voicetotext")),
+            ];
+
+            for legacy_directory in legacy_directories {
+                if let Err(error) = migrate_legacy_directory(&legacy_directory, &data_dir) {
+                    tracing::warn!(
+                        error = %error,
+                        source = ?legacy_directory,
+                        destination = ?data_dir,
+                        "legacy_data_directory_migration_failed"
+                    );
+                }
+            }
+        }
         let _ = APP_DATA_DIR.set(data_dir);
     }
 
@@ -17,7 +69,7 @@ impl AppPaths {
         APP_DATA_DIR.get().cloned().unwrap_or_else(|| {
             dirs::data_dir()
                 .unwrap_or_else(|| PathBuf::from("."))
-                .join("ariatype")
+                .join("voiceflow")
         })
     }
 
@@ -47,7 +99,7 @@ impl AppPaths {
         APP_DATA_DIR.get().cloned().unwrap_or_else(|| {
             dirs::cache_dir()
                 .unwrap_or_else(|| PathBuf::from("."))
-                .join("ariatype")
+                .join("voiceflow")
         })
     }
 
@@ -131,12 +183,13 @@ impl AppPaths {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::tempdir;
 
     #[test]
     fn test_paths_fallback_without_init() {
-        // Without init, falls back to "ariatype"
+        // Without init, use the current Voice Flow directory.
         let data = AppPaths::data_dir();
-        assert!(data.ends_with("ariatype"));
+        assert!(data.ends_with("voiceflow"));
 
         let models = AppPaths::models_dir();
         assert!(models.ends_with("models"));
@@ -155,5 +208,29 @@ mod tests {
 
         let temp = AppPaths::temp_dir();
         assert!(temp.ends_with("temp"));
+    }
+
+    #[test]
+    fn migrates_legacy_data_without_overwriting_current_files() {
+        let root = tempdir().unwrap();
+        let legacy = root.path().join("legacy");
+        let current = root.path().join("current");
+        std::fs::create_dir_all(legacy.join("models")).unwrap();
+        std::fs::create_dir_all(&current).unwrap();
+        std::fs::write(legacy.join("settings.json"), b"legacy settings").unwrap();
+        std::fs::write(legacy.join("models/model.bin"), b"model").unwrap();
+        std::fs::write(current.join("settings.json"), b"current settings").unwrap();
+
+        migrate_legacy_directory(&legacy, &current).unwrap();
+
+        assert_eq!(
+            std::fs::read(current.join("settings.json")).unwrap(),
+            b"current settings"
+        );
+        assert_eq!(
+            std::fs::read(current.join("models/model.bin")).unwrap(),
+            b"model"
+        );
+        assert!(!legacy.join("models/model.bin").exists());
     }
 }

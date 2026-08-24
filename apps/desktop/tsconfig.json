@@ -6,10 +6,10 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"],
-      "@ariatype/e2e-harness": ["../../packages/e2e-harness/src/index.ts"],
-      "@ariatype/e2e-harness/playwright": ["../../packages/e2e-harness/src/playwright.ts"],
-      "@ariatype/e2e-harness/runner": ["../../packages/e2e-harness/src/ordered-tauri-runner.mjs"],
-      "@ariatype/shared": ["../../packages/shared/src"]
+      "@voiceflow/e2e-harness": ["../../packages/e2e-harness/src/index.ts"],
+      "@voiceflow/e2e-harness/playwright": ["../../packages/e2e-harness/src/playwright.ts"],
+      "@voiceflow/e2e-harness/runner": ["../../packages/e2e-harness/src/ordered-tauri-runner.mjs"],
+      "@voiceflow/shared": ["../../packages/shared/src"]
     },
     "noEmit": true
   },

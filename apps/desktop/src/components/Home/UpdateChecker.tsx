@@ -5,7 +5,7 @@ import { useTranslation } from "react-i18next";
 import { open } from "@tauri-apps/plugin-shell";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { Channel } from "@tauri-apps/api/core";
-import { DOWNLOAD_URL } from "@ariatype/shared";
+import { DOWNLOAD_URL } from "@voiceflow/shared";
 import { logger } from "@/lib/logger";
 import { analytics } from "@/lib/analytics";
 import { AnalyticsEvents } from "@/lib/events";

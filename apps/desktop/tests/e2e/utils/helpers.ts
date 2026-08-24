@@ -1,9 +1,10 @@
-import type { TauriFixtures } from '@srsholmes/tauri-playwright';
+import type { TauriFixtures } from "@srsholmes/tauri-playwright";
 import {
   dismissOnboardingIfPresent,
   waitForAppReady,
   invokeTauri,
-} from '@ariatype/e2e-harness/helpers';
+  sleep,
+} from "@voiceflow/e2e-harness/helpers";
 
 export {
   waitForAppReady,
@@ -18,15 +19,15 @@ export {
   setScreenshotMaxDiffPixels,
   disableAutoSnapshot,
   sleep,
-} from '@ariatype/e2e-harness/helpers';
+} from "@voiceflow/e2e-harness/helpers";
 
-type E2EPage = TauriFixtures['tauriPage'];
-const ONBOARDING_RESET_EVENT = 'ariatype:onboarding-reset';
-const ONBOARDING_COMPLETE_EVENT = 'ariatype:onboarding-complete';
+type E2EPage = TauriFixtures["tauriPage"];
+const ONBOARDING_RESET_EVENT = "voiceflow:onboarding-reset";
+const ONBOARDING_COMPLETE_EVENT = "voiceflow:onboarding-complete";
 
 type ShortcutProfilePayload = {
   hotkey: string;
-  trigger_mode: 'hold' | 'toggle' | 'double_tap';
+  trigger_mode: "hold" | "toggle" | "double_tap";
   action: {
     Record: {
       polish_template_id: string | null;
@@ -34,7 +35,10 @@ type ShortcutProfilePayload = {
   };
 };
 
-export async function setOnboardingCompleted(page: E2EPage, completed: boolean): Promise<void> {
+export async function setOnboardingCompleted(
+  page: E2EPage,
+  completed: boolean,
+): Promise<void> {
   await page.evaluate(
     `(function() {
       if (${completed}) {
@@ -48,7 +52,14 @@ export async function setOnboardingCompleted(page: E2EPage, completed: boolean):
     })()`,
   );
   if (completed) {
-    await dismissOnboardingIfPresent(page);
+    const onboardingModal = page.locator('[data-testid="onboarding-modal"]');
+    const deadline = Date.now() + 2000;
+    while ((await onboardingModal.isVisible()) && Date.now() < deadline) {
+      await sleep(50);
+    }
+    if (await onboardingModal.isVisible()) {
+      await dismissOnboardingIfPresent(page);
+    }
   }
   await waitForAppReady(page);
 }
@@ -59,7 +70,7 @@ export async function openRouteWithOnboarding(
   onboardingCompleted = true,
 ): Promise<void> {
   await waitForAppReady(page);
-  const currentPath = await page.evaluate<string>('window.location.pathname');
+  const currentPath = await page.evaluate<string>("window.location.pathname");
   if (currentPath !== route) {
     await page.evaluate(
       `(function() {
@@ -73,23 +84,31 @@ export async function openRouteWithOnboarding(
   await waitForAppReady(page);
 }
 
-export async function seedDefaultShortcutProfiles(page: E2EPage): Promise<void> {
+export async function seedDefaultShortcutProfiles(
+  page: E2EPage,
+): Promise<void> {
   const dictateProfile: ShortcutProfilePayload = {
-    hotkey: 'Cmd+Slash',
-    trigger_mode: 'hold',
+    hotkey: "Cmd+Slash",
+    trigger_mode: "hold",
     action: { Record: { polish_template_id: null } },
   };
   const riffProfile: ShortcutProfilePayload = {
-    hotkey: 'Opt+Slash',
-    trigger_mode: 'toggle',
-    action: { Record: { polish_template_id: 'filler' } },
+    hotkey: "Opt+Slash",
+    trigger_mode: "toggle",
+    action: { Record: { polish_template_id: "filler" } },
   };
 
-  await invokeTauri(page, 'delete_custom_profile').catch(() => undefined);
-  await invokeTauri(page, 'update_shortcut_profile', { key: 'dictate', profile: dictateProfile });
-  await invokeTauri(page, 'update_shortcut_profile', { key: 'riff', profile: riffProfile });
+  await invokeTauri(page, "delete_custom_profile").catch(() => undefined);
+  await invokeTauri(page, "update_shortcut_profile", {
+    key: "dictate",
+    profile: dictateProfile,
+  });
+  await invokeTauri(page, "update_shortcut_profile", {
+    key: "riff",
+    profile: riffProfile,
+  });
 }
 
 export async function clearTranscriptionHistory(page: E2EPage): Promise<void> {
-  await invokeTauri(page, 'clear_transcription_history');
+  await invokeTauri(page, "clear_transcription_history");
 }

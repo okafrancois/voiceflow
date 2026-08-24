@@ -1,5 +1,5 @@
-use ariatype_lib::polish_engine::qwen::QwenPolishEngine;
-use ariatype_lib::polish_engine::{PolishEngine, PolishEngineType, PolishRequest};
+use voiceflow_lib::polish_engine::qwen::QwenPolishEngine;
+use voiceflow_lib::polish_engine::{PolishEngine, PolishEngineType, PolishRequest};
 
 #[tokio::test]
 async fn test_qwen_engine_creation() {

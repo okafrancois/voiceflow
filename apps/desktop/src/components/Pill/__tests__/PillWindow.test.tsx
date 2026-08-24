@@ -147,7 +147,7 @@ describe("PillWindow backend tooltip", () => {
 
     act(() => {
       mocks.emitPillTooltip?.({
-        message: "ESC 取消，Enter 确认",
+        message: "Escape to cancel, Enter to confirm",
         duration_ms: 3200,
         task_id: 2,
       });
@@ -155,7 +155,7 @@ describe("PillWindow backend tooltip", () => {
 
     expect(showPillMock).not.toHaveBeenCalled();
     expect(screen.getByTestId("audio-dots")).toBeInTheDocument();
-    const tooltip = screen.getByText("ESC 取消，Enter 确认");
+    const tooltip = screen.getByText("Escape to cancel, Enter to confirm");
     expect(tooltip).toBeInTheDocument();
     expect(tooltip).toHaveClass("max-w-[calc(100vw-1rem)]");
   });
@@ -211,14 +211,14 @@ describe("PillWindow backend tooltip", () => {
 
     act(() => {
       mocks.emitPillTooltip?.({
-        message: "已记录纠错词：搜题 -> sootie",
+        message: "Correction saved: search term -> sootie",
         duration_ms: 50,
         task_id: null,
       });
     });
 
     expect(showPillMock).toHaveBeenCalledTimes(1);
-    const tooltip = screen.getByText("已记录纠错词：搜题 -> sootie");
+    const tooltip = screen.getByText("Correction saved: search term -> sootie");
     expect(tooltip).toBeInTheDocument();
     expect(screen.queryByTestId("audio-dots")).not.toBeInTheDocument();
 

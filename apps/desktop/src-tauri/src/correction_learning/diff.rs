@@ -619,10 +619,10 @@ mod tests {
 
     #[test]
     fn accepts_titlecase_product_phrase_replacement() {
-        let pair = extract_correction_pair("Try Air Tap here", "Try AriaType here").unwrap();
+        let pair = extract_correction_pair("Try Air Tap here", "Try Voice Flow here").unwrap();
 
         assert_eq!(pair.wrong, "Air Tap");
-        assert_eq!(pair.corrected, "AriaType");
+        assert_eq!(pair.corrected, "Voice Flow");
     }
 
     #[test]
@@ -710,7 +710,7 @@ mod tests {
     fn rejects_completed_replacement_as_deleted_term() {
         assert!(extract_deleted_correction_term(
             "Please try Air Tap in this field",
-            "Please try AriaType in this field",
+            "Please try Voice Flow in this field",
         )
         .is_none());
     }

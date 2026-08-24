@@ -11,7 +11,10 @@ mod templates;
 mod traits;
 mod unified_manager;
 
-pub use cloud::{CloudPolishEngine, CloudProviderConfig, CORE_POLISH_CONSTRAINT};
+pub use cloud::{
+    CloudPolishEngine, CloudProviderConfig, ANTHROPIC_MESSAGES_ENDPOINT, CORE_POLISH_CONSTRAINT,
+    OPENAI_CHAT_COMPLETIONS_ENDPOINT,
+};
 pub use compatibility::{
     assess_polish_model_compatibility, polish_model_latency_profile, DeviceProfile,
     PolishModelCompatibility, PolishModelCompatibilityLevel, PolishModelLatencyClass,

@@ -12,7 +12,7 @@ pub fn get_audio_devices() -> Vec<String> {
 #[tauri::command]
 pub fn get_log_content(lines: usize) -> String {
     let log_dir = AppPaths::log_dir();
-    // tracing-appender hourly names: "ariatype.log.YYYY-MM-DDTHH"
+    // tracing-appender hourly names: "voiceflow.log.YYYY-MM-DDTHH"
     // Collect all matching files, sort, read the most recent one
     let Ok(entries) = std::fs::read_dir(&log_dir) else {
         return String::new();
@@ -24,7 +24,7 @@ pub fn get_log_content(lines: usize) -> String {
             p.is_file()
                 && p.file_name()
                     .and_then(|n| n.to_str())
-                    .map(|n| n.starts_with("ariatype.log"))
+                    .map(|n| n.starts_with("voiceflow.log"))
                     .unwrap_or(false)
         })
         .collect();

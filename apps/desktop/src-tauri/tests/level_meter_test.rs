@@ -2,7 +2,7 @@
 //!
 //! Tests the `LevelMeter` struct which calculates and normalizes audio levels.
 
-use ariatype_lib::audio::level_meter::LevelMeter;
+use voiceflow_lib::audio::level_meter::LevelMeter;
 
 #[test]
 fn test_level_calculation_silence() {

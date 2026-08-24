@@ -32,6 +32,8 @@ pub(crate) const POLISH_POLICY_TOOLTIP_MESSAGE: &str =
     "Polish result was rejected. Using original transcription.";
 pub(crate) const POLISH_PREVIEW_PENDING_TOOLTIP_MESSAGE: &str = "Polishing...";
 pub(crate) const POLISH_PREVIEW_TOOLTIP_DURATION_MS: u64 = 1600;
+pub(crate) const TEXT_INJECTION_ERROR_TOOLTIP_MESSAGE: &str =
+    "Text delivery failed. Copy the result from history.";
 const POLISH_PREVIEW_MAX_CHARS: usize = 220;
 const THINK_START_TAG: &str = "<think>";
 const THINK_END_TAG: &str = "</think>";
@@ -102,16 +104,51 @@ pub struct RecordingState {
 
 pub(crate) async fn apply_finalize_result(app: &AppHandle, task_id: u64, result: FinalizeResult) {
     match result {
-        FinalizeResult::DeliverText(text) => {
+        FinalizeResult::DeliverText {
+            text,
+            history_entry_id,
+        } => {
             emit_recording_complete(app, task_id, &text);
             tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-            insert_text_with_metrics(
+            let injection_started = Instant::now();
+            let insertion = insert_text_with_metrics(
                 &text,
                 task_id,
                 "recording",
-                None,
+                history_entry_id.as_deref(),
                 crate::text_injector::insert_text,
             );
+            update_history_delivery_status(
+                app,
+                history_entry_id.as_deref(),
+                injection_delivery_status(&insertion),
+            );
+            if let Err(error) = insertion {
+                error!(task_id, error = %error, "text_injection_failed");
+                record_injection_failure(
+                    app,
+                    u64::try_from(injection_started.elapsed().as_millis()).unwrap_or(u64::MAX),
+                );
+                emit_pill_tooltip(
+                    app,
+                    TEXT_INJECTION_ERROR_TOOLTIP_MESSAGE,
+                    PROCESSING_ERROR_TOOLTIP_DURATION_MS,
+                    Some(task_id),
+                );
+                if let Some(runtime) =
+                    app.try_state::<crate::services::product_workflows::WorkflowRuntime>()
+                {
+                    runtime.discard_staged_delivery(task_id);
+                    runtime.clear_active_task(task_id);
+                }
+                return;
+            }
+            if let Some(runtime) =
+                app.try_state::<crate::services::product_workflows::WorkflowRuntime>()
+            {
+                runtime.commit_staged_delivery(task_id);
+                runtime.clear_active_task(task_id);
+            }
             let correction_memory_enabled = {
                 let state = app.state::<AppState>();
                 let settings = state.settings.lock();
@@ -121,14 +158,30 @@ pub(crate) async fn apply_finalize_result(app: &AppHandle, task_id: u64, result:
                 crate::correction_learning::observe_post_delivery_edit(app.clone(), text);
             }
         }
-        FinalizeResult::TextAlreadyInserted(text) => {
+        FinalizeResult::TextAlreadyInserted {
+            text,
+            history_entry_id,
+            disposition,
+        } => {
             emit_recording_complete(app, task_id, &text);
             info!(
                 task_id,
+                history_entry_id = history_entry_id.as_deref().unwrap_or(""),
+                ?disposition,
                 text_len = text.len(),
-                "text_injection_skipped-direct_stream_already_inserted"
+                "text_injection_skipped-for_delivery_disposition"
             );
-            let correction_memory_enabled = {
+            if let Some(runtime) =
+                app.try_state::<crate::services::product_workflows::WorkflowRuntime>()
+            {
+                if should_observe_post_delivery(disposition) {
+                    runtime.commit_staged_delivery(task_id);
+                } else {
+                    runtime.discard_staged_delivery(task_id);
+                }
+                runtime.clear_active_task(task_id);
+            }
+            let correction_memory_enabled = should_observe_post_delivery(disposition) && {
                 let state = app.state::<AppState>();
                 let settings = state.settings.lock();
                 settings.correction_memory_enabled
@@ -138,12 +191,31 @@ pub(crate) async fn apply_finalize_result(app: &AppHandle, task_id: u64, result:
             }
         }
         FinalizeResult::TransitionToIdle => {
+            if let Some(runtime) =
+                app.try_state::<crate::services::product_workflows::WorkflowRuntime>()
+            {
+                runtime.discard_staged_delivery(task_id);
+                runtime.clear_active_task(task_id);
+            }
             emit_recording_state(app, RecordingStatus::Idle, task_id);
         }
         FinalizeResult::TransitionToErrorThenIdle => {
+            if let Some(runtime) =
+                app.try_state::<crate::services::product_workflows::WorkflowRuntime>()
+            {
+                runtime.discard_staged_delivery(task_id);
+                runtime.clear_active_task(task_id);
+            }
             emit_recording_error_then_idle(app, task_id).await;
         }
     }
+}
+
+fn should_observe_post_delivery(
+    disposition: crate::services::transcription_finalize::DeliveryDisposition,
+) -> bool {
+    disposition
+        == crate::services::transcription_finalize::DeliveryDisposition::DirectStreamInserted
 }
 
 fn emit_recording_complete(app: &AppHandle, task_id: u64, text: &str) {
@@ -161,13 +233,27 @@ pub(crate) async fn apply_retry_success(app: &AppHandle, entry_id: &str, task_id
     emit_retry_complete(app, entry_id, task_id, text);
     emit_retry_state(app, entry_id, RetryStatus::Completed, task_id);
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-    insert_text_with_metrics(
+    let injection_started = Instant::now();
+    if let Err(error) = insert_text_with_metrics(
         text,
         task_id,
         "retry",
         Some(entry_id),
         crate::text_injector::insert_text,
-    );
+    ) {
+        error!(task_id, entry_id, error = %error, "text_injection_failed");
+        record_injection_failure(
+            app,
+            u64::try_from(injection_started.elapsed().as_millis()).unwrap_or(u64::MAX),
+        );
+        emit_pill_tooltip(
+            app,
+            TEXT_INJECTION_ERROR_TOOLTIP_MESSAGE,
+            PROCESSING_ERROR_TOOLTIP_DURATION_MS,
+            None,
+        );
+        return;
+    }
     let correction_memory_enabled = {
         let state = app.state::<AppState>();
         let settings = state.settings.lock();
@@ -184,22 +270,76 @@ fn insert_text_with_metrics<F>(
     context: &'static str,
     entry_id: Option<&str>,
     insert: F,
-) -> u64
+) -> Result<(u64, crate::text_injector::InjectionMethod), String>
 where
-    F: FnOnce(&str),
+    F: FnOnce(&str) -> Result<crate::text_injector::InjectionMethod, String>,
 {
     let injection_started = Instant::now();
-    insert(text);
+    let result = insert(text);
     let injection_ms = injection_started.elapsed().as_millis() as u64;
-    info!(
-        task_id,
-        context,
-        entry_id = entry_id.unwrap_or(""),
-        text_len = text.len(),
-        injection_ms,
-        "text_injection_completed"
+    match result {
+        Ok(method) => {
+            info!(
+                task_id,
+                context,
+                entry_id = entry_id.unwrap_or(""),
+                text_len = text.len(),
+                injection_ms,
+                ?method,
+                "text_injection_completed"
+            );
+            Ok((injection_ms, method))
+        }
+        Err(error) => {
+            warn!(
+                task_id,
+                context,
+                entry_id = entry_id.unwrap_or(""),
+                text_len = text.len(),
+                injection_ms,
+                error = %error,
+                "text_injection_failed"
+            );
+            Err(error)
+        }
+    }
+}
+
+fn injection_delivery_status(
+    result: &Result<(u64, crate::text_injector::InjectionMethod), String>,
+) -> &'static str {
+    match result {
+        Ok((_, crate::text_injector::InjectionMethod::Keyboard)) => "inserted_keyboard",
+        Ok((_, crate::text_injector::InjectionMethod::Clipboard)) => "inserted_clipboard",
+        Err(_) => "failed",
+    }
+}
+
+fn update_history_delivery_status(app: &AppHandle, entry_id: Option<&str>, status: &str) {
+    let Some(entry_id) = entry_id else {
+        return;
+    };
+    let state = app.state::<AppState>();
+    if let Err(error) = state
+        .history_store
+        .lock()
+        .update_delivery_status(entry_id, status)
+    {
+        warn!(error = %error, entry_id, status, "history_delivery_status_update_failed");
+    };
+}
+
+fn record_injection_failure(app: &AppHandle, injection_ms: u64) {
+    let application_id = app
+        .try_state::<crate::services::product_workflows::WorkflowRuntime>()
+        .and_then(|runtime| runtime.context())
+        .and_then(|context| context.application_id);
+    crate::commands::platform_quality::record_quality_event(
+        &crate::services::platform_quality::QualityEvent::injection_failure(
+            application_id.as_deref(),
+            injection_ms,
+        ),
     );
-    injection_ms
 }
 
 pub(crate) fn apply_retry_error(app: &AppHandle, entry_id: &str, task_id: u64, error: &str) {
@@ -262,7 +402,14 @@ impl ProcessingEventTarget<'_> {
             Self::Recording(app) => {
                 let state = app.state::<AppState>();
                 let settings = state.settings.lock();
-                settings.polish_stream_direct_typing_enabled
+                let profile_allows_insertion = app
+                    .try_state::<crate::services::product_workflows::WorkflowRuntime>()
+                    .and_then(|runtime| runtime.profile_for_task(task_id))
+                    .is_none_or(|profile| {
+                        profile.output_action
+                            == crate::services::product_workflows::OutputAction::Insert
+                    });
+                settings.polish_stream_direct_typing_enabled && profile_allows_insertion
             }
             Self::Retry { .. } | Self::None => false,
         };
@@ -334,14 +481,21 @@ fn maybe_insert_direct_stream_delta(
     };
     drop(typed_chars);
 
-    insert_text_with_metrics(
+    let injection_started = Instant::now();
+    let injection_result = insert_text_with_metrics(
         &delta,
         task_id,
         "recording-polish-stream",
         None,
         crate::text_injector::insert_text,
     );
-    direct_stream_inserted.store(true, Ordering::SeqCst);
+    match injection_result {
+        Ok(_) => direct_stream_inserted.store(true, Ordering::SeqCst),
+        Err(_) => record_injection_failure(
+            app,
+            u64::try_from(injection_started.elapsed().as_millis()).unwrap_or(u64::MAX),
+        ),
+    }
 }
 
 fn should_type_direct_stream_delta(direct_typing_enabled: bool, is_final_update: bool) -> bool {
@@ -497,10 +651,11 @@ mod tests {
     use std::sync::Arc;
 
     use super::{
-        insert_text_with_metrics, next_direct_stream_delta, polish_error_tooltip_message,
-        polish_preview_tooltip_message, should_type_direct_stream_delta,
-        LOCAL_POLISH_TIMEOUT_TOOLTIP_MESSAGE, POLISH_ERROR_TOOLTIP_MESSAGE,
-        POLISH_PREVIEW_MAX_CHARS, POLISH_PREVIEW_PENDING_TOOLTIP_MESSAGE,
+        injection_delivery_status, insert_text_with_metrics, next_direct_stream_delta,
+        polish_error_tooltip_message, polish_preview_tooltip_message, should_observe_post_delivery,
+        should_type_direct_stream_delta, LOCAL_POLISH_TIMEOUT_TOOLTIP_MESSAGE,
+        POLISH_ERROR_TOOLTIP_MESSAGE, POLISH_PREVIEW_MAX_CHARS,
+        POLISH_PREVIEW_PENDING_TOOLTIP_MESSAGE,
     };
 
     #[test]
@@ -536,14 +691,59 @@ mod tests {
         let called = Arc::new(AtomicBool::new(false));
         let callback_called = Arc::clone(&called);
 
-        let injection_ms =
+        let (injection_ms, method) =
             insert_text_with_metrics("hello", 42, "test", Some("entry-1"), move |text| {
                 assert_eq!(text, "hello");
                 callback_called.store(true, Ordering::SeqCst);
-            });
+                Ok(crate::text_injector::InjectionMethod::Keyboard)
+            })
+            .unwrap();
 
         assert!(called.load(Ordering::SeqCst));
         assert!(injection_ms < 1_000);
+        assert_eq!(method, crate::text_injector::InjectionMethod::Keyboard);
+    }
+
+    #[test]
+    fn insert_text_with_metrics_propagates_delivery_failure() {
+        let error = insert_text_with_metrics("hello", 42, "test", None, |_| {
+            Err("target rejected input".to_string())
+        })
+        .unwrap_err();
+
+        assert_eq!(error, "target rejected input");
+    }
+
+    #[test]
+    fn injection_result_maps_to_exact_history_delivery_status() {
+        assert_eq!(
+            injection_delivery_status(&Ok((1, crate::text_injector::InjectionMethod::Keyboard,))),
+            "inserted_keyboard"
+        );
+        assert_eq!(
+            injection_delivery_status(&Ok((1, crate::text_injector::InjectionMethod::Clipboard,))),
+            "inserted_clipboard"
+        );
+        assert_eq!(
+            injection_delivery_status(&Err("target rejected input".to_string())),
+            "failed"
+        );
+    }
+
+    #[test]
+    fn post_delivery_observation_only_runs_for_text_inserted_by_the_stream() {
+        use crate::services::transcription_finalize::DeliveryDisposition;
+
+        assert!(should_observe_post_delivery(
+            DeliveryDisposition::DirectStreamInserted
+        ));
+        for disposition in [
+            DeliveryDisposition::Preview,
+            DeliveryDisposition::Copied,
+            DeliveryDisposition::CopyFailed,
+        ] {
+            assert!(!should_observe_post_delivery(disposition));
+        }
     }
 
     #[test]

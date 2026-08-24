@@ -1,4 +1,4 @@
-//! Shared test utilities for AriaType tests
+//! Shared test utilities for Voice Flow tests
 #![allow(dead_code, unused_imports)]
 
 pub mod audio_fixtures;

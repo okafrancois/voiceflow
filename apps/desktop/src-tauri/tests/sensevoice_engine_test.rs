@@ -3,9 +3,9 @@
 //! These tests cover both unit tests (which always run) and integration tests
 //! that use real models (marked with #[ignore] for CI but can be run locally).
 
-use ariatype_lib::stt_engine::{traits::TranscriptionRequest, EngineType, UnifiedEngineManager};
 use hound::{WavSpec, WavWriter};
 use std::io::Cursor;
+use voiceflow_lib::stt_engine::{traits::TranscriptionRequest, EngineType, UnifiedEngineManager};
 
 fn create_speech_like_wav(sample_rate: u32, channels: u16, duration_secs: f32) -> Vec<u8> {
     let samples_per_channel = (sample_rate as f32 * duration_secs) as usize;
@@ -59,7 +59,7 @@ fn wav_to_samples_mono_16khz(wav_data: &[u8]) -> Vec<f32> {
     };
 
     if spec.sample_rate != 16000 {
-        ariatype_lib::audio::resampler::resample_to_16khz(&mono, spec.sample_rate).unwrap()
+        voiceflow_lib::audio::resampler::resample_to_16khz(&mono, spec.sample_rate).unwrap()
     } else {
         mono
     }

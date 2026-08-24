@@ -107,7 +107,7 @@ fn cleanup_old_logs(log_dir: &std::path::Path, keep_days: u64) {
             continue;
         }
         let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-        if !name.starts_with("ariatype.log") {
+        if !name.starts_with("voiceflow.log") {
             continue;
         }
         if let Ok(meta) = std::fs::metadata(&path) {
@@ -154,7 +154,7 @@ fn init_logging() {
 
     cleanup_old_logs(&log_dir, 7);
 
-    let file_appender = tracing_appender::rolling::hourly(&log_dir, "ariatype.log");
+    let file_appender = tracing_appender::rolling::hourly(&log_dir, "voiceflow.log");
     let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
 
     // Leak the guard to ensure logs are flushed for the entire app lifetime.
@@ -227,23 +227,35 @@ pub fn run() {
     // Early stderr output is sufficient for pre-setup panics
 
     let builder = tauri::Builder::default()
+        // The single-instance plugin must be first so Windows/Linux deep-link
+        // arguments are forwarded to the running process.
+        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            let _ = app.emit("single-instance", ());
+            if crate::services::platform_quality::should_show_main_for_args(&argv) {
+                show_main_window_best_effort(app, "single_instance");
+            }
+            for url in crate::services::platform_quality::bridge_urls_from_args(&argv) {
+                if let Err(error) =
+                    crate::commands::platform_quality::dispatch_bridge_url(app.clone(), url)
+                {
+                    tracing::warn!(error = %error, "single_instance_deep_link_rejected");
+                }
+            }
+        }))
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_aptabase::Builder::new("A-US-3957940978").build())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_process::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
-        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
-            let _ = app.emit("single-instance", ());
-            show_main_window_best_effort(app, "single_instance");
-        }));
+        .plugin(tauri_plugin_updater::Builder::new().build());
 
     #[cfg(target_os = "macos")]
     let builder = builder.plugin(tauri_nspanel::init());
 
     #[cfg(feature = "e2e-testing")]
     let playwright_socket = std::env::var("TAURI_PLAYWRIGHT_SOCKET")
-        .unwrap_or_else(|_| "/tmp/ariatype-tauri-playwright.sock".to_string());
+        .unwrap_or_else(|_| "/tmp/voiceflow-tauri-playwright.sock".to_string());
 
     #[cfg(feature = "e2e-testing")]
     let builder = builder.plugin(tauri_plugin_playwright::init_with_config(
@@ -323,10 +335,55 @@ pub fn run() {
             history::get_dashboard_stats,
             history::get_daily_usage,
             history::get_engine_usage,
+            history::get_retention_status,
             history::get_history_count,
             history::delete_transcription_entry,
             history::clear_transcription_history,
             history::retry_transcription,
+            history::select_media_file,
+            history::select_export_file,
+            history::transcribe_media_file,
+            history::start_file_transcription_job,
+            history::get_file_transcription_job,
+            history::list_file_transcription_jobs,
+            history::cancel_file_transcription_job,
+            history::retranscribe_history_entry,
+            history::repolish_history_entry,
+            history::export_history_entry,
+            history::get_history_audio,
+            history::copy_history_entry,
+            history::reinsert_history_entry,
+            commands::platform_quality::run_setup_diagnostics,
+            commands::platform_quality::run_setup_latency_test,
+            commands::platform_quality::apply_setup_preset,
+            commands::platform_quality::set_code_context,
+            commands::platform_quality::get_code_context,
+            commands::platform_quality::clear_code_context,
+            commands::platform_quality::format_code_transcript,
+            commands::platform_quality::get_quality_summary,
+            commands::platform_quality::get_quality_events,
+            commands::platform_quality::clear_quality_metrics,
+            commands::platform_quality::export_quality_metrics,
+            commands::platform_quality::execute_bridge_url,
+            commands::product_workflows::get_workflow_settings,
+            commands::product_workflows::capture_workflow_context,
+            commands::product_workflows::get_latest_workflow_context,
+            commands::product_workflows::resolve_workflow_profile,
+            commands::product_workflows::create_workflow_profile,
+            commands::product_workflows::update_workflow_profile,
+            commands::product_workflows::delete_workflow_profile,
+            commands::product_workflows::set_application_rules,
+            commands::product_workflows::upsert_application_rule,
+            commands::product_workflows::delete_application_rule,
+            commands::product_workflows::set_voice_snippets,
+            commands::product_workflows::upsert_voice_snippet,
+            commands::product_workflows::delete_voice_snippet,
+            commands::product_workflows::set_context_capture_settings,
+            commands::product_workflows::expand_voice_snippet,
+            commands::product_workflows::run_voice_action,
+            commands::product_workflows::replace_voice_action_preview,
+            commands::product_workflows::record_workflow_delivery,
+            commands::product_workflows::run_quick_control,
             hotkey::start_hotkey_capture,
             hotkey::stop_hotkey_capture,
             hotkey::cancel_hotkey_capture,
@@ -355,7 +412,54 @@ pub fn run() {
             // Initialize AppState now that AppPaths is configured
             let state = AppState::new();
             app.manage(state);
+            app.manage(crate::services::product_workflows::WorkflowRuntime::default());
             tracing::info!("app_state_initialized");
+
+            match crate::commands::platform_quality::start_developer_bridge(app.handle().clone()) {
+                Ok(endpoint) => tracing::info!(
+                    address = %endpoint.address,
+                    protocol_version = endpoint.protocol_version,
+                    "developer_bridge_started"
+                ),
+                Err(error) => tracing::warn!(error = %error, "developer_bridge_start_failed"),
+            }
+
+            {
+                use tauri_plugin_deep_link::DeepLinkExt;
+
+                let handle = app.handle().clone();
+                app.deep_link().on_open_url(move |event| {
+                    for url in event.urls() {
+                        if let Err(error) =
+                            crate::commands::platform_quality::dispatch_bridge_url(
+                                handle.clone(),
+                                url.as_str(),
+                            )
+                        {
+                            tracing::warn!(error = %error, "deep_link_request_rejected");
+                        }
+                    }
+                });
+
+                match app.deep_link().get_current() {
+                    Ok(Some(urls)) => {
+                        for url in urls {
+                            if let Err(error) =
+                                crate::commands::platform_quality::dispatch_bridge_url(
+                                    app.handle().clone(),
+                                    url.as_str(),
+                                )
+                            {
+                                tracing::warn!(error = %error, "startup_deep_link_rejected");
+                            }
+                        }
+                    }
+                    Ok(None) => {}
+                    Err(error) => {
+                        tracing::warn!(error = %error, "startup_deep_link_read_failed")
+                    }
+                }
+            }
 
             // Initialize beep player with settings
             crate::audio::beep::init_beep_player();
@@ -387,11 +491,54 @@ pub fn run() {
 
             {
                 let state = app.state::<AppState>();
+                let (text_retention, audio_retention) = {
+                    let settings = state.settings.lock();
+                    (settings.text_retention, settings.audio_retention)
+                };
                 let store = state.history_store.lock();
-                if let Err(e) = store.cleanup_old_entries(90) {
-                    tracing::warn!(error = %e, "history_cleanup_failed");
+                match store.cleanup_retention(text_retention, audio_retention) {
+                    Ok(report) => tracing::info!(
+                        text_entries_deleted = report.text_entries_deleted,
+                        audio_files_deleted = report.audio_files_deleted,
+                        missing_audio_references_cleared = report.missing_audio_references_cleared,
+                        "startup_retention_cleanup_complete"
+                    ),
+                    Err(e) => tracing::warn!(error = %e, "startup_retention_cleanup_incomplete"),
+                }
+                match store.cleanup_orphaned_audio_files(&crate::utils::AppPaths::recordings_dir()) {
+                    Ok(deleted) => tracing::info!(deleted, "startup_orphaned_audio_cleanup_complete"),
+                    Err(e) => tracing::warn!(error = %e, "startup_orphaned_audio_cleanup_failed"),
                 }
             }
+
+            let retention_app = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let mut interval = tokio::time::interval(std::time::Duration::from_secs(60 * 60));
+                interval.tick().await;
+                loop {
+                    interval.tick().await;
+                    let Some(state) = retention_app.try_state::<AppState>() else {
+                        break;
+                    };
+                    let (text_retention, audio_retention) = {
+                        let settings = state.settings.lock();
+                        (settings.text_retention, settings.audio_retention)
+                    };
+                    let store = state.history_store.lock();
+                    match store.cleanup_retention(text_retention, audio_retention) {
+                        Ok(report) => tracing::info!(
+                            text_entries_deleted = report.text_entries_deleted,
+                            audio_files_deleted = report.audio_files_deleted,
+                            missing_audio_references_cleared = report.missing_audio_references_cleared,
+                            "scheduled_retention_cleanup_complete"
+                        ),
+                        Err(error) => tracing::warn!(
+                            error = %error,
+                            "scheduled_retention_cleanup_incomplete"
+                        ),
+                    }
+                }
+            });
 
             // Auto-ensure default model at startup
             let app_ensure = app.handle().clone();
@@ -452,7 +599,7 @@ pub fn run() {
                         }
 
                         api.prevent_close();
-                        if stay_in_tray && app_handle.tray_by_id("ariatype-tray").is_none() {
+                        if stay_in_tray && app_handle.tray_by_id("voiceflow-tray").is_none() {
                             if let Err(e) = tray::show_tray(&app_handle) {
                                 tracing::warn!(error = %e, "tray_show_failed-main_window_close");
                             }
@@ -679,7 +826,7 @@ pub fn run() {
             // Initialize ShortcutManager and register all profiles from settings
             let profiles = {
                 let state = app.state::<AppState>();
-                let profiles = state.settings.lock().shortcut_profiles.clone();
+                let profiles = state.settings.lock().workflow_profiles.clone();
                 profiles
             };
 
@@ -710,10 +857,14 @@ pub fn run() {
                         }
                     }
 
-                    register_profile(&shortcut_manager, "dictate", &profiles.dictate, app.handle());
-                    register_profile(&shortcut_manager, "riff", &profiles.riff, app.handle());
-                    if let Some(custom) = &profiles.custom {
-                        register_profile(&shortcut_manager, "custom", custom, app.handle());
+                    for profile in &profiles {
+                        let shortcut_profile = profile.shortcut_profile();
+                        register_profile(
+                            &shortcut_manager,
+                            &profile.id,
+                            &shortcut_profile,
+                            app.handle(),
+                        );
                     }
 
                     app.manage(shortcut_manager);

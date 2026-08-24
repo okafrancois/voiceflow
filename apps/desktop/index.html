@@ -7,7 +7,13 @@
     <title>Voice Flow</title>
     <script>
       (function () {
-        var t = localStorage.getItem("ariatype-theme");
+        var currentKey = "voiceflow-theme";
+        var legacyKey = ["aria", "type-theme"].join("");
+        var t = localStorage.getItem(currentKey) || localStorage.getItem(legacyKey);
+        if (t && !localStorage.getItem(currentKey)) {
+          localStorage.setItem(currentKey, t);
+          localStorage.removeItem(legacyKey);
+        }
         var isDark = t === "dark" || (!t && window.matchMedia("(prefers-color-scheme: dark)").matches);
         document.documentElement.classList.toggle("dark", isDark);
       })();

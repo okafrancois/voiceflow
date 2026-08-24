@@ -3,11 +3,11 @@
 //! Provides a configurable mock implementation of the STT engine trait
 //! for use in integration and unit tests.
 
-use ariatype_lib::stt_engine::traits::{PartialResultCallback, RecordingConsumer};
-use ariatype_lib::stt_engine::{EngineType, TranscriptionRequest, TranscriptionResult};
 use async_trait::async_trait;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use voiceflow_lib::stt_engine::traits::{PartialResultCallback, RecordingConsumer};
+use voiceflow_lib::stt_engine::{EngineType, TranscriptionRequest, TranscriptionResult};
 
 /// Mock STT engine with configurable behavior
 pub struct MockSttEngine {

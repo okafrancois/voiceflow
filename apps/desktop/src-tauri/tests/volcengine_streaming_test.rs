@@ -3,11 +3,11 @@ use std::io::Cursor;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ariatype_lib::commands::settings::CloudSttConfig;
-    use ariatype_lib::stt_engine::cloud::volcengine_streaming::{
-        StreamingMode, VolcengineStreamingClient, RECOMMENDED_CHUNK_SAMPLES, URL_BIGMODEL_NOSTREAM,
+    use voiceflow_lib::commands::settings::CloudSttConfig;
+    use voiceflow_lib::stt_engine::cloud::volcengine_streaming::{
+        VolcengineStreamingClient, RECOMMENDED_CHUNK_SAMPLES, URL_BIGMODEL_NOSTREAM,
     };
-    use ariatype_lib::stt_engine::traits::{PartialResult, SttContext};
+    use voiceflow_lib::stt_engine::traits::{PartialResult, SttContext};
 
     fn create_test_wav(sample_rate: u32, channels: u16, duration_secs: f32) -> Vec<u8> {
         let samples_per_channel = (sample_rate as f32 * duration_secs) as usize;
@@ -114,16 +114,11 @@ mod tests {
     }
 
     #[test]
-    fn test_streaming_mode_default() {
-        assert_eq!(StreamingMode::default(), StreamingMode::NoStream);
-    }
-
-    #[test]
     #[ignore]
     fn test_streaming_client_connect() {
         // This test requires real API credentials
-        let settings_path =
-            std::env::var("ARIATYPE_SETTINGS_PATH").unwrap_or_else(|_| "settings.json".to_string());
+        let settings_path = std::env::var("VOICEFLOW_SETTINGS_PATH")
+            .unwrap_or_else(|_| "settings.json".to_string());
 
         if !std::path::Path::new(&settings_path).exists() {
             eprintln!("Skipping integration test: settings.json not found");
@@ -132,7 +127,7 @@ mod tests {
 
         let settings_content =
             std::fs::read_to_string(&settings_path).expect("Failed to read settings");
-        let app_settings: ariatype_lib::commands::settings::AppSettings =
+        let app_settings: voiceflow_lib::commands::settings::AppSettings =
             serde_json::from_str(&settings_content).expect("Failed to parse settings");
 
         let cloud_stt_config = app_settings.get_active_cloud_stt_config();
@@ -168,8 +163,8 @@ mod tests {
     #[ignore]
     fn test_streaming_client_send_audio() {
         // This test requires real API credentials and connection
-        let settings_path =
-            std::env::var("ARIATYPE_SETTINGS_PATH").unwrap_or_else(|_| "settings.json".to_string());
+        let settings_path = std::env::var("VOICEFLOW_SETTINGS_PATH")
+            .unwrap_or_else(|_| "settings.json".to_string());
 
         if !std::path::Path::new(&settings_path).exists() {
             eprintln!("Skipping integration test: settings.json not found");
@@ -178,7 +173,7 @@ mod tests {
 
         let settings_content =
             std::fs::read_to_string(&settings_path).expect("Failed to read settings");
-        let app_settings: ariatype_lib::commands::settings::AppSettings =
+        let app_settings: voiceflow_lib::commands::settings::AppSettings =
             serde_json::from_str(&settings_content).expect("Failed to parse settings");
 
         let cloud_stt_config = app_settings.get_active_cloud_stt_config();
@@ -232,8 +227,8 @@ mod tests {
     #[ignore]
     fn test_streaming_client_receive_result() {
         // This test requires real API credentials and audio to process
-        let settings_path =
-            std::env::var("ARIATYPE_SETTINGS_PATH").unwrap_or_else(|_| "settings.json".to_string());
+        let settings_path = std::env::var("VOICEFLOW_SETTINGS_PATH")
+            .unwrap_or_else(|_| "settings.json".to_string());
 
         if !std::path::Path::new(&settings_path).exists() {
             eprintln!("Skipping integration test: settings.json not found");
@@ -242,7 +237,7 @@ mod tests {
 
         let settings_content =
             std::fs::read_to_string(&settings_path).expect("Failed to read settings");
-        let app_settings: ariatype_lib::commands::settings::AppSettings =
+        let app_settings: voiceflow_lib::commands::settings::AppSettings =
             serde_json::from_str(&settings_content).expect("Failed to parse settings");
 
         let cloud_stt_config = app_settings.get_active_cloud_stt_config();
@@ -339,8 +334,8 @@ mod tests {
     #[ignore]
     fn test_streaming_client_finish() {
         // This test requires real API credentials
-        let settings_path =
-            std::env::var("ARIATYPE_SETTINGS_PATH").unwrap_or_else(|_| "settings.json".to_string());
+        let settings_path = std::env::var("VOICEFLOW_SETTINGS_PATH")
+            .unwrap_or_else(|_| "settings.json".to_string());
 
         if !std::path::Path::new(&settings_path).exists() {
             eprintln!("Skipping integration test: settings.json not found");
@@ -349,7 +344,7 @@ mod tests {
 
         let settings_content =
             std::fs::read_to_string(&settings_path).expect("Failed to read settings");
-        let app_settings: ariatype_lib::commands::settings::AppSettings =
+        let app_settings: voiceflow_lib::commands::settings::AppSettings =
             serde_json::from_str(&settings_content).expect("Failed to parse settings");
 
         let cloud_stt_config = app_settings.get_active_cloud_stt_config();

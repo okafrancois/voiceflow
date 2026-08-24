@@ -26,7 +26,8 @@ mod manager;
 // Public API
 pub use manager::ShortcutManager;
 pub use profile_types::{
-    ShortcutAction, ShortcutProfile, ShortcutProfilesMap, ShortcutTriggerMode,
+    default_dictate_hotkey, default_riff_hotkey, ShortcutAction, ShortcutProfile,
+    ShortcutProfilesMap, ShortcutTriggerMode,
 };
 pub use types::{HotkeyConfig, ShortcutCommand, ShortcutEvent, ShortcutState};
 

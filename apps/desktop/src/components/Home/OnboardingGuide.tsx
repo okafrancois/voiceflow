@@ -18,13 +18,15 @@ import { cn } from "@/lib/utils";
 import { logger } from "@/lib/logger";
 import { analytics } from "@/lib/analytics";
 import { AnalyticsEvents } from "@/lib/events";
-import { showToast } from "@/lib/toast";
+import { showErrorToast, showToast } from "@/lib/toast";
 import {
   systemCommands,
   modelCommands,
   events,
   audioCommands,
+  platformQualityCommands,
   type RecommendedModel,
+  type SetupPreset,
 } from "@/lib/tauri";
 import { useSettingsContext } from "@/contexts/SettingsContext";
 import { HotkeyInput, formatHotkey } from "@/components/ui/hotkey-input";
@@ -46,7 +48,7 @@ import {
 } from "./ModalShell";
 
 const DEFAULT_HOTKEY = "Shift+Space";
-const ONBOARDING_RESET_EVENT = "ariatype:onboarding-reset";
+const ONBOARDING_RESET_EVENT = "voiceflow:onboarding-reset";
 
 const SENSEVOICE_PREFERRED_ONBOARDING = ["zh-CN", "zh-TW", "yue-CN", "ja-JP", "ko-KR", "en-US"];
 
@@ -882,6 +884,49 @@ function DoneStep() {
               </span>
             </div>
           </div>
+        ))}
+      </div>
+      <OnboardingPresetControl />
+    </div>
+  );
+}
+
+export function OnboardingPresetControl() {
+  const { t } = useTranslation();
+  const [busyPreset, setBusyPreset] = useState<SetupPreset | null>(null);
+  const presets: { value: SetupPreset; label: string }[] = [
+    { value: "private", label: t("platformQuality.presets.private") },
+    { value: "balanced", label: t("platformQuality.presets.balanced") },
+    { value: "maximum_accuracy", label: t("platformQuality.presets.maximum_accuracy") },
+  ];
+
+  const applyPreset = async (preset: SetupPreset) => {
+    setBusyPreset(preset);
+    try {
+      await platformQualityCommands.applyPreset(preset);
+      showToast(t("platformQuality.presets.applied"));
+    } catch (error) {
+      showErrorToast(`${t("platformQuality.error.preset")} ${String(error)}`);
+    } finally {
+      setBusyPreset(null);
+    }
+  };
+
+  return (
+    <div className="w-full space-y-2" data-testid="onboarding-preset-control">
+      <p className="text-sm font-medium">{t("platformQuality.onboarding.title")}</p>
+      <p className="text-xs text-muted-foreground">{t("platformQuality.onboarding.description")}</p>
+      <div className="grid grid-cols-3 gap-2">
+        {presets.map((preset) => (
+          <Button
+            key={preset.value}
+            size="sm"
+            variant="outline"
+            disabled={busyPreset !== null}
+            onClick={() => applyPreset(preset.value)}
+          >
+            {preset.label}
+          </Button>
         ))}
       </div>
     </div>

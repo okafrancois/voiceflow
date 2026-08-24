@@ -5,15 +5,11 @@
 //! 2. Retry validates entry state and audio file existence
 //! 3. Retry updates entry on success or re-marks error on failure
 
-use ariatype_lib::history::models::NewTranscriptionEntry;
-use ariatype_lib::history::store::{EntryUpdates, HistoryStore};
-use tempfile::TempDir;
+use voiceflow_lib::history::models::NewTranscriptionEntry;
+use voiceflow_lib::history::store::{EntryUpdates, HistoryStore};
 
 fn test_store() -> HistoryStore {
-    // Create temp directory for test database
-    let temp_dir = TempDir::new().unwrap();
-    std::env::set_current_dir(temp_dir.path()).unwrap();
-    HistoryStore::new().unwrap()
+    HistoryStore::new_in_memory().unwrap()
 }
 
 /// Helper to create an error entry for retry testing
@@ -34,6 +30,11 @@ fn create_error_entry(store: &HistoryStore, audio_path: Option<&str>, error_msg:
         audio_path: audio_path.map(|s| s.to_string()),
         status: "error".to_string(),
         error: Some(error_msg.to_string()),
+        source_kind: "recording".to_string(),
+        source_path: None,
+        translation_target: None,
+        timed_segments: Vec::new(),
+        delivery_status: "not_recorded".to_string(),
     };
     store.insert(entry).unwrap()
 }
@@ -56,6 +57,11 @@ fn create_success_entry(store: &HistoryStore, text: &str) -> String {
         audio_path: None,
         status: "success".to_string(),
         error: None,
+        source_kind: "recording".to_string(),
+        source_path: None,
+        translation_target: None,
+        timed_segments: Vec::new(),
+        delivery_status: "not_recorded".to_string(),
     };
     store.insert(entry).unwrap()
 }

@@ -1,12 +1,13 @@
-use ariatype_lib::commands::settings::CloudSttConfig;
-use ariatype_lib::stt_engine::cloud::volcengine_streaming::VolcengineStreamingClient;
-use ariatype_lib::stt_engine::traits::{PartialResult, SttContext};
 use futures_util::{SinkExt, StreamExt};
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::sync::Mutex;
-use tokio_tungstenite::accept_async;
+use tokio_tungstenite::tungstenite::handshake::server::{Request, Response};
 use tokio_tungstenite::tungstenite::protocol::Message;
+use tokio_tungstenite::{accept_async, accept_hdr_async};
+use voiceflow_lib::commands::settings::CloudSttConfig;
+use voiceflow_lib::stt_engine::cloud::volcengine_streaming::VolcengineStreamingClient;
+use voiceflow_lib::stt_engine::traits::{PartialResult, SttContext};
 
 // Helper to build headers
 fn build_header(
@@ -34,9 +35,23 @@ async fn test_volcengine_streaming_mock_flow() {
     let partials_clone = partial_results_received.clone();
 
     // Spawn server task
-    tokio::spawn(async move {
+    let server = tokio::spawn(async move {
         let (stream, _) = listener.accept().await.unwrap();
-        let mut ws_stream = accept_async(stream).await.unwrap();
+        let mut ws_stream = accept_hdr_async(stream, |request: &Request, response: Response| {
+            assert_eq!(request.headers().get("x-api-app-key").unwrap(), "mock-app");
+            assert_eq!(
+                request.headers().get("x-api-access-key").unwrap(),
+                "mock-key"
+            );
+            assert_eq!(
+                request.headers().get("x-api-resource-id").unwrap(),
+                "mock-model"
+            );
+            assert!(request.headers().contains_key("x-api-connect-id"));
+            Ok(response)
+        })
+        .await
+        .unwrap();
 
         // Expect full client request
         if let Some(Ok(Message::Binary(data))) = ws_stream.next().await {
@@ -181,6 +196,7 @@ async fn test_volcengine_streaming_mock_flow() {
 
     // Finish sending
     client.finish().await.expect("Failed to finish client");
+    server.await.unwrap();
 
     // Wait for final result
     let final_text = tokio::time::timeout(std::time::Duration::from_secs(5), result_rx)

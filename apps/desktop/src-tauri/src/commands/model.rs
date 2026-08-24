@@ -13,7 +13,7 @@ use tracing::{error, info, instrument, warn};
 
 #[cfg(feature = "e2e-testing")]
 fn e2e_fast_model_download_enabled() -> bool {
-    std::env::var("ARIATYPE_E2E_FAST_MODEL_DOWNLOAD").as_deref() == Ok("1")
+    std::env::var("VOICEFLOW_E2E_FAST_MODEL_DOWNLOAD").as_deref() == Ok("1")
 }
 
 #[cfg(not(feature = "e2e-testing"))]

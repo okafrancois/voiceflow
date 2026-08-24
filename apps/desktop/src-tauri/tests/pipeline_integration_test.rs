@@ -82,7 +82,7 @@ fn wav_to_samples_mono_16khz(wav_data: &[u8]) -> Vec<f32> {
     };
 
     if spec.sample_rate != 16000 {
-        ariatype_lib::audio::resampler::resample_to_16khz(&mono, spec.sample_rate).unwrap()
+        voiceflow_lib::audio::resampler::resample_to_16khz(&mono, spec.sample_rate).unwrap()
     } else {
         mono
     }
@@ -137,7 +137,7 @@ fn test_resampling_pipeline() {
         .collect();
 
     let audio_f32: Vec<f32> = samples_i16.iter().map(|&s| s as f32 / 32768.0).collect();
-    let resampled = ariatype_lib::audio::resampler::resample_to_16khz(&audio_f32, 44100).unwrap();
+    let resampled = voiceflow_lib::audio::resampler::resample_to_16khz(&audio_f32, 44100).unwrap();
 
     let expected = 32000.0;
     let tolerance = expected * 0.05;
@@ -275,20 +275,20 @@ fn test_last_packet_flag() {
 
 #[test]
 fn test_recommended_chunk_duration() {
-    use ariatype_lib::stt_engine::cloud::volcengine_streaming::RECOMMENDED_CHUNK_SAMPLES;
+    use voiceflow_lib::stt_engine::cloud::volcengine_streaming::RECOMMENDED_CHUNK_SAMPLES;
 
     let duration_ms = (RECOMMENDED_CHUNK_SAMPLES as f64 / 16000.0) * 1000.0;
     assert!((duration_ms - 100.0).abs() < 1.0);
 }
 
 #[test]
-fn test_streaming_mode_urls() {
-    use ariatype_lib::stt_engine::cloud::volcengine_streaming::*;
+fn test_volcengine_production_endpoint() {
+    use voiceflow_lib::stt_engine::cloud::volcengine_streaming::*;
 
-    assert!(URL_BIGMODEL_NOSTREAM.contains("nostream"));
-    assert!(URL_BIGMODEL.contains("bigmodel"));
-    assert!(!URL_BIGMODEL.contains("nostream"));
-    assert!(URL_BIGMODEL_ASYNC.contains("async"));
+    assert_eq!(
+        URL_BIGMODEL_NOSTREAM,
+        "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_nostream"
+    );
 }
 
 // ==================== Edge Cases ====================
@@ -315,7 +315,7 @@ fn test_high_sample_rate() {
         .collect();
 
     let audio_f32: Vec<f32> = samples_i16.iter().map(|&s| s as f32 / 32768.0).collect();
-    let resampled = ariatype_lib::audio::resampler::resample_to_16khz(&audio_f32, 96000).unwrap();
+    let resampled = voiceflow_lib::audio::resampler::resample_to_16khz(&audio_f32, 96000).unwrap();
 
     let expected = 16000.0;
     let tolerance = expected * 0.05;
@@ -328,7 +328,7 @@ fn test_high_sample_rate() {
 // ==================== Mock Engine Tests ====================
 
 mod mock_stt {
-    use ariatype_lib::stt_engine::{EngineType, TranscriptionRequest, TranscriptionResult};
+    use voiceflow_lib::stt_engine::{EngineType, TranscriptionRequest, TranscriptionResult};
 
     pub struct MockSttEngine {
         pub result_text: String,
@@ -373,7 +373,7 @@ mod mock_stt {
 }
 
 mod mock_polish {
-    use ariatype_lib::polish_engine::{PolishEngineType, PolishRequest, PolishResult};
+    use voiceflow_lib::polish_engine::{PolishEngineType, PolishRequest, PolishResult};
 
     pub struct MockPolishEngine {
         pub result_text: String,
@@ -417,11 +417,14 @@ mod mock_polish {
 async fn test_mock_stt_engine_success() {
     let engine = mock_stt::MockSttEngine::new("Hello world");
 
-    let request = ariatype_lib::stt_engine::TranscriptionRequest::new(vec![0.0f32; 16000]);
+    let request = voiceflow_lib::stt_engine::TranscriptionRequest::new(vec![0.0f32; 16000]);
     let result = engine.transcribe(request).await.unwrap();
 
     assert_eq!(result.text, "Hello world");
-    assert_eq!(result.engine, ariatype_lib::stt_engine::EngineType::Whisper);
+    assert_eq!(
+        result.engine,
+        voiceflow_lib::stt_engine::EngineType::Whisper
+    );
     assert!(result.total_ms >= 100);
 }
 
@@ -429,7 +432,7 @@ async fn test_mock_stt_engine_success() {
 async fn test_mock_stt_engine_failure() {
     let engine = mock_stt::MockSttEngine::new("Should not appear").with_failure();
 
-    let request = ariatype_lib::stt_engine::TranscriptionRequest::new(vec![0.0f32; 16000]);
+    let request = voiceflow_lib::stt_engine::TranscriptionRequest::new(vec![0.0f32; 16000]);
     let result = engine.transcribe(request).await;
 
     assert!(result.is_err());
@@ -441,13 +444,13 @@ async fn test_mock_polish_engine_success() {
     let engine = mock_polish::MockPolishEngine::new("Polished text");
 
     let request =
-        ariatype_lib::polish_engine::PolishRequest::new("Raw text", "System prompt", "en");
+        voiceflow_lib::polish_engine::PolishRequest::new("Raw text", "System prompt", "en");
     let result = engine.polish(request).await.unwrap();
 
     assert_eq!(result.text, "Polished text");
     assert_eq!(
         result.engine,
-        ariatype_lib::polish_engine::PolishEngineType::Qwen
+        voiceflow_lib::polish_engine::PolishEngineType::Qwen
     );
 }
 
@@ -456,7 +459,7 @@ async fn test_mock_polish_engine_failure() {
     let engine = mock_polish::MockPolishEngine::new("Should not appear").with_failure();
 
     let request =
-        ariatype_lib::polish_engine::PolishRequest::new("Raw text", "System prompt", "en");
+        voiceflow_lib::polish_engine::PolishRequest::new("Raw text", "System prompt", "en");
     let result = engine.polish(request).await;
 
     assert!(result.is_err());
@@ -473,11 +476,11 @@ async fn run_pipeline(
     let stt = mock_stt::MockSttEngine::new(stt_result);
     let polish = mock_polish::MockPolishEngine::new(polish_result);
 
-    let stt_request = ariatype_lib::stt_engine::TranscriptionRequest::new(samples);
+    let stt_request = voiceflow_lib::stt_engine::TranscriptionRequest::new(samples);
     let stt_result = stt.transcribe(stt_request).await?;
 
     if polish_enabled && !stt_result.text.is_empty() {
-        let polish_request = ariatype_lib::polish_engine::PolishRequest::new(
+        let polish_request = voiceflow_lib::polish_engine::PolishRequest::new(
             stt_result.text.clone(),
             "Polish this text",
             "en",
@@ -520,7 +523,7 @@ async fn test_pipeline_transcribe_and_polish() {
 #[tokio::test]
 async fn test_pipeline_stt_fails_gracefully() {
     let stt = mock_stt::MockSttEngine::new("Should fail").with_failure();
-    let request = ariatype_lib::stt_engine::TranscriptionRequest::new(vec![0.0f32; 16000]);
+    let request = voiceflow_lib::stt_engine::TranscriptionRequest::new(vec![0.0f32; 16000]);
     let result = stt.transcribe(request).await;
 
     assert!(result.is_err());
@@ -549,7 +552,7 @@ fn benchmark_resampling_performance() {
         .collect();
 
     let start = Instant::now();
-    let resampled = ariatype_lib::audio::resampler::resample_to_16khz(&samples, 44100).unwrap();
+    let resampled = voiceflow_lib::audio::resampler::resample_to_16khz(&samples, 44100).unwrap();
     let duration = start.elapsed();
 
     println!("Resampled 10s of 44.1kHz audio to 16kHz in {:?}", duration);
@@ -585,21 +588,21 @@ fn test_whisper_real_transcription() {
     let wav_data = create_test_wav(16000, 1, 2.0);
     let samples = wav_to_samples_mono_16khz(&wav_data);
 
-    let models_dir = ariatype_lib::stt_engine::UnifiedEngineManager::default_models_dir();
-    let manager = ariatype_lib::stt_engine::UnifiedEngineManager::new(models_dir);
+    let models_dir = voiceflow_lib::stt_engine::UnifiedEngineManager::default_models_dir();
+    let manager = voiceflow_lib::stt_engine::UnifiedEngineManager::new(models_dir);
 
-    if !manager.is_model_downloaded(ariatype_lib::stt_engine::EngineType::Whisper, "base") {
+    if !manager.is_model_downloaded(voiceflow_lib::stt_engine::EngineType::Whisper, "base") {
         println!("Skipping: Whisper base model not downloaded");
         return;
     }
 
     let rt = tokio::runtime::Runtime::new().unwrap();
     let result = rt.block_on(async {
-        let request = ariatype_lib::stt_engine::TranscriptionRequest::new(samples)
+        let request = voiceflow_lib::stt_engine::TranscriptionRequest::new(samples)
             .with_model("base")
             .with_language("en");
         manager
-            .transcribe(ariatype_lib::stt_engine::EngineType::Whisper, request)
+            .transcribe(voiceflow_lib::stt_engine::EngineType::Whisper, request)
             .await
     });
 
@@ -612,11 +615,11 @@ fn test_sensevoice_real_transcription() {
     let wav_data = create_test_wav(16000, 1, 2.0);
     let samples = wav_to_samples_mono_16khz(&wav_data);
 
-    let models_dir = ariatype_lib::stt_engine::UnifiedEngineManager::default_models_dir();
-    let manager = ariatype_lib::stt_engine::UnifiedEngineManager::new(models_dir);
+    let models_dir = voiceflow_lib::stt_engine::UnifiedEngineManager::default_models_dir();
+    let manager = voiceflow_lib::stt_engine::UnifiedEngineManager::new(models_dir);
 
     if !manager.is_model_downloaded(
-        ariatype_lib::stt_engine::EngineType::SenseVoice,
+        voiceflow_lib::stt_engine::EngineType::SenseVoice,
         "sense-voice-small-q4_k",
     ) {
         println!("Skipping: SenseVoice model not downloaded");
@@ -625,11 +628,11 @@ fn test_sensevoice_real_transcription() {
 
     let rt = tokio::runtime::Runtime::new().unwrap();
     let result = rt.block_on(async {
-        let request = ariatype_lib::stt_engine::TranscriptionRequest::new(samples)
+        let request = voiceflow_lib::stt_engine::TranscriptionRequest::new(samples)
             .with_model("sense-voice-small-q4_k")
             .with_language("zh");
         manager
-            .transcribe(ariatype_lib::stt_engine::EngineType::SenseVoice, request)
+            .transcribe(voiceflow_lib::stt_engine::EngineType::SenseVoice, request)
             .await
     });
 
@@ -642,12 +645,12 @@ fn test_full_pipeline_integration() {
     let wav_data = create_speech_like_wav(16000, 1, 5.0);
     let samples = wav_to_samples_mono_16khz(&wav_data);
 
-    let models_dir = ariatype_lib::stt_engine::UnifiedEngineManager::default_models_dir();
-    let stt_manager = ariatype_lib::stt_engine::UnifiedEngineManager::new(models_dir);
-    let polish_manager = ariatype_lib::polish_engine::UnifiedPolishManager::new();
+    let models_dir = voiceflow_lib::stt_engine::UnifiedEngineManager::default_models_dir();
+    let stt_manager = voiceflow_lib::stt_engine::UnifiedEngineManager::new(models_dir);
+    let polish_manager = voiceflow_lib::polish_engine::UnifiedPolishManager::new();
 
     if !stt_manager.is_model_downloaded(
-        ariatype_lib::stt_engine::EngineType::SenseVoice,
+        voiceflow_lib::stt_engine::EngineType::SenseVoice,
         "sense-voice-small-q4_k",
     ) {
         println!("Skipping: STT model not downloaded");
@@ -656,13 +659,13 @@ fn test_full_pipeline_integration() {
 
     let rt = tokio::runtime::Runtime::new().unwrap();
     let result = rt.block_on(async {
-        let stt_request = ariatype_lib::stt_engine::TranscriptionRequest::new(samples)
+        let stt_request = voiceflow_lib::stt_engine::TranscriptionRequest::new(samples)
             .with_model("sense-voice-small-q4_k")
             .with_language("zh");
 
         let stt_result = stt_manager
             .transcribe(
-                ariatype_lib::stt_engine::EngineType::SenseVoice,
+                voiceflow_lib::stt_engine::EngineType::SenseVoice,
                 stt_request,
             )
             .await?;
@@ -673,12 +676,12 @@ fn test_full_pipeline_integration() {
         let final_text = if !stt_text.is_empty() {
             let polish_model_id = "lfm2.5-1.2b";
             if let Some(engine_type) =
-                ariatype_lib::polish_engine::UnifiedPolishManager::get_engine_by_model_id(
+                voiceflow_lib::polish_engine::UnifiedPolishManager::get_engine_by_model_id(
                     polish_model_id,
                 )
             {
                 if polish_manager.is_model_downloaded(engine_type, polish_model_id) {
-                    let polish_request = ariatype_lib::polish_engine::PolishRequest::new(
+                    let polish_request = voiceflow_lib::polish_engine::PolishRequest::new(
                         stt_text.clone(),
                         "Polish and remove filler words",
                         "zh",
@@ -725,31 +728,31 @@ fn test_full_pipeline_integration() {
 #[ignore = "Requires cloud STT API key configuration"]
 async fn test_pipeline_with_cloud_stt() {
     // Skip if no cloud STT config is available
-    if std::env::var("ARIATYPE_CLOUD_STT_API_KEY").is_err() {
-        println!("Skipping cloud STT test: ARIATYPE_CLOUD_STT_API_KEY not set");
+    if std::env::var("VOICEFLOW_CLOUD_STT_API_KEY").is_err() {
+        println!("Skipping cloud STT test: VOICEFLOW_CLOUD_STT_API_KEY not set");
         return;
     }
 
     let wav_data = create_speech_like_wav(16000, 1, 2.0);
     let temp_path = write_temp_wav(&wav_data);
 
-    let mut cloud_config = ariatype_lib::commands::settings::CloudSttConfig::default();
+    let mut cloud_config = voiceflow_lib::commands::settings::CloudSttConfig::default();
     cloud_config.enabled = true;
-    cloud_config.api_key = std::env::var("ARIATYPE_CLOUD_STT_API_KEY").unwrap_or_default();
+    cloud_config.api_key = std::env::var("VOICEFLOW_CLOUD_STT_API_KEY").unwrap_or_default();
     cloud_config.provider_type =
-        std::env::var("ARIATYPE_CLOUD_STT_PROVIDER").unwrap_or_else(|_| "openai".to_string());
+        std::env::var("VOICEFLOW_CLOUD_STT_PROVIDER").unwrap_or_else(|_| "openai".to_string());
     cloud_config.model =
-        std::env::var("ARIATYPE_CLOUD_STT_MODEL").unwrap_or_else(|_| "whisper-1".to_string());
+        std::env::var("VOICEFLOW_CLOUD_STT_MODEL").unwrap_or_else(|_| "whisper-1".to_string());
     cloud_config.language =
-        std::env::var("ARIATYPE_CLOUD_STT_LANGUAGE").unwrap_or_else(|_| "en".to_string());
+        std::env::var("VOICEFLOW_CLOUD_STT_LANGUAGE").unwrap_or_else(|_| "en".to_string());
 
     // Set optional base URL if provided
-    if let Ok(base_url) = std::env::var("ARIATYPE_CLOUD_STT_BASE_URL") {
+    if let Ok(base_url) = std::env::var("VOICEFLOW_CLOUD_STT_BASE_URL") {
         cloud_config.base_url = base_url;
     }
 
     // Set app_id for volcengine providers if provided
-    if let Ok(app_id) = std::env::var("ARIATYPE_CLOUD_STT_APP_ID") {
+    if let Ok(app_id) = std::env::var("VOICEFLOW_CLOUD_STT_APP_ID") {
         cloud_config.app_id = app_id;
     }
 
@@ -757,10 +760,10 @@ async fn test_pipeline_with_cloud_stt() {
     // Cloud STT now uses streaming lifecycle via RecordingConsumer trait.
     // This test needs to be rewritten to use UnifiedEngineManager::transcribe()
     // or the streaming API directly.
-    let _stt_request = ariatype_lib::stt_engine::TranscriptionRequest::new(vec![0.0f32; 16000])
+    let _stt_request = voiceflow_lib::stt_engine::TranscriptionRequest::new(vec![0.0f32; 16000])
         .with_language("en");
 
-    let _engine = ariatype_lib::stt_engine::cloud::engine::CloudSttEngine::new()
+    let _engine = voiceflow_lib::stt_engine::cloud::engine::CloudSttEngine::new()
         .map_err(|e| format!("Failed to create cloud STT engine: {}", e))
         .unwrap();
 
@@ -778,14 +781,14 @@ async fn test_pipeline_with_local_whisper() {
     let wav_data = create_speech_like_wav(16000, 1, 2.0);
     let samples = wav_to_samples_mono_16khz(&wav_data);
 
-    let models_dir = ariatype_lib::stt_engine::UnifiedEngineManager::default_models_dir();
-    let manager = ariatype_lib::stt_engine::UnifiedEngineManager::new(models_dir);
+    let models_dir = voiceflow_lib::stt_engine::UnifiedEngineManager::default_models_dir();
+    let manager = voiceflow_lib::stt_engine::UnifiedEngineManager::new(models_dir);
 
     let whisper_models = ["medium", "small", "base", "tiny"];
     let mut selected_model = None;
 
     for model in &whisper_models {
-        if manager.is_model_downloaded(ariatype_lib::stt_engine::EngineType::Whisper, model) {
+        if manager.is_model_downloaded(voiceflow_lib::stt_engine::EngineType::Whisper, model) {
             selected_model = Some(*model);
             break;
         }
@@ -802,11 +805,11 @@ async fn test_pipeline_with_local_whisper() {
     let model_name = selected_model.unwrap();
     println!("Testing with Whisper {} model", model_name);
 
-    let request = ariatype_lib::stt_engine::TranscriptionRequest::new(samples)
+    let request = voiceflow_lib::stt_engine::TranscriptionRequest::new(samples)
         .with_model(model_name)
         .with_language("en");
     let stt_result = manager
-        .transcribe(ariatype_lib::stt_engine::EngineType::Whisper, request)
+        .transcribe(voiceflow_lib::stt_engine::EngineType::Whisper, request)
         .await
         .unwrap();
 
@@ -817,14 +820,14 @@ async fn test_pipeline_with_local_whisper() {
     println!("Whisper STT result: {}", stt_result.text);
 
     // Test with polish
-    let polish_manager = ariatype_lib::polish_engine::UnifiedPolishManager::new();
+    let polish_manager = voiceflow_lib::polish_engine::UnifiedPolishManager::new();
     let polish_model_id = "lfm2.5-1.2b";
 
     if let Some(engine_type) =
-        ariatype_lib::polish_engine::UnifiedPolishManager::get_engine_by_model_id(polish_model_id)
+        voiceflow_lib::polish_engine::UnifiedPolishManager::get_engine_by_model_id(polish_model_id)
     {
         if polish_manager.is_model_downloaded(engine_type, polish_model_id) {
-            let polish_request = ariatype_lib::polish_engine::PolishRequest::new(
+            let polish_request = voiceflow_lib::polish_engine::PolishRequest::new(
                 stt_result.text.clone(),
                 "Polish and remove filler words",
                 "en",
@@ -859,14 +862,14 @@ async fn test_pipeline_with_local_sensevoice() {
     let wav_data = create_speech_like_wav(16000, 1, 2.0);
     let samples = wav_to_samples_mono_16khz(&wav_data);
 
-    let models_dir = ariatype_lib::stt_engine::UnifiedEngineManager::default_models_dir();
-    let manager = ariatype_lib::stt_engine::UnifiedEngineManager::new(models_dir);
+    let models_dir = voiceflow_lib::stt_engine::UnifiedEngineManager::default_models_dir();
+    let manager = voiceflow_lib::stt_engine::UnifiedEngineManager::new(models_dir);
 
     let sensevoice_models = ["sense-voice-small-q4_k", "sense-voice-small"];
     let mut selected_model = None;
 
     for model in &sensevoice_models {
-        if manager.is_model_downloaded(ariatype_lib::stt_engine::EngineType::SenseVoice, model) {
+        if manager.is_model_downloaded(voiceflow_lib::stt_engine::EngineType::SenseVoice, model) {
             selected_model = Some(*model);
             break;
         }
@@ -883,11 +886,11 @@ async fn test_pipeline_with_local_sensevoice() {
     let model_name = selected_model.unwrap();
     println!("Testing with SenseVoice {} model", model_name);
 
-    let request = ariatype_lib::stt_engine::TranscriptionRequest::new(samples)
+    let request = voiceflow_lib::stt_engine::TranscriptionRequest::new(samples)
         .with_model(model_name)
         .with_language("zh");
     let stt_result = manager
-        .transcribe(ariatype_lib::stt_engine::EngineType::SenseVoice, request)
+        .transcribe(voiceflow_lib::stt_engine::EngineType::SenseVoice, request)
         .await
         .unwrap();
 
@@ -898,14 +901,14 @@ async fn test_pipeline_with_local_sensevoice() {
     println!("SenseVoice STT result: {}", stt_result.text);
 
     // Test with polish
-    let polish_manager = ariatype_lib::polish_engine::UnifiedPolishManager::new();
+    let polish_manager = voiceflow_lib::polish_engine::UnifiedPolishManager::new();
     let polish_model_id = "lfm2.5-1.2b";
 
     if let Some(engine_type) =
-        ariatype_lib::polish_engine::UnifiedPolishManager::get_engine_by_model_id(polish_model_id)
+        voiceflow_lib::polish_engine::UnifiedPolishManager::get_engine_by_model_id(polish_model_id)
     {
         if polish_manager.is_model_downloaded(engine_type, polish_model_id) {
-            let polish_request = ariatype_lib::polish_engine::PolishRequest::new(
+            let polish_request = voiceflow_lib::polish_engine::PolishRequest::new(
                 stt_result.text.clone(),
                 "Polish and remove filler words",
                 "zh",
@@ -939,17 +942,17 @@ async fn test_pipeline_stt_failure_recovery() {
     let stt = mock_stt::MockSttEngine::new("Should fail").with_failure();
     let polish = mock_polish::MockPolishEngine::new("Should not be called");
 
-    let request = ariatype_lib::stt_engine::TranscriptionRequest::new(vec![0.0f32; 16000]);
+    let request = voiceflow_lib::stt_engine::TranscriptionRequest::new(vec![0.0f32; 16000]);
     let stt_result = stt.transcribe(request).await;
 
     assert!(stt_result.is_err(), "STT should fail");
 
     let pipeline_result: Result<String, String> = async {
-        let stt_request = ariatype_lib::stt_engine::TranscriptionRequest::new(vec![0.0f32; 16000]);
+        let stt_request = voiceflow_lib::stt_engine::TranscriptionRequest::new(vec![0.0f32; 16000]);
         let stt_result = stt.transcribe(stt_request).await?;
 
         if !stt_result.text.is_empty() {
-            let polish_request = ariatype_lib::polish_engine::PolishRequest::new(
+            let polish_request = voiceflow_lib::polish_engine::PolishRequest::new(
                 stt_result.text.clone(),
                 "Polish this",
                 "en",
@@ -973,12 +976,12 @@ async fn test_pipeline_polish_failure_recovery() {
     let stt = mock_stt::MockSttEngine::new("um hello world uh");
     let polish = mock_polish::MockPolishEngine::new("Should fail").with_failure();
 
-    let stt_request = ariatype_lib::stt_engine::TranscriptionRequest::new(vec![0.0f32; 16000]);
+    let stt_request = voiceflow_lib::stt_engine::TranscriptionRequest::new(vec![0.0f32; 16000]);
     let stt_result = stt.transcribe(stt_request).await.unwrap();
 
     assert_eq!(stt_result.text, "um hello world uh");
 
-    let polish_request = ariatype_lib::polish_engine::PolishRequest::new(
+    let polish_request = voiceflow_lib::polish_engine::PolishRequest::new(
         stt_result.text.clone(),
         "Polish this",
         "en",
@@ -988,11 +991,11 @@ async fn test_pipeline_polish_failure_recovery() {
     assert!(polish_result.is_err(), "Polish should fail");
 
     let pipeline_result: Result<String, String> = async {
-        let stt_request = ariatype_lib::stt_engine::TranscriptionRequest::new(vec![0.0f32; 16000]);
+        let stt_request = voiceflow_lib::stt_engine::TranscriptionRequest::new(vec![0.0f32; 16000]);
         let stt_result = stt.transcribe(stt_request).await?;
 
         if !stt_result.text.is_empty() {
-            let polish_request = ariatype_lib::polish_engine::PolishRequest::new(
+            let polish_request = voiceflow_lib::polish_engine::PolishRequest::new(
                 stt_result.text.clone(),
                 "Polish this",
                 "en",

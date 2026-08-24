@@ -16,7 +16,7 @@ const RESIZE_IMAGE_BEFORE_OCR: bool = false;
 const RESIZE_SKIP_MARGIN: u32 = 128;
 const MIN_FOCUSED_WINDOW_WIDTH: u32 = 240;
 const MIN_FOCUSED_WINDOW_HEIGHT: u32 = 120;
-const DEBUG_SAVE_OCR_SCREENSHOTS_ENV: &str = "ARIATYPE_DEBUG_SAVE_OCR_SCREENSHOTS";
+const DEBUG_SAVE_OCR_SCREENSHOTS_ENV: &str = "VOICEFLOW_DEBUG_SAVE_OCR_SCREENSHOTS";
 
 struct CapturedWindowImage {
     image: image::DynamicImage,
@@ -522,7 +522,7 @@ mod tests {
     fn confidence_summary_averages_apple_observation_scores() {
         let detailed = r#"
         [
-            {"conf": "0.80", "text": "AriaType"},
+            {"conf": "0.80", "text": "Voice Flow"},
             {"conf": "0.60", "text": "README"}
         ]
         "#;
@@ -539,7 +539,7 @@ mod tests {
     fn confidence_summary_handles_percent_scale_scores() {
         let detailed = r#"
         [
-            {"confidence": "80.00", "text": "AriaType"},
+            {"confidence": "80.00", "text": "Voice Flow"},
             {"confidence": "60.00", "text": "README"}
         ]
         "#;

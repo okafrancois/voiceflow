@@ -1,14 +1,16 @@
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::time::Instant;
 
 use tauri::{AppHandle, Emitter, Manager};
+use tauri_plugin_clipboard_manager::ClipboardExt;
 use tracing::{debug, error, info, warn};
 
 use crate::commands::settings::CloudSttConfig;
 use crate::events::{emit_recording_state, EventName, RecordingStatus, TranscriptionPartialEvent};
 use crate::services::transcription_finalize::{
     finalize_empty_transcription, finalize_failed_transcription, finalize_silent_recording,
-    finalize_successful_transcription_with_delivery,
+    finalize_successful_transcription_for_output, DeliveryDisposition,
 };
 use crate::state::app_state::AppState;
 use crate::state::unified_state::StreamingSttState;
@@ -16,7 +18,7 @@ use crate::stt_engine::cloud::StreamingSttClient;
 use crate::stt_engine::traits::RecordingConsumer;
 use crate::utils::AppPaths;
 
-use super::polish::{maybe_polish_transcription_text, PolishProcessingResult};
+use super::polish::{maybe_polish_transcription_text_for_profile, PolishProcessingResult};
 use super::postprocess::apply_post_stt_processing;
 use super::shared::{
     apply_finalize_result, discard_canceled_result, emit_recording_error_then_idle,
@@ -26,6 +28,64 @@ use super::shared::{
 
 const WINDOW_CONTEXT_CAPTURE_TIMEOUT_MS: u64 = 8_000;
 const WINDOW_CONTEXT_RECORDING_POLL_MS: u64 = 20;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum WorkflowDeliveryPlan {
+    Insert,
+    Preview,
+    Copy,
+}
+
+struct WorkflowTaskCleanup {
+    app: AppHandle,
+    task_id: u64,
+}
+
+impl Drop for WorkflowTaskCleanup {
+    fn drop(&mut self) {
+        if let Some(runtime) = self
+            .app
+            .try_state::<crate::services::product_workflows::WorkflowRuntime>()
+        {
+            runtime.discard_staged_delivery(self.task_id);
+            runtime.clear_active_task(self.task_id);
+        }
+    }
+}
+
+pub(super) fn workflow_delivery_plan(
+    output_action: Option<crate::services::product_workflows::OutputAction>,
+) -> WorkflowDeliveryPlan {
+    match output_action.unwrap_or(crate::services::product_workflows::OutputAction::Insert) {
+        crate::services::product_workflows::OutputAction::Insert => WorkflowDeliveryPlan::Insert,
+        crate::services::product_workflows::OutputAction::Preview => WorkflowDeliveryPlan::Preview,
+        crate::services::product_workflows::OutputAction::Copy => WorkflowDeliveryPlan::Copy,
+    }
+}
+
+fn transcription_quality_event(
+    application_id: Option<&str>,
+    final_text: &str,
+    stt_ms: u64,
+    polish_ms: u64,
+    is_cloud: bool,
+) -> crate::services::platform_quality::QualityEvent {
+    if final_text.is_empty() {
+        crate::services::platform_quality::QualityEvent::transcription_failure(
+            application_id,
+            stt_ms.saturating_add(polish_ms),
+            is_cloud,
+        )
+    } else {
+        crate::services::platform_quality::QualityEvent::success_with_source(
+            application_id,
+            stt_ms,
+            polish_ms,
+            stt_ms.saturating_add(polish_ms),
+            is_cloud,
+        )
+    }
+}
 
 pub(super) fn should_cancel_window_context_capture(
     is_current_task: bool,
@@ -58,23 +118,35 @@ async fn wait_for_recording_to_end(app: AppHandle, task_id: u64) {
     }
 }
 
-async fn capture_window_context_while_recording(
+async fn capture_structured_context_while_recording(
     app: AppHandle,
     task_id: u64,
-) -> Option<crate::runtime_context::window::WindowContextBundle> {
+) -> Option<crate::services::product_workflows::CapturedContext> {
+    let context_settings = {
+        let state = app.state::<AppState>();
+        let context_settings = state.settings.lock().context_capture.clone();
+        context_settings
+    };
+    let clipboard_text = if context_settings.clipboard {
+        app.clipboard().read_text().ok()
+    } else {
+        None
+    };
     info!(
         task_id,
         timeout_ms = WINDOW_CONTEXT_CAPTURE_TIMEOUT_MS,
-        "window_context_capture_started"
+        "structured_context_capture_started"
     );
 
-    let mut context_task =
-        tauri::async_runtime::spawn(crate::sensors::window_context::capture_window_context());
+    let mut context_task = tauri::async_runtime::spawn(async move {
+        crate::sensors::focused_context::capture_focused_context(&context_settings, clipboard_text)
+            .await
+    });
 
     tokio::select! {
         result = &mut context_task => {
             match result {
-                Ok(Some(ctx)) => {
+                Ok(ctx) => {
                     let state = app.state::<AppState>();
                     if should_cancel_window_context_capture(
                         state.task_counter.load(Ordering::SeqCst) == task_id,
@@ -87,22 +159,19 @@ async fn capture_window_context_while_recording(
 
                     info!(
                         task_id,
-                        source = ctx.source.as_str(),
-                        chars = ctx.filtered_text.len(),
+                        sources = ?ctx.sources,
+                        selected_chars = ctx.selected_text.as_deref().map(str::len).unwrap_or(0),
+                        ocr_chars = ctx.ocr_text.as_deref().map(str::len).unwrap_or(0),
                         has_stt_hint = ctx.to_stt_prompt_hint().is_some(),
-                        "window_context_capture_available"
+                        "structured_context_capture_available"
                     );
                     Some(ctx)
-                }
-                Ok(None) => {
-                    info!(task_id, "window_context_capture_unavailable");
-                    None
                 }
                 Err(e) => {
                     warn!(
                         task_id,
                         error = %e,
-                        "window_context_capture_task_failed"
+                        "structured_context_capture_task_failed"
                     );
                     None
                 }
@@ -141,7 +210,7 @@ pub(super) fn start_unified_recording(
         settings.audio_device.clone()
     };
 
-    let (denoise_mode, vad_enabled, domain, subdomain, glossary, window_context_enabled) = {
+    let (denoise_mode, vad_enabled, domain, subdomain, glossary, retain_audio) = {
         let settings = state.settings.lock();
         let d = settings.stt_engine_work_domain.trim().to_string();
         let s = settings.stt_engine_work_subdomain.trim().to_string();
@@ -152,20 +221,24 @@ pub(super) fn start_unified_recording(
             if d.is_empty() { None } else { Some(d) },
             if s.is_empty() { None } else { Some(s) },
             if g.is_empty() { None } else { Some(g) },
-            settings.window_context_enabled,
+            settings.audio_retention.retains_new_data(),
         )
     };
 
     let (app_tx, mut app_rx) = tokio::sync::mpsc::channel::<Vec<i16>>(100);
 
-    let audio_save_path = AppPaths::recordings_dir().join(format!(
-        "{}_{}.wav",
-        chrono::Utc::now().format("%Y%m%d_%H%M%S"),
-        task_id
-    ));
+    let audio_save_path = retain_audio.then(|| {
+        AppPaths::recordings_dir().join(format!(
+            "{}_{}.wav",
+            chrono::Utc::now().format("%Y%m%d_%H%M%S"),
+            task_id
+        ))
+    });
 
-    if let Err(e) = std::fs::create_dir_all(AppPaths::recordings_dir()) {
-        warn!(error = %e, "recordings_directory_creation_failed");
+    if retain_audio {
+        if let Err(e) = std::fs::create_dir_all(AppPaths::recordings_dir()) {
+            warn!(error = %e, "recordings_directory_creation_failed");
+        }
     }
 
     let raw_audio_buffer: Arc<ParkingMutex<Vec<i16>>> = Arc::new(ParkingMutex::new(Vec::new()));
@@ -208,7 +281,7 @@ pub(super) fn start_unified_recording(
         accumulated_text: String::new(),
         task_id,
         streaming_task: Arc::new(ParkingMutex::new(None)),
-        audio_save_path: Some(audio_save_path.clone()),
+        audio_save_path,
         raw_audio_buffer: raw_audio_buffer.clone(),
         chunk_buffer: chunk_buffer.clone(),
         processor: processor.clone(),
@@ -282,12 +355,45 @@ pub(super) fn start_unified_recording(
     let app_clone = app.clone();
     let resolved_polish_template_id_clone = resolved_polish_template_id.clone();
     let handle = tauri::async_runtime::spawn(async move {
-        let window_context = if window_context_enabled {
-            capture_window_context_while_recording(app_clone.clone(), task_id).await
-        } else {
-            debug!(task_id, "window_context_capture_disabled");
-            None
+        let _workflow_cleanup = WorkflowTaskCleanup {
+            app: app_clone.clone(),
+            task_id,
         };
+        let structured_context =
+            capture_structured_context_while_recording(app_clone.clone(), task_id).await;
+        let quality_application_id = structured_context
+            .as_ref()
+            .and_then(|context| context.application_id.clone());
+
+        if let (Some(runtime), Some(context)) = (
+            app_clone.try_state::<crate::services::product_workflows::WorkflowRuntime>(),
+            structured_context.as_ref(),
+        ) {
+            runtime.set_context(context.clone());
+        }
+
+        let window_context = structured_context.as_ref().and_then(|context| {
+            let reference = context.to_polish_reference()?;
+            match context.ocr_text.as_ref() {
+                Some(ocr_text) => {
+                    crate::runtime_context::window::WindowContextBundle::from_ocr_result(
+                        ocr_text,
+                        crate::runtime_context::window::WindowContextSource::FocusedWindow,
+                        context.window_title.clone(),
+                        0,
+                        0,
+                        None,
+                    )
+                    .map(|bundle| bundle.with_structured_reference(reference))
+                }
+                None => {
+                    crate::runtime_context::window::WindowContextBundle::from_structured_reference(
+                        reference,
+                        context.window_title.clone(),
+                    )
+                }
+            }
+        });
 
         if let Some(ref ctx) = window_context {
             let state_for_session = app_clone.state::<AppState>();
@@ -297,9 +403,9 @@ pub(super) fn start_unified_recording(
             }
         }
 
-        let stt_initial_prompt = window_context
+        let stt_initial_prompt = structured_context
             .as_ref()
-            .and_then(|ctx| ctx.to_stt_prompt_hint());
+            .and_then(|context| context.to_stt_prompt_hint());
 
         let stt_context = crate::stt_engine::traits::SttContext {
             domain,
@@ -334,6 +440,13 @@ pub(super) fn start_unified_recording(
                 Ok(c) => c,
                 Err(e) => {
                     error!(task_id, error = %e, "streaming_client_create_failed");
+                    crate::commands::platform_quality::record_quality_event(
+                        &crate::services::platform_quality::QualityEvent::transcription_failure(
+                            quality_application_id.as_deref(),
+                            0,
+                            true,
+                        ),
+                    );
                     let state_inner = app_clone.state::<AppState>();
                     crate::history::commands::save_infrastructure_failed_history(
                         &state_inner,
@@ -378,6 +491,13 @@ pub(super) fn start_unified_recording(
                 }
                 Err(e) => {
                     error!(task_id, provider = %provider_name, error = %e, "streaming_consumer_connect_failed");
+                    crate::commands::platform_quality::record_quality_event(
+                        &crate::services::platform_quality::QualityEvent::transcription_failure(
+                            quality_application_id.as_deref(),
+                            0,
+                            true,
+                        ),
+                    );
                     let state_inner = app_clone.state::<AppState>();
                     crate::history::commands::save_infrastructure_failed_history(
                         &state_inner,
@@ -455,7 +575,9 @@ pub(super) fn start_unified_recording(
             state_inner.is_transcribing.store(true, Ordering::SeqCst);
 
             debug!(task_id, "consumer_finish_invoked");
+            let stt_started = Instant::now();
             let text_result: Result<String, String> = consumer.finish().await;
+            let stt_wall_ms = u64::try_from(stt_started.elapsed().as_millis()).unwrap_or(u64::MAX);
 
             let state_inner = app_clone.state::<AppState>();
             if state_inner.is_cancellation_requested(task_id) {
@@ -474,17 +596,44 @@ pub(super) fn start_unified_recording(
             match text_result {
                 Ok(text) => {
                     let raw_text = text.clone();
-                    let (correction_memory_enabled, user_glossary, custom_dictionary) = {
+                    let (
+                        correction_memory_enabled,
+                        user_glossary,
+                        custom_dictionary,
+                        voice_snippets,
+                    ) = {
                         let state = app_clone.state::<AppState>();
                         let settings = state.settings.lock();
                         (
                             settings.correction_memory_enabled,
                             settings.stt_engine_user_glossary.clone(),
                             settings.custom_dictionary.clone(),
+                            settings.voice_snippets.clone(),
                         )
                     };
+                    let snippet_context = structured_context.clone().unwrap_or_default();
+                    let workflow_input =
+                        match crate::services::product_workflows::expand_matching_snippet(
+                            &voice_snippets,
+                            &text,
+                            &snippet_context,
+                            &chrono::Local::now().format("%Y-%m-%d").to_string(),
+                        ) {
+                            Ok(Some(expanded)) => expanded,
+                            Ok(None) => text,
+                            Err(error) => {
+                                warn!(task_id, error = %error, "voice_snippet_expansion_failed");
+                                crate::events::emit_pill_tooltip(
+                                    &app_clone,
+                                    format!("Snippet not expanded: {error}"),
+                                    4_000,
+                                    Some(task_id),
+                                );
+                                raw_text.clone()
+                            }
+                        };
                     let postprocess = apply_post_stt_processing(
-                        &text,
+                        &workflow_input,
                         correction_memory_enabled,
                         &user_glossary,
                         &custom_dictionary,
@@ -499,22 +648,50 @@ pub(super) fn start_unified_recording(
                     let polish_result = if postprocess.text.is_empty() {
                         PolishProcessingResult::skipped(String::new(), "empty postprocess text")
                     } else {
-                        maybe_polish_transcription_text(
+                        let workflow_profile = app_clone
+                            .try_state::<crate::services::product_workflows::WorkflowRuntime>()
+                            .and_then(|runtime| runtime.profile_for_task(task_id));
+                        maybe_polish_transcription_text_for_profile(
                             &ProcessingEventTarget::Recording(&app_clone),
                             &state,
                             task_id,
                             postprocess.text,
                             resolved_polish_template_id_clone.clone(),
+                            workflow_profile.as_ref(),
                         )
                         .await
                     };
                     let polish_time_ms = polish_result.polish_ms;
-                    let final_text = polish_result.text;
+                    let workflow_profile = app_clone
+                        .try_state::<crate::services::product_workflows::WorkflowRuntime>()
+                        .and_then(|runtime| runtime.profile_for_task(task_id));
+                    let final_text = if workflow_profile
+                        .as_ref()
+                        .is_some_and(|profile| profile.code_aware)
+                    {
+                        crate::services::platform_quality::format_code_aware_transcript(
+                            &polish_result.text,
+                            workflow_profile
+                                .as_ref()
+                                .and_then(|profile| profile.language.as_deref()),
+                        )
+                    } else {
+                        polish_result.text
+                    };
 
                     if state.is_cancellation_requested(task_id) {
                         discard_canceled_result(&state, task_id, audio_path.as_ref());
                         return;
                     }
+
+                    let quality_event = transcription_quality_event(
+                        quality_application_id.as_deref(),
+                        &final_text,
+                        stt_wall_ms,
+                        polish_time_ms,
+                        cloud_stt_enabled,
+                    );
+                    crate::commands::platform_quality::record_quality_event(&quality_event);
 
                     info!(
                         task_id,
@@ -538,14 +715,113 @@ pub(super) fn start_unified_recording(
                         "transcription_final_received"
                     );
 
+                    let delivery_plan = workflow_delivery_plan(
+                        workflow_profile
+                            .as_ref()
+                            .map(|profile| profile.output_action),
+                    );
+                    if !final_text.is_empty() {
+                        if let Some(runtime) = app_clone
+                            .try_state::<crate::services::product_workflows::WorkflowRuntime>(
+                        ) {
+                            if delivery_plan == WorkflowDeliveryPlan::Insert {
+                                runtime.stage_delivery(
+                                    task_id,
+                                    crate::services::product_workflows::DeliveryRecord {
+                                        raw_text: raw_text.clone(),
+                                        final_text: final_text.clone(),
+                                        inserted_text: final_text.clone(),
+                                        application_id: runtime
+                                            .context()
+                                            .and_then(|context| context.application_id),
+                                        created_at_ms: chrono::Utc::now().timestamp_millis(),
+                                        undone: false,
+                                    },
+                                );
+                            } else if delivery_plan == WorkflowDeliveryPlan::Preview {
+                                runtime.set_preview(
+                                    crate::services::product_workflows::VoiceActionPreview {
+                                        kind: if workflow_profile
+                                            .as_ref()
+                                            .and_then(|profile| profile.translation_target.as_ref())
+                                            .is_some()
+                                        {
+                                            crate::services::product_workflows::VoiceActionKind::Translate
+                                        } else {
+                                            crate::services::product_workflows::VoiceActionKind::Custom
+                                        },
+                                        source_text: raw_text.clone(),
+                                        result_text: final_text.clone(),
+                                        translation_target: workflow_profile
+                                            .as_ref()
+                                            .and_then(|profile| profile.translation_target.clone()),
+                                        output_action:
+                                            crate::services::product_workflows::OutputAction::Preview,
+                                    },
+                                );
+                            }
+                        }
+                    }
+                    let copy_delivery_succeeded =
+                        if delivery_plan == WorkflowDeliveryPlan::Copy && !final_text.is_empty() {
+                            match app_clone.clipboard().write_text(&final_text) {
+                                Ok(()) => true,
+                                Err(error) => {
+                                    warn!(task_id, error = %error, "workflow_copy_delivery_failed");
+                                    crate::events::emit_pill_tooltip(
+                                        &app_clone,
+                                        format!("Could not copy transcription: {error}"),
+                                        4_000,
+                                        Some(task_id),
+                                    );
+                                    false
+                                }
+                            }
+                        } else {
+                            false
+                        };
+                    if !final_text.is_empty()
+                        && (delivery_plan == WorkflowDeliveryPlan::Preview
+                            || (delivery_plan == WorkflowDeliveryPlan::Copy
+                                && copy_delivery_succeeded))
+                    {
+                        if let Some(runtime) = app_clone
+                            .try_state::<crate::services::product_workflows::WorkflowRuntime>(
+                        ) {
+                            runtime.record_delivery(
+                                crate::services::product_workflows::DeliveryRecord {
+                                    raw_text: raw_text.clone(),
+                                    final_text: final_text.clone(),
+                                    inserted_text: String::new(),
+                                    application_id: runtime
+                                        .context()
+                                        .and_then(|context| context.application_id),
+                                    created_at_ms: chrono::Utc::now().timestamp_millis(),
+                                    undone: true,
+                                },
+                            );
+                        }
+                    }
                     let action = if !final_text.is_empty() {
-                        finalize_successful_transcription_with_delivery(
+                        let delivery_disposition = if polish_result.direct_stream_inserted {
+                            DeliveryDisposition::DirectStreamInserted
+                        } else {
+                            match delivery_plan {
+                                WorkflowDeliveryPlan::Insert => DeliveryDisposition::Insert,
+                                WorkflowDeliveryPlan::Preview => DeliveryDisposition::Preview,
+                                WorkflowDeliveryPlan::Copy if copy_delivery_succeeded => {
+                                    DeliveryDisposition::Copied
+                                }
+                                WorkflowDeliveryPlan::Copy => DeliveryDisposition::CopyFailed,
+                            }
+                        };
+                        finalize_successful_transcription_for_output(
                             &state,
                             &raw_text,
                             &final_text,
                             polish_time_ms,
                             audio_path.clone(),
-                            polish_result.direct_stream_inserted,
+                            delivery_disposition,
                         )
                     } else {
                         finalize_empty_transcription(&state, audio_path)
@@ -560,6 +836,13 @@ pub(super) fn start_unified_recording(
                         return;
                     }
                     error!(task_id, error = %e, "stt_finish_failed");
+                    crate::commands::platform_quality::record_quality_event(
+                        &crate::services::platform_quality::QualityEvent::transcription_failure(
+                            quality_application_id.as_deref(),
+                            stt_wall_ms,
+                            cloud_stt_enabled,
+                        ),
+                    );
 
                     let action = finalize_failed_transcription(&state, audio_path, &e);
                     let _ = state.finish_session(task_id);
@@ -595,4 +878,37 @@ pub(super) fn start_unified_recording(
         "recording_started-unified"
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::transcription_quality_event;
+    use crate::services::platform_quality::QualityEventKind;
+
+    #[test]
+    fn recording_pipeline_builds_content_free_local_and_cloud_quality_events() {
+        let success = transcription_quality_event(
+            Some("com.example.editor"),
+            "private transcript content",
+            120,
+            30,
+            false,
+        );
+        let failure = transcription_quality_event(Some("com.example.browser"), "", 80, 0, true);
+
+        assert_eq!(success.kind, QualityEventKind::TranscriptionSuccess);
+        assert_eq!(
+            success.application_id.as_deref(),
+            Some("com.example.editor")
+        );
+        assert_eq!(success.stt_ms, Some(120));
+        assert_eq!(success.polish_ms, Some(30));
+        assert_eq!(success.total_ms, Some(150));
+        assert_eq!(success.is_cloud, Some(false));
+        assert_eq!(failure.kind, QualityEventKind::TranscriptionFailure);
+        assert_eq!(failure.is_cloud, Some(true));
+        assert!(!serde_json::to_string(&success)
+            .expect("quality event should serialize")
+            .contains("private transcript content"));
+    }
 }

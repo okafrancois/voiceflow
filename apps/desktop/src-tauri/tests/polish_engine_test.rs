@@ -1,4 +1,4 @@
-use ariatype_lib::polish_engine::{
+use voiceflow_lib::polish_engine::{
     get_all_polish_models, get_all_templates, get_template_by_id, PolishEngineType, PolishRequest,
     PolishResult, UnifiedPolishManager, GEMMA_DEFAULT_PROMPT, LFM_DEFAULT_PROMPT, POLISH_TEMPLATES,
     QWEN_DEFAULT_PROMPT,

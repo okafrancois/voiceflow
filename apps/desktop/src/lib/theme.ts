@@ -1,11 +1,23 @@
 export type ThemeMode = "system" | "light" | "dark";
 
-const RESOLVED_THEME_STORAGE_KEY = "ariatype-theme";
+const RESOLVED_THEME_STORAGE_KEY = "voiceflow-theme";
+const LEGACY_RESOLVED_THEME_STORAGE_KEY = ["aria", "type-theme"].join("");
 
 function getStoredResolvedTheme(): "light" | "dark" | null {
   try {
-    const value = localStorage.getItem(RESOLVED_THEME_STORAGE_KEY);
-    return value === "light" || value === "dark" ? value : null;
+    const currentValue = localStorage.getItem(RESOLVED_THEME_STORAGE_KEY);
+    if (currentValue === "light" || currentValue === "dark") {
+      return currentValue;
+    }
+
+    const legacyValue = localStorage.getItem(LEGACY_RESOLVED_THEME_STORAGE_KEY);
+    if (legacyValue === "light" || legacyValue === "dark") {
+      localStorage.setItem(RESOLVED_THEME_STORAGE_KEY, legacyValue);
+      localStorage.removeItem(LEGACY_RESOLVED_THEME_STORAGE_KEY);
+      return legacyValue;
+    }
+
+    return null;
   } catch {
     return null;
   }

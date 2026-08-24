@@ -54,6 +54,10 @@ fn cancel_recording_internal(
 
     crate::commands::window::update_pill_visibility(&app);
     emit_recording_state(&app, RecordingStatus::Idle, prepared.task_id);
+    if let Some(runtime) = app.try_state::<crate::services::product_workflows::WorkflowRuntime>() {
+        runtime.discard_staged_delivery(prepared.task_id);
+        runtime.clear_active_task(prepared.task_id);
+    }
 
     tracing::info!(task_id = prepared.task_id, "recording_canceled");
     Ok(())

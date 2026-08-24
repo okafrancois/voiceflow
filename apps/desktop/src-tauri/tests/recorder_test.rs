@@ -1,14 +1,14 @@
 use std::path::PathBuf;
 
 fn temp_dir() -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("ariatype_test_{}", uuid::Uuid::new_v4()));
+    let dir = std::env::temp_dir().join(format!("voiceflow_test_{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&dir).ok();
     dir
 }
 
 #[test]
 fn test_recorder_new() {
-    let recorder = ariatype_lib::audio::recorder::AudioRecorder::new();
+    let recorder = voiceflow_lib::audio::recorder::AudioRecorder::new();
     assert!(
         !recorder.is_recording(),
         "New recorder should not be recording"
@@ -17,7 +17,7 @@ fn test_recorder_new() {
 
 #[test]
 fn test_recorder_default() {
-    let recorder = ariatype_lib::audio::recorder::AudioRecorder::default();
+    let recorder = voiceflow_lib::audio::recorder::AudioRecorder::default();
     assert!(
         !recorder.is_recording(),
         "Default recorder should not be recording"
@@ -26,7 +26,7 @@ fn test_recorder_default() {
 
 #[test]
 fn test_recorder_stop_not_recording() {
-    let recorder = ariatype_lib::audio::recorder::AudioRecorder::new();
+    let recorder = voiceflow_lib::audio::recorder::AudioRecorder::new();
     let result = recorder.stop();
     assert!(result.is_err());
     let err = result.unwrap_err();
@@ -38,7 +38,7 @@ fn test_recorder_stop_not_recording() {
 
 #[test]
 fn test_recorder_devices_returns_list() {
-    let devices = ariatype_lib::audio::recorder::AudioRecorder::get_devices();
+    let devices = voiceflow_lib::audio::recorder::AudioRecorder::get_devices();
     assert!(
         devices.is_empty(),
         "Devices should return empty list to avoid crashes"
@@ -47,7 +47,7 @@ fn test_recorder_devices_returns_list() {
 
 #[test]
 fn test_recorder_double_start() {
-    let recorder = ariatype_lib::audio::recorder::AudioRecorder::new();
+    let recorder = voiceflow_lib::audio::recorder::AudioRecorder::new();
     let output_path = temp_dir().join("test.wav");
 
     let result1 = recorder.start(output_path.clone(), None, None::<fn(std::path::PathBuf)>);
@@ -62,7 +62,7 @@ fn test_recorder_double_start() {
 
 #[test]
 fn test_recorder_invalid_device() {
-    let recorder = ariatype_lib::audio::recorder::AudioRecorder::new();
+    let recorder = voiceflow_lib::audio::recorder::AudioRecorder::new();
     let output_path = temp_dir().join("test.wav");
 
     let result = recorder.start(

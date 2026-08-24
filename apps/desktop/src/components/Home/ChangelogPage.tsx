@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
 const CHANGELOG_URL =
-  "https://raw.githubusercontent.com/joe223/AriaType/refs/heads/master/CHANGELOG.md";
+  "https://raw.githubusercontent.com/okafrancois/voiceflow/refs/heads/master/CHANGELOG.md";
 
 function parseMarkdownToHtml(markdown: string): string {
   const lines = markdown.split("\n");

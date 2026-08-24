@@ -2,14 +2,14 @@ import { join } from 'node:path';
 import {
   createRunnerConfig,
   resolveHarnessDir,
-} from '@ariatype/e2e-harness/runner';
+} from '@voiceflow/e2e-harness/runner';
 
 const e2eDir = resolveHarnessDir(import.meta.url);
 export const projectRoot = join(e2eDir, '..', '..');
 export const runtimeKey = 'ordered-shared';
 const userHome = process.env.HOME ?? '/Users/bytedance';
 const e2eDataDir = join(userHome, 'Library', 'Application Support', 'com.voiceflow.voicetotext.e2e');
-export const killCommand = 'pkill -f "target/debug/ariatype"';
+export const killCommand = 'pkill -f "target/debug/voiceflow"';
 export const systemDataPaths = [
   join(userHome, 'Library', 'Application Support', 'Voice Flow E2E'),
   e2eDataDir,
@@ -38,14 +38,14 @@ export default createRunnerConfig({
   playwrightConfig: 'tests/e2e/playwright.config.ts',
   specOrder: ['settings.spec.ts', 'navigation.spec.ts', 'dictionary.spec.ts'],
   runtimeRoot: join(projectRoot, `tests/e2e/.runtime/${runtimeKey}`),
-  socketPath: `/tmp/ariatype-pw-${runtimeKey}.sock`,
+  socketPath: `/tmp/voiceflow-pw-${runtimeKey}.sock`,
   killCommand,
   systemDataPaths,
   tauriExecutable,
   tauriCommand,
   tauriFeatures,
   tauriEnv: {
-    ARIATYPE_E2E_FAST_MODEL_DOWNLOAD: '1',
+    VOICEFLOW_E2E_FAST_MODEL_DOWNLOAD: '1',
   },
   capabilityFiles,
   seedDataFiles: [

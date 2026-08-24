@@ -542,7 +542,7 @@ mod tests {
 
     #[test]
     fn parses_hotword_lines_and_legacy_mappings() {
-        let entries = parse_custom_hotword_entries("Claude | Cloud\n搜题 -> sootie\nAriaType");
+        let entries = parse_custom_hotword_entries("Claude | Cloud\n搜题 -> sootie\nVoice Flow");
 
         assert_eq!(entries.len(), 3);
         assert!(entries
@@ -551,7 +551,7 @@ mod tests {
         assert!(entries
             .iter()
             .any(|entry| entry.term == "sootie" && entry.aliases == vec!["搜题"]));
-        assert!(entries.iter().any(|entry| entry.term == "AriaType"));
+        assert!(entries.iter().any(|entry| entry.term == "Voice Flow"));
     }
 
     #[test]

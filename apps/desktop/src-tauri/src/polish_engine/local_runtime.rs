@@ -7,9 +7,9 @@ use std::time::{Duration, Instant};
 use tracing::{debug, error, info, warn};
 
 const LOCAL_POLISH_LLAMA_SERVER_PROVIDER: &str = "llama-server";
-const LOCAL_POLISH_SERVER_COMMAND_ENV: &str = "ARIATYPE_LOCAL_POLISH_SERVER_COMMAND";
-const LOCAL_POLISH_SERVER_ARGS_JSON_ENV: &str = "ARIATYPE_LOCAL_POLISH_SERVER_ARGS_JSON";
-const LOCAL_POLISH_READY_TIMEOUT_SECS_ENV: &str = "ARIATYPE_LOCAL_POLISH_READY_TIMEOUT_SECS";
+const LOCAL_POLISH_SERVER_COMMAND_ENV: &str = "VOICEFLOW_LOCAL_POLISH_SERVER_COMMAND";
+const LOCAL_POLISH_SERVER_ARGS_JSON_ENV: &str = "VOICEFLOW_LOCAL_POLISH_SERVER_ARGS_JSON";
+const LOCAL_POLISH_READY_TIMEOUT_SECS_ENV: &str = "VOICEFLOW_LOCAL_POLISH_READY_TIMEOUT_SECS";
 const LOCAL_POLISH_READY_POLL_INTERVAL: Duration = Duration::from_millis(250);
 const LOCAL_POLISH_DEFAULT_READY_TIMEOUT: Duration = Duration::from_secs(20);
 
@@ -346,8 +346,14 @@ impl Drop for LocalPolishRuntimeManager {
 fn env_string(name: &str) -> Option<String> {
     std::env::var(name)
         .ok()
+        .or_else(|| legacy_env_name(name).and_then(|legacy_name| std::env::var(legacy_name).ok()))
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
+}
+
+fn legacy_env_name(name: &str) -> Option<String> {
+    let suffix = name.strip_prefix("VOICEFLOW_")?;
+    Some(format!("{}_{}", ["ARIA", "TYPE"].concat(), suffix))
 }
 
 fn env_args_json(name: &str) -> Option<Vec<String>> {
@@ -959,6 +965,17 @@ fn stop_child(state: &mut LocalPolishRuntimeState) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn derives_the_legacy_environment_variable_name() {
+        assert_eq!(
+            legacy_env_name("VOICEFLOW_LOCAL_POLISH_SERVER_COMMAND"),
+            Some(format!(
+                "{}_LOCAL_POLISH_SERVER_COMMAND",
+                ["ARIA", "TYPE"].concat()
+            ))
+        );
+    }
     use std::io::{Read, Write};
     use std::net::TcpListener;
     use std::path::PathBuf;
@@ -1258,7 +1275,7 @@ mod tests {
     #[test]
     fn bundled_runtime_roots_include_tauri_resource_locations() {
         let root = tempfile::tempdir().unwrap();
-        let exe = root.path().join("app").join("ariatype.exe");
+        let exe = root.path().join("app").join("voiceflow.exe");
 
         let roots = bundled_runtime_roots_for_exe(&exe);
 

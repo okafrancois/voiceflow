@@ -1,7 +1,7 @@
 #[test]
 fn test_resample_same_rate() {
     let input: Vec<f32> = (0..1000).map(|i| (i as f32 * 0.01).sin()).collect();
-    let result = ariatype_lib::audio::resampler::resample(&input, 48000, 48000);
+    let result = voiceflow_lib::audio::resampler::resample(&input, 48000, 48000);
 
     assert!(result.is_ok());
     let output = result.unwrap();
@@ -15,7 +15,7 @@ fn test_resample_same_rate() {
 #[test]
 fn test_resample_downsample_48k_to_16k() {
     let input: Vec<f32> = (0..48000).map(|i| (i as f32 * 0.01).sin()).collect();
-    let result = ariatype_lib::audio::resampler::resample(&input, 48000, 16000);
+    let result = voiceflow_lib::audio::resampler::resample(&input, 48000, 16000);
 
     assert!(result.is_ok());
     let output = result.unwrap();
@@ -33,7 +33,7 @@ fn test_resample_downsample_48k_to_16k() {
 #[test]
 fn test_resample_upsample_16k_to_48k() {
     let input: Vec<f32> = (0..16000).map(|i| (i as f32 * 0.01).sin()).collect();
-    let result = ariatype_lib::audio::resampler::resample(&input, 16000, 48000);
+    let result = voiceflow_lib::audio::resampler::resample(&input, 16000, 48000);
 
     assert!(result.is_ok());
     let output = result.unwrap();
@@ -59,7 +59,7 @@ fn test_resample_preserves_signal_shape() {
         .map(|i| (2.0 * std::f32::consts::PI * freq * (i as f32 / sample_rate as f32)).sin())
         .collect();
 
-    let result = ariatype_lib::audio::resampler::resample(&input, sample_rate, 16000);
+    let result = voiceflow_lib::audio::resampler::resample(&input, sample_rate, 16000);
 
     assert!(result.is_ok());
     let output = result.unwrap();
@@ -73,7 +73,7 @@ fn test_resample_preserves_signal_shape() {
 #[test]
 fn test_resample_to_16khz() {
     let input: Vec<f32> = (0..32000).map(|i| (i as f32 * 0.01).sin()).collect();
-    let result = ariatype_lib::audio::resampler::resample_to_16khz(&input, 32000);
+    let result = voiceflow_lib::audio::resampler::resample_to_16khz(&input, 32000);
 
     assert!(result.is_ok());
     let output = result.unwrap();
@@ -88,7 +88,7 @@ fn test_resample_to_16khz() {
 #[test]
 fn test_resample_empty_input() {
     let input: Vec<f32> = vec![];
-    let result = ariatype_lib::audio::resampler::resample(&input, 48000, 16000);
+    let result = voiceflow_lib::audio::resampler::resample(&input, 48000, 16000);
 
     assert!(result.is_ok());
     let output = result.unwrap();

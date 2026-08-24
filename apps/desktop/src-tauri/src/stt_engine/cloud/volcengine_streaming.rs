@@ -40,21 +40,26 @@ const SERIALIZATION_JSON: u8 = 0b0001;
 
 const COMPRESSION_NONE: u8 = 0b0000;
 
-// Streaming mode URLs
-// IMPORTANT: Per AGENTS.md Product Priority Order (accuracy > speed), we use nostream mode.
-// Bidirectional streaming interfaces (bigmodel_async, bigmodel) have slightly lower accuracy.
-// Only bigmodel_nostream (streaming input mode) meets our accuracy requirements.
-//
-/// Bidirectional streaming (optimized) - returns results only when changed
-/// NOT RECOMMENDED: Lower accuracy than NoStream mode
-pub const URL_BIGMODEL_ASYNC: &str = "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async";
-/// Bidirectional streaming (original) - returns results for every packet
-/// NOT RECOMMENDED: Lower accuracy than NoStream mode
-pub const URL_BIGMODEL: &str = "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel";
-/// Streaming input mode - returns after 15s or last packet (not real-time)
-/// RECOMMENDED: Highest accuracy, per product priority order
+/// Highest-accuracy streaming-input endpoint required by the product contract.
 pub const URL_BIGMODEL_NOSTREAM: &str =
     "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_nostream";
+pub const DEFAULT_VOLCENGINE_RESOURCE_ID: &str = "volc.bigasr.sauc.duration";
+
+fn validate_volcengine_endpoint(endpoint: &str) -> Result<(), String> {
+    let url = reqwest::Url::parse(endpoint)
+        .map_err(|error| format!("Invalid Volcengine WebSocket URL: {error}"))?;
+
+    if url.host_str() == Some("openspeech.bytedance.com")
+        && url.path() != "/api/v3/sauc/bigmodel_nostream"
+    {
+        return Err(
+            "Volcengine requires the bigmodel_nostream endpoint because it has higher transcription accuracy. Update the Base URL in Cloud STT settings."
+                .to_string(),
+        );
+    }
+
+    Ok(())
+}
 
 /// Recommended chunk size: 100ms at 16kHz mono 16-bit = 1600 samples
 /// Per Volcengine docs: "单包音频大小建议在 100~200ms 左右"
@@ -164,35 +169,16 @@ fn parse_server_frame(data: &[u8]) -> Option<ParsedServerFrame<'_>> {
     })
 }
 
-/// Streaming mode selection
-///
-/// Per product priority order (accuracy > speed), NoStream is the default and recommended mode.
-/// Bidirectional streaming modes (Async, Standard) have slightly lower accuracy and are NOT recommended.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum StreamingMode {
-    /// Optimized bidirectional - only returns when results change
-    /// NOT RECOMMENDED: Lower accuracy than NoStream
-    Async,
-    /// Original bidirectional - returns for every packet
-    /// NOT RECOMMENDED: Lower accuracy than NoStream
-    Standard,
-    /// Non-streaming - returns after 15s or last packet
-    /// RECOMMENDED: Highest accuracy, default mode per product priority order
-    #[default]
-    NoStream,
-}
-
 /// Real-time streaming STT client for Volcengine
 ///
-/// Supports bidirectional streaming where audio is sent in real-time
-/// and partial results are returned as speech is recognized.
+/// Audio is sent as it is recorded. The server returns the highest-accuracy
+/// result when it receives the last packet.
 pub struct VolcengineStreamingClient {
     tx: Arc<Mutex<Option<BoxSink>>>,
     rx: Arc<Mutex<Option<BoxStream>>>,
     config: CloudSttConfig,
     language: String,
     connect_id: String,
-    streaming_mode: StreamingMode,
     stt_context: SttContext,
     /// Channel for sending audio data from recording thread
     audio_tx: Arc<Mutex<Option<mpsc::Sender<Vec<i16>>>>>,
@@ -208,18 +194,8 @@ unsafe impl Send for VolcengineStreamingClient {}
 unsafe impl Sync for VolcengineStreamingClient {}
 
 impl VolcengineStreamingClient {
-    /// Create a new streaming client (defaults to NoStream for highest accuracy)
+    /// Create a client for the required `bigmodel_nostream` interface.
     pub fn new(config: CloudSttConfig, language: Option<&str>, context: SttContext) -> Self {
-        Self::with_mode(config, language, StreamingMode::NoStream, context)
-    }
-
-    /// Create a new streaming client with specific mode
-    pub fn with_mode(
-        config: CloudSttConfig,
-        language: Option<&str>,
-        mode: StreamingMode,
-        context: SttContext,
-    ) -> Self {
         let lang = match language {
             Some(l) if l != "auto" => l,
             _ => "",
@@ -231,7 +207,6 @@ impl VolcengineStreamingClient {
             config,
             language: lang.to_string(),
             connect_id: Uuid::new_v4().to_string(),
-            streaming_mode: mode,
             stt_context: context,
             audio_tx: Arc::new(Mutex::new(None)),
             on_partial: None,
@@ -255,7 +230,6 @@ impl VolcengineStreamingClient {
     #[instrument(
         skip(self),
         fields(
-            mode = ?self.streaming_mode,
             language = %self.language,
         ),
         ret,
@@ -269,19 +243,15 @@ impl VolcengineStreamingClient {
             return Err("Volcengine Access Token is empty. Please configure your Volcengine credentials in Settings > Cloud STT.".to_string());
         }
 
-        // Select URL based on streaming mode
         let base_url = if !self.config.base_url.is_empty() {
             self.config.base_url.clone()
         } else {
-            match self.streaming_mode {
-                StreamingMode::Async => URL_BIGMODEL_ASYNC.to_string(),
-                StreamingMode::Standard => URL_BIGMODEL.to_string(),
-                StreamingMode::NoStream => URL_BIGMODEL_NOSTREAM.to_string(),
-            }
+            URL_BIGMODEL_NOSTREAM.to_string()
         };
+        validate_volcengine_endpoint(&base_url)?;
 
         let resource_id = if self.config.model.is_empty() {
-            "volc.bigasr.sauc.duration".to_string()
+            DEFAULT_VOLCENGINE_RESOURCE_ID.to_string()
         } else {
             self.config.model.clone()
         };
@@ -289,7 +259,6 @@ impl VolcengineStreamingClient {
         info!(
             provider = "volcengine",
             url = %base_url,
-            mode = ?self.streaming_mode,
             "websocket_connecting"
         );
         info!(
@@ -400,7 +369,7 @@ impl VolcengineStreamingClient {
     async fn send_client_request(&self) -> Result<(), String> {
         let mut req_json = json!({
             "user": {
-                "uid": "ariatype_user"
+                "uid": "voiceflow_user"
             },
             "audio": {
                 "format": "pcm",
@@ -418,8 +387,7 @@ impl VolcengineStreamingClient {
             }
         });
 
-        // Add language for NoStream mode (supports language specification)
-        if !self.language.is_empty() && self.streaming_mode == StreamingMode::NoStream {
+        if !self.language.is_empty() {
             req_json["audio"]["language"] = json!(self.language);
         }
 
@@ -844,6 +812,17 @@ mod tests {
     use super::*;
 
     #[test]
+    fn rejects_official_bidirectional_endpoints() {
+        for endpoint in [
+            "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel",
+            "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async",
+        ] {
+            let error = validate_volcengine_endpoint(endpoint).unwrap_err();
+            assert!(error.contains("bigmodel_nostream"));
+        }
+    }
+
+    #[test]
     fn test_build_header() {
         let header = build_header(
             MESSAGE_TYPE_FULL_CLIENT_REQUEST,
@@ -858,11 +837,12 @@ mod tests {
     }
 
     #[test]
-    fn test_streaming_mode_urls() {
-        assert!(URL_BIGMODEL_ASYNC.contains("bigmodel_async"));
-        assert!(URL_BIGMODEL.contains("bigmodel"));
-        assert!(!URL_BIGMODEL.contains("async"));
-        assert!(URL_BIGMODEL_NOSTREAM.contains("nostream"));
+    fn production_endpoint_is_bigmodel_nostream() {
+        assert_eq!(
+            URL_BIGMODEL_NOSTREAM,
+            "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_nostream"
+        );
+        assert!(validate_volcengine_endpoint(URL_BIGMODEL_NOSTREAM).is_ok());
     }
 
     #[test]
@@ -916,11 +896,6 @@ mod tests {
         assert_eq!(RECOMMENDED_CHUNK_SAMPLES, 1600);
         let chunk_duration_ms = (RECOMMENDED_CHUNK_SAMPLES as f64 / 16000.0) * 1000.0;
         assert!((chunk_duration_ms - 100.0).abs() < 1.0);
-    }
-
-    #[test]
-    fn test_streaming_mode_default() {
-        assert_eq!(StreamingMode::default(), StreamingMode::NoStream);
     }
 
     #[test]

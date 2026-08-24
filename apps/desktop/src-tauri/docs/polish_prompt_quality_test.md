@@ -30,7 +30,7 @@ Each template must return text in the same language as its input. The test cover
 The tests require the `qwen3.5-0.8b` model at the application's model directory:
 
 ```text
-~/Library/Application Support/com.ariatype.app/models/qwen3.5-0.8b-q8_0.gguf
+~/Library/Application Support/com.voiceflow.app/models/qwen3.5-0.8b-q8_0.gguf
 ```
 
 ## Commands

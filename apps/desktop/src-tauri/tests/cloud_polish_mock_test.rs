@@ -1,8 +1,8 @@
-use ariatype_lib::polish_engine::{
-    CloudPolishEngine, CloudProviderConfig, PolishEngine, PolishRequest, CORE_POLISH_CONSTRAINT,
-};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use voiceflow_lib::polish_engine::{
+    CloudPolishEngine, CloudProviderConfig, PolishEngine, PolishRequest, CORE_POLISH_CONSTRAINT,
+};
 use wiremock::matchers::{body_partial_json, header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -139,6 +139,40 @@ async fn test_openai_polish_request_format() {
 }
 
 #[tokio::test]
+async fn test_unsupported_polish_provider_is_rejected_before_http_request() {
+    let mock_server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "choices": [{
+                "message": {
+                    "content": "This response must never be accepted"
+                }
+            }]
+        })))
+        .expect(0)
+        .mount(&mock_server)
+        .await;
+
+    let config = CloudProviderConfig {
+        provider_type: "unsupported".to_string(),
+        api_key: "test_api_key".to_string(),
+        base_url: mock_server.uri(),
+        model: "test-model".to_string(),
+        enable_thinking: false,
+    };
+    let engine = CloudPolishEngine::new(config);
+    let request = PolishRequest::new("Text", "Rules", "en");
+
+    let error = engine
+        .polish(request)
+        .await
+        .expect_err("unsupported provider must fail before network I/O");
+
+    assert!(error.contains("Unsupported cloud polish provider"));
+}
+
+#[tokio::test]
 async fn test_openai_polish_streams_preview_chunks() {
     let mock_server = MockServer::start().await;
     let expected_system_prompt = format!(
@@ -190,7 +224,7 @@ async fn test_openai_polish_streams_preview_chunks() {
     let engine = CloudPolishEngine::new(config);
     let updates = Arc::new(Mutex::new(Vec::new()));
     let callback_updates = Arc::clone(&updates);
-    let callback: ariatype_lib::polish_engine::PolishPreviewCallback =
+    let callback: voiceflow_lib::polish_engine::PolishPreviewCallback =
         Arc::new(move |update| callback_updates.lock().unwrap().push(update));
 
     let request = PolishRequest::new(
@@ -244,6 +278,48 @@ async fn test_openai_connection_check_uses_configured_endpoint() {
         .check_connection()
         .await
         .expect("connection check should use the configured endpoint");
+}
+
+#[tokio::test]
+async fn test_anthropic_connection_check_uses_messages_contract() {
+    let mock_server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/v1/messages"))
+        .and(header("x-api-key", "test_anthropic_api_key"))
+        .and(header("anthropic-version", "2023-06-01"))
+        .and(header("Content-Type", "application/json"))
+        .and(body_partial_json(serde_json::json!({
+            "model": "claude-sonnet-4-20250514",
+            "max_tokens": 4,
+            "system": "Return ok.",
+            "messages": [{
+                "role": "user",
+                "content": "ok"
+            }],
+            "thinking": {
+                "type": "disabled"
+            }
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "content": [{"text": "ok"}]
+        })))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    let config = CloudProviderConfig {
+        provider_type: "anthropic".to_string(),
+        api_key: "test_anthropic_api_key".to_string(),
+        base_url: format!("{}/v1/messages", mock_server.uri()),
+        model: "claude-sonnet-4-20250514".to_string(),
+        enable_thinking: false,
+    };
+
+    CloudPolishEngine::new(config)
+        .check_connection()
+        .await
+        .expect("Anthropic connection check should use the Messages API contract");
 }
 
 #[tokio::test]

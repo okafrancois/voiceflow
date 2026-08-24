@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
-    use ariatype_lib::commands::settings::CloudSttConfig;
-    use ariatype_lib::stt_engine::traits::TranscriptionResult;
+    use voiceflow_lib::commands::settings::CloudSttConfig;
+    use voiceflow_lib::stt_engine::traits::TranscriptionResult;
 
     #[test]
     #[ignore = "TODO: Rewrite to use RecordingConsumer streaming API (send_chunk + finish)"]
@@ -62,7 +62,7 @@ mod tests {
     fn test_transcription_result_metrics() {
         let result = TranscriptionResult::with_metrics(
             "Hello world".to_string(),
-            ariatype_lib::stt_engine::traits::EngineType::Cloud,
+            voiceflow_lib::stt_engine::traits::EngineType::Cloud,
             1500,
             Some(200),
             Some(100),
@@ -72,7 +72,7 @@ mod tests {
         assert_eq!(result.text, "Hello world");
         assert_eq!(
             result.engine,
-            ariatype_lib::stt_engine::traits::EngineType::Cloud
+            voiceflow_lib::stt_engine::traits::EngineType::Cloud
         );
         assert_eq!(result.total_ms, 1500);
         assert_eq!(result.model_load_ms, Some(200));

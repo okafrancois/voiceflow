@@ -33,8 +33,8 @@ use crate::stt_engine::traits::{
     EngineType, PartialResult, PartialResultCallback, SttContext, TranscriptionResult,
 };
 
-const QWEN_OMNI_REALTIME_ENDPOINT: &str = "wss://dashscope.aliyuncs.com/api-ws/v1/realtime";
-const QWEN_OMNI_REALTIME_MODEL: &str = "qwen3-asr-flash-realtime";
+pub const ALIYUN_REALTIME_ENDPOINT: &str = "wss://dashscope.aliyuncs.com/api-ws/v1/realtime";
+pub const ALIYUN_REALTIME_MODEL: &str = "qwen3-asr-flash-realtime";
 const LEGACY_QWEN_OMNI_REALTIME_MODEL: &str = "qwen3.5-omni-plus-realtime";
 const SESSION_READY_TIMEOUT: Duration = Duration::from_secs(2);
 const FINAL_RESULT_TIMEOUT: Duration = Duration::from_secs(10);
@@ -96,7 +96,7 @@ impl AliyunStreamClient {
         }
 
         let endpoint = if self.config.base_url.is_empty() {
-            QWEN_OMNI_REALTIME_ENDPOINT
+            ALIYUN_REALTIME_ENDPOINT
         } else {
             &self.config.base_url
         };
@@ -753,10 +753,10 @@ impl RealtimeError {
                 "Aliyun Realtime model not found.\n\
                 \n\
                 The specified model '{}' may not be available or you may not have access.\n\
-                Contact OpenAI support if you believe this is an error.\n\
+                Contact Alibaba Cloud support if you believe this is an error.\n\
                 \n\
                 Technical details: {}",
-                QWEN_OMNI_REALTIME_MODEL, self.message
+                ALIYUN_REALTIME_MODEL, self.message
             ),
             _ => format!(
                 "Aliyun Realtime API error: {}\n\
@@ -772,7 +772,7 @@ impl RealtimeError {
 
 fn resolve_realtime_model(model: &str) -> &str {
     if model.is_empty() || model == LEGACY_QWEN_OMNI_REALTIME_MODEL {
-        QWEN_OMNI_REALTIME_MODEL
+        ALIYUN_REALTIME_MODEL
     } else {
         model
     }
@@ -914,14 +914,14 @@ mod tests {
     #[test]
     fn test_aliyun_stream_endpoint_constant() {
         assert_eq!(
-            QWEN_OMNI_REALTIME_ENDPOINT,
+            ALIYUN_REALTIME_ENDPOINT,
             "wss://dashscope.aliyuncs.com/api-ws/v1/realtime"
         );
     }
 
     #[test]
     fn test_aliyun_stream_model_constant() {
-        assert_eq!(QWEN_OMNI_REALTIME_MODEL, "qwen3-asr-flash-realtime");
+        assert_eq!(ALIYUN_REALTIME_MODEL, "qwen3-asr-flash-realtime");
     }
 
     #[test]
@@ -1002,7 +1002,7 @@ mod tests {
         };
         let msg = error.to_user_friendly_message();
         assert!(msg.contains("model not found"));
-        assert!(msg.contains(QWEN_OMNI_REALTIME_MODEL));
+        assert!(msg.contains(ALIYUN_REALTIME_MODEL));
     }
 
     #[test]
@@ -1091,9 +1091,9 @@ mod tests {
     fn test_resolve_realtime_model_rewrites_legacy_default() {
         assert_eq!(
             resolve_realtime_model(LEGACY_QWEN_OMNI_REALTIME_MODEL),
-            QWEN_OMNI_REALTIME_MODEL
+            ALIYUN_REALTIME_MODEL
         );
-        assert_eq!(resolve_realtime_model(""), QWEN_OMNI_REALTIME_MODEL);
+        assert_eq!(resolve_realtime_model(""), ALIYUN_REALTIME_MODEL);
         assert_eq!(
             resolve_realtime_model("custom-qwen-model"),
             "custom-qwen-model"
@@ -1144,7 +1144,7 @@ mod tests {
                         "session": {
                             "id": "sess_001",
                             "object": "realtime.session",
-                            "model": QWEN_OMNI_REALTIME_MODEL,
+                            "model": ALIYUN_REALTIME_MODEL,
                             "modalities": ["text"],
                             "input_audio_format": "pcm",
                             "input_audio_transcription": null,
@@ -1173,7 +1173,7 @@ mod tests {
                         "session": {
                             "id": "sess_001",
                             "object": "realtime.session",
-                            "model": QWEN_OMNI_REALTIME_MODEL,
+                            "model": ALIYUN_REALTIME_MODEL,
                             "modalities": ["text"],
                             "input_audio_format": "pcm",
                             "input_audio_transcription": {"language": "zh"},
@@ -1230,7 +1230,7 @@ mod tests {
                         "session": {
                             "id": "sess_001",
                             "object": "realtime.session",
-                            "model": QWEN_OMNI_REALTIME_MODEL,
+                            "model": ALIYUN_REALTIME_MODEL,
                             "modalities": ["text"],
                             "input_audio_format": "pcm",
                             "input_audio_transcription": null,
@@ -1285,7 +1285,7 @@ mod tests {
                         "session": {
                             "id": "sess_001",
                             "object": "realtime.session",
-                            "model": QWEN_OMNI_REALTIME_MODEL,
+                            "model": ALIYUN_REALTIME_MODEL,
                             "modalities": ["text"],
                             "input_audio_format": "pcm",
                             "input_audio_transcription": {"language": "zh"},
@@ -1418,7 +1418,7 @@ mod tests {
                     serde_json::json!({
                         "event_id": "event_created",
                         "type": "session.created",
-                        "session": {"id": "sess_001", "object": "realtime.session", "model": QWEN_OMNI_REALTIME_MODEL, "modalities": ["text"], "input_audio_format": "pcm", "input_audio_transcription": null, "turn_detection": null}
+                        "session": {"id": "sess_001", "object": "realtime.session", "model": ALIYUN_REALTIME_MODEL, "modalities": ["text"], "input_audio_format": "pcm", "input_audio_transcription": null, "turn_detection": null}
                     })
                     .to_string()
                     .into(),

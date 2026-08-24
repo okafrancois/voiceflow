@@ -306,9 +306,9 @@ mod tests {
 
     #[test]
     fn pill_tooltip_event_carries_backend_message_and_task_context() {
-        let event = pill_tooltip_event("ESC 取消，Enter 确认", 3200, Some(42));
+        let event = pill_tooltip_event("Esc: cancel · Enter: confirm", 3200, Some(42));
 
-        assert_eq!(event.message, "ESC 取消，Enter 确认");
+        assert_eq!(event.message, "Esc: cancel · Enter: confirm");
         assert_eq!(event.duration_ms, 3200);
         assert_eq!(event.task_id, Some(42));
     }

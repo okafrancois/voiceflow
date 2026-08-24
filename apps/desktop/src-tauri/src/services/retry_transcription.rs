@@ -231,6 +231,11 @@ mod tests {
             audio_path,
             status: status.to_string(),
             error: Some("failed".to_string()),
+            source_kind: "recording".to_string(),
+            source_path: None,
+            translation_target: None,
+            timed_segments: Vec::new(),
+            delivery_status: "not_recorded".to_string(),
         }
     }
 

@@ -1,4 +1,4 @@
-//! End-to-End Tests for AriaType Application Flow
+//! End-to-End Tests for Voice Flow Application Flow
 //!
 //! These tests validate the core functionality of the application using public APIs
 //! that don't require a Tauri runtime context.
@@ -8,7 +8,7 @@ use common::audio_fixtures::{create_speech_like_wav, write_temp_wav};
 
 #[test]
 fn test_e2e_recording_state_transitions() {
-    use ariatype_lib::state::unified_state::{RecordingState, UnifiedRecordingState};
+    use voiceflow_lib::state::unified_state::{RecordingState, UnifiedRecordingState};
 
     let state = UnifiedRecordingState::new();
 
@@ -29,16 +29,16 @@ fn test_e2e_recording_state_transitions() {
 
 #[test]
 fn test_e2e_audio_system_functions() {
-    let devices = ariatype_lib::commands::system::get_audio_devices();
+    let devices = voiceflow_lib::commands::system::get_audio_devices();
     println!("Audio devices count: {}", devices.len());
 
-    let log_content = ariatype_lib::commands::system::get_log_content(100);
+    let log_content = voiceflow_lib::commands::system::get_log_content(100);
     println!("Log content length: {}", log_content.len());
 }
 
 #[test]
 fn test_e2e_settings_default() {
-    let settings = ariatype_lib::commands::settings::AppSettings::default();
+    let settings = voiceflow_lib::commands::settings::AppSettings::default();
 
     assert_eq!(settings.shortcut_profiles.dictate.hotkey, "Cmd+Slash");
     assert_eq!(settings.shortcut_profiles.riff.hotkey, "Opt+Slash");
@@ -50,7 +50,7 @@ fn test_e2e_settings_default() {
 
 #[test]
 fn test_e2e_cloud_stt_config() {
-    let config = ariatype_lib::commands::settings::CloudSttConfig::default();
+    let config = voiceflow_lib::commands::settings::CloudSttConfig::default();
     assert!(!config.enabled);
     assert!(config.provider_type.is_empty());
     assert!(config.api_key.is_empty());
@@ -58,7 +58,7 @@ fn test_e2e_cloud_stt_config() {
 
 #[test]
 fn test_e2e_cloud_polish_config() {
-    let config = ariatype_lib::commands::settings::CloudProviderConfig::default();
+    let config = voiceflow_lib::commands::settings::CloudProviderConfig::default();
     assert!(!config.enabled);
     assert!(config.provider_type.is_empty());
     assert!(config.api_key.is_empty());
@@ -89,7 +89,8 @@ mod edge_case_tests {
             })
             .collect();
 
-        let resampled = ariatype_lib::audio::resampler::resample_to_16khz(&samples, 44100).unwrap();
+        let resampled =
+            voiceflow_lib::audio::resampler::resample_to_16khz(&samples, 44100).unwrap();
 
         // 44100 samples at 44.1kHz = 1 second
         // At 16kHz, we expect ~16000 samples
@@ -107,7 +108,7 @@ mod edge_case_tests {
 
 // Pipeline tests using mock engines
 mod mock_stt {
-    use ariatype_lib::stt_engine::{EngineType, TranscriptionRequest, TranscriptionResult};
+    use voiceflow_lib::stt_engine::{EngineType, TranscriptionRequest, TranscriptionResult};
 
     pub struct MockSttEngine {
         pub result_text: String,
@@ -152,7 +153,7 @@ mod mock_stt {
 }
 
 mod mock_polish {
-    use ariatype_lib::polish_engine::{PolishEngineType, PolishRequest, PolishResult};
+    use voiceflow_lib::polish_engine::{PolishEngineType, PolishRequest, PolishResult};
 
     pub struct MockPolishEngine {
         pub result_text: String,
@@ -196,11 +197,14 @@ mod mock_polish {
 async fn test_e2e_mock_stt_engine_success() {
     let engine = mock_stt::MockSttEngine::new("Hello world");
 
-    let request = ariatype_lib::stt_engine::TranscriptionRequest::new(vec![0.0f32; 16000]);
+    let request = voiceflow_lib::stt_engine::TranscriptionRequest::new(vec![0.0f32; 16000]);
     let result = engine.transcribe(request).await.unwrap();
 
     assert_eq!(result.text, "Hello world");
-    assert_eq!(result.engine, ariatype_lib::stt_engine::EngineType::Whisper);
+    assert_eq!(
+        result.engine,
+        voiceflow_lib::stt_engine::EngineType::Whisper
+    );
     assert!(result.total_ms >= 100);
 }
 
@@ -208,7 +212,7 @@ async fn test_e2e_mock_stt_engine_success() {
 async fn test_e2e_mock_stt_engine_failure() {
     let engine = mock_stt::MockSttEngine::new("Should not appear").with_failure();
 
-    let request = ariatype_lib::stt_engine::TranscriptionRequest::new(vec![0.0f32; 16000]);
+    let request = voiceflow_lib::stt_engine::TranscriptionRequest::new(vec![0.0f32; 16000]);
     let result = engine.transcribe(request).await;
 
     assert!(result.is_err());
@@ -220,13 +224,13 @@ async fn test_e2e_mock_polish_engine_success() {
     let engine = mock_polish::MockPolishEngine::new("Polished text");
 
     let request =
-        ariatype_lib::polish_engine::PolishRequest::new("Raw text", "System prompt", "en");
+        voiceflow_lib::polish_engine::PolishRequest::new("Raw text", "System prompt", "en");
     let result = engine.polish(request).await.unwrap();
 
     assert_eq!(result.text, "Polished text");
     assert_eq!(
         result.engine,
-        ariatype_lib::polish_engine::PolishEngineType::Qwen
+        voiceflow_lib::polish_engine::PolishEngineType::Qwen
     );
 }
 
@@ -235,7 +239,7 @@ async fn test_e2e_mock_polish_engine_failure() {
     let engine = mock_polish::MockPolishEngine::new("Should not appear").with_failure();
 
     let request =
-        ariatype_lib::polish_engine::PolishRequest::new("Raw text", "System prompt", "en");
+        voiceflow_lib::polish_engine::PolishRequest::new("Raw text", "System prompt", "en");
     let result = engine.polish(request).await;
 
     assert!(result.is_err());
@@ -250,11 +254,11 @@ async fn run_pipeline(
     let stt = mock_stt::MockSttEngine::new(stt_result);
     let polish = mock_polish::MockPolishEngine::new(polish_result);
 
-    let stt_request = ariatype_lib::stt_engine::TranscriptionRequest::new(samples);
+    let stt_request = voiceflow_lib::stt_engine::TranscriptionRequest::new(samples);
     let stt_result = stt.transcribe(stt_request).await?;
 
     if polish_enabled && !stt_result.text.is_empty() {
-        let polish_request = ariatype_lib::polish_engine::PolishRequest::new(
+        let polish_request = voiceflow_lib::polish_engine::PolishRequest::new(
             stt_result.text.clone(),
             "Polish this text",
             "en",
@@ -297,7 +301,7 @@ async fn test_e2e_pipeline_transcribe_and_polish() {
 #[tokio::test]
 async fn test_e2e_pipeline_stt_fails_gracefully() {
     let stt = mock_stt::MockSttEngine::new("Should fail").with_failure();
-    let request = ariatype_lib::stt_engine::TranscriptionRequest::new(vec![0.0f32; 16000]);
+    let request = voiceflow_lib::stt_engine::TranscriptionRequest::new(vec![0.0f32; 16000]);
     let result = stt.transcribe(request).await;
 
     assert!(result.is_err());
@@ -317,12 +321,12 @@ async fn test_e2e_pipeline_polish_failure_recovery() {
     let stt = mock_stt::MockSttEngine::new("um hello world uh");
     let polish = mock_polish::MockPolishEngine::new("Should fail").with_failure();
 
-    let stt_request = ariatype_lib::stt_engine::TranscriptionRequest::new(vec![0.0f32; 16000]);
+    let stt_request = voiceflow_lib::stt_engine::TranscriptionRequest::new(vec![0.0f32; 16000]);
     let stt_result = stt.transcribe(stt_request).await.unwrap();
 
     assert_eq!(stt_result.text, "um hello world uh");
 
-    let polish_request = ariatype_lib::polish_engine::PolishRequest::new(
+    let polish_request = voiceflow_lib::polish_engine::PolishRequest::new(
         stt_result.text.clone(),
         "Polish this",
         "en",
@@ -332,11 +336,11 @@ async fn test_e2e_pipeline_polish_failure_recovery() {
     assert!(polish_result.is_err(), "Polish should fail");
 
     let pipeline_result: Result<String, String> = async {
-        let stt_request = ariatype_lib::stt_engine::TranscriptionRequest::new(vec![0.0f32; 16000]);
+        let stt_request = voiceflow_lib::stt_engine::TranscriptionRequest::new(vec![0.0f32; 16000]);
         let stt_result = stt.transcribe(stt_request).await?;
 
         if !stt_result.text.is_empty() {
-            let polish_request = ariatype_lib::polish_engine::PolishRequest::new(
+            let polish_request = voiceflow_lib::polish_engine::PolishRequest::new(
                 stt_result.text.clone(),
                 "Polish this",
                 "en",
@@ -363,8 +367,8 @@ async fn test_e2e_pipeline_polish_failure_recovery() {
 }
 
 mod shortcut_profiles {
-    use ariatype_lib::commands::settings::AppSettings;
-    use ariatype_lib::shortcut::{
+    use voiceflow_lib::commands::settings::AppSettings;
+    use voiceflow_lib::shortcut::{
         ShortcutAction, ShortcutProfile, ShortcutProfilesMap, ShortcutTriggerMode,
     };
 
@@ -457,7 +461,7 @@ mod shortcut_profiles {
         });
 
         let mut json_value = old_json.clone();
-        ariatype_lib::commands::settings::migrate_to_profiles_map_for_test(&mut json_value);
+        voiceflow_lib::commands::settings::migrate_to_profiles_map_for_test(&mut json_value);
 
         assert!(json_value.get("hotkey").is_none());
         let profiles = json_value.get("shortcut_profiles").unwrap();
@@ -518,7 +522,7 @@ mod shortcut_profiles {
         });
 
         let mut json_value = old_json;
-        ariatype_lib::commands::settings::migrate_to_profiles_map_for_test(&mut json_value);
+        voiceflow_lib::commands::settings::migrate_to_profiles_map_for_test(&mut json_value);
 
         let profiles = json_value.get("shortcut_profiles").unwrap();
         assert!(profiles.is_object());

@@ -9,12 +9,12 @@
 // F. Language recommendations
 // G. Edge cases and error handling
 
-use ariatype_lib::stt_engine::models::{
-    ModelDefinition, SENSE_VOICE_SMALL, WHISPER_BASE, WHISPER_SMALL,
-};
-use ariatype_lib::stt_engine::{EngineType, UnifiedEngineManager};
 use std::fs::File;
 use std::path::{Path, PathBuf};
+use voiceflow_lib::stt_engine::models::{
+    ModelDefinition, SENSE_VOICE_SMALL, WHISPER_BASE, WHISPER_SMALL,
+};
+use voiceflow_lib::stt_engine::{EngineType, UnifiedEngineManager};
 
 // ==================== Test helper functions ====================
 

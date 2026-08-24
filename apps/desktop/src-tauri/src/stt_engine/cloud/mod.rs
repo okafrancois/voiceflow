@@ -14,9 +14,7 @@ pub use crate::stt_engine::traits::{
     PartialResult as CloudPartialResult, PartialResultCallback as CloudPartialResultCallback,
 };
 pub use engine::CloudSttEngine;
-pub use volcengine_streaming::{
-    RECOMMENDED_CHUNK_SAMPLES, URL_BIGMODEL, URL_BIGMODEL_ASYNC, URL_BIGMODEL_NOSTREAM,
-};
+pub use volcengine_streaming::{RECOMMENDED_CHUNK_SAMPLES, URL_BIGMODEL_NOSTREAM};
 
 pub enum StreamingSttClient {
     Volcengine(VolcengineStreamingClient),

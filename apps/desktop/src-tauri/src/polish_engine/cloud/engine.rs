@@ -16,6 +16,8 @@ const CLOUD_POLISH_BASE_TIMEOUT_BYTES: usize = 1_000;
 const CLOUD_POLISH_TIMEOUT_STEP_BYTES: usize = 1_000;
 const CLOUD_POLISH_TIMEOUT_STEP: Duration = Duration::from_secs(5);
 const CLOUD_POLISH_CHECK_TIMEOUT: Duration = Duration::from_secs(10);
+pub const ANTHROPIC_MESSAGES_ENDPOINT: &str = "https://api.anthropic.com/v1/messages";
+pub const OPENAI_CHAT_COMPLETIONS_ENDPOINT: &str = "https://api.openai.com/v1/chat/completions";
 
 #[derive(Debug, Clone)]
 pub struct CloudProviderConfig {
@@ -31,7 +33,7 @@ pub struct CloudPolishEngine {
     client: Client,
 }
 
-pub const CORE_POLISH_CONSTRAINT: &str = r#"You are the Core text-polish layer for AriaType.
+pub const CORE_POLISH_CONSTRAINT: &str = r#"You are the Core text-polish layer for Voice Flow.
 
 CORE DUTIES (MUST follow for every template and custom prompt):
 1. First correct transcription errors from STT: wrong characters, wrong words, near-homophones, phonetic mistakes, segmentation errors, punctuation, casing, grammar, product names, technical terms, names, numbers, and units when the intended wording is clear from context.
@@ -52,6 +54,13 @@ impl CloudPolishEngine {
             client: Client::builder()
                 .build()
                 .expect("cloud polish reqwest client should build"),
+        }
+    }
+
+    fn validate_provider_type(&self) -> Result<(), String> {
+        match self.config.provider_type.as_str() {
+            "anthropic" | "openai" => Ok(()),
+            provider => Err(format!("Unsupported cloud polish provider: {provider}")),
         }
     }
 
@@ -110,7 +119,11 @@ impl CloudPolishEngine {
         let endpoint_path = self.provider_endpoint_path();
 
         if self.config.base_url.is_empty() {
-            return format!("{}{}", self.default_api_origin(), endpoint_path);
+            return match self.config.provider_type.as_str() {
+                "anthropic" => ANTHROPIC_MESSAGES_ENDPOINT.to_string(),
+                "openai" => OPENAI_CHAT_COMPLETIONS_ENDPOINT.to_string(),
+                _ => OPENAI_CHAT_COMPLETIONS_ENDPOINT.to_string(),
+            };
         }
 
         let base = self.config.base_url.trim_end_matches('/');
@@ -134,14 +147,6 @@ impl CloudPolishEngine {
             "anthropic" => "/v1/messages",
             "openai" => "/v1/chat/completions",
             _ => "/v1/chat/completions",
-        }
-    }
-
-    fn default_api_origin(&self) -> &'static str {
-        match self.config.provider_type.as_str() {
-            "anthropic" => "https://api.anthropic.com",
-            "openai" => "https://api.openai.com",
-            _ => "https://api.openai.com",
         }
     }
 
@@ -181,6 +186,8 @@ impl CloudPolishEngine {
     /// credentials, and model with the smallest request that still exercises the
     /// same API path used by real polishing.
     pub async fn check_connection(&self) -> Result<(), String> {
+        self.validate_provider_type()?;
+
         if self.config.api_key.trim().is_empty() {
             return Err("Cloud polish API key not configured".to_string());
         }
@@ -577,6 +584,8 @@ impl PolishEngine for CloudPolishEngine {
     }
 
     async fn polish(&self, request: PolishRequest) -> Result<PolishResult, String> {
+        self.validate_provider_type()?;
+
         if self.config.api_key.is_empty() {
             return Err("Cloud polish API key not configured".to_string());
         }
@@ -625,15 +634,7 @@ impl PolishEngine for CloudPolishEngine {
                 )
                 .await?
             }
-            _ => {
-                self.call_openai_api(
-                    &system_prompt,
-                    &input_text,
-                    timeout,
-                    preview_callback.as_ref(),
-                )
-                .await?
-            }
+            _ => unreachable!("provider type validated before request dispatch"),
         };
 
         let total_ms = t0.elapsed().as_millis() as u64;
@@ -696,7 +697,7 @@ mod tests {
     #[test]
     fn test_build_system_prompt_places_reference_context_after_user_rules() {
         let context = SystemContext::new("Remove filler words.")
-            .with_window_context("Candidate visible terms: AriaType");
+            .with_window_context("Candidate visible terms: Voice Flow");
         let prompt = CloudPolishEngine::build_system_prompt(&context);
 
         let user_rules_index = prompt.find("USER RULES:").unwrap();

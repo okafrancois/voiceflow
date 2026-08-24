@@ -1,5 +1,12 @@
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TimedSegment {
+    pub start_ms: i64,
+    pub end_ms: i64,
+    pub text: String,
+}
+
 /// Status of a transcription entry.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum EntryStatus {
@@ -47,6 +54,17 @@ pub struct TranscriptionEntry {
     pub status: String,
     /// Error message if transcription failed.
     pub error: Option<String>,
+    /// `recording` for microphone captures and `file` for imported media.
+    pub source_kind: String,
+    /// Canonical user-owned import path. It is never deleted with history.
+    pub source_path: Option<String>,
+    /// Explicit translation target, or `None` for same-language output.
+    pub translation_target: Option<String>,
+    /// Provider timestamps when available. File imports fall back at export time.
+    #[serde(default)]
+    pub timed_segments: Vec<TimedSegment>,
+    /// Last insertion outcome for this entry.
+    pub delivery_status: String,
 }
 
 /// Parameters for saving a new transcription history entry.
@@ -70,6 +88,11 @@ pub struct NewTranscriptionEntry {
     pub status: String,
     /// Error message if transcription failed.
     pub error: Option<String>,
+    pub source_kind: String,
+    pub source_path: Option<String>,
+    pub translation_target: Option<String>,
+    pub timed_segments: Vec<TimedSegment>,
+    pub delivery_status: String,
 }
 
 /// Summary statistics for the dashboard.

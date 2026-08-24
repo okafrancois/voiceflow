@@ -1198,8 +1198,11 @@ fn handle_recording_trigger_owner_loop(
         .load(Ordering::SeqCst);
     let profile = {
         let settings = app_state.settings.lock();
-        crate::services::shortcut::get_profile_by_key(&settings.shortcut_profiles, profile_id)
-            .cloned()
+        settings
+            .workflow_profiles
+            .iter()
+            .find(|profile| profile.id == profile_id)
+            .map(crate::services::product_workflows::WorkflowProfile::shortcut_profile)
     };
     let context = primary_shortcut_context(&app_state, capture_active, profile.as_ref());
     let pending_profile_id = owner_state

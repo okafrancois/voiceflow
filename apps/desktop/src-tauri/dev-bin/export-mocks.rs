@@ -1,7 +1,7 @@
-use ariatype_lib::history::models::{HistoryFilter, TranscriptionEntry};
-use ariatype_lib::state::app_state::AppState;
 use std::fs;
 use std::path::PathBuf;
+use voiceflow_lib::history::models::{HistoryFilter, TranscriptionEntry};
+use voiceflow_lib::state::app_state::AppState;
 
 const MAX_HISTORY_ENTRIES: usize = 20;
 const FAKE_TEXT: &str = "hello";

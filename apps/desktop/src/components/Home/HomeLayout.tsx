@@ -9,6 +9,8 @@ import {
   ArrowSquareOut,
   GithubLogo,
   Info,
+  Gauge,
+  FlowArrow,
   type Icon,
 } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
@@ -32,8 +34,8 @@ import {
   type NavigationItemConfig,
 } from "./NavigationItem";
 
-const FEEDBACK_URL = "https://github.com/joe223/AriaType/issues/new";
-const GITHUB_SUPPORT_URL = "https://github.com/joe223/AriaType";
+const FEEDBACK_URL = "https://github.com/okafrancois/voiceflow/issues/new";
+const GITHUB_SUPPORT_URL = "https://github.com/okafrancois/voiceflow";
 const SETTINGS_ROUTES = new Set([
   "/settings",
   "/hotkey",
@@ -129,6 +131,18 @@ export function HomeLayout() {
       to: "/polish-templates",
       icon: MagicWand,
       label: t("nav.polishTemplates"),
+    },
+    {
+      id: "workflows",
+      to: "/workflows",
+      icon: FlowArrow,
+      label: t("nav.workflows"),
+    },
+    {
+      id: "quality",
+      to: "/quality",
+      icon: Gauge,
+      label: t("nav.quality"),
     },
   ];
   const settingsNeedsAttention = !hasModel || badges.permission;

@@ -10,11 +10,11 @@
 //! There is no separate `sendLast` method - `finish()` signals end-of-stream and
 //! waits for the final transcription result.
 
-use ariatype_lib::commands::settings::CloudSttConfig;
-use ariatype_lib::stt_engine::cloud::{StreamingSttClient, URL_BIGMODEL_NOSTREAM};
-use ariatype_lib::stt_engine::traits::{PartialResult, SttContext};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use voiceflow_lib::commands::settings::CloudSttConfig;
+use voiceflow_lib::stt_engine::cloud::{StreamingSttClient, URL_BIGMODEL_NOSTREAM};
+use voiceflow_lib::stt_engine::traits::{PartialResult, SttContext};
 
 mod mock_credentials {
     pub const API_KEY: &str = "mock_api_key_for_testing";
@@ -64,6 +64,7 @@ fn create_silent_pcm_chunk(samples: usize) -> Vec<i16> {
 // ==================== StreamingSttEngine Trait Tests ====================
 
 #[tokio::test]
+#[ignore = "requires access to the live Volcengine API"]
 async fn test_streaming_engine_connect_auth_error() {
     let config = create_volcengine_config();
     let mut client = StreamingSttClient::new(config, Some("zh"), SttContext::default()).unwrap();
@@ -115,6 +116,7 @@ async fn test_streaming_engine_finish_before_start() {
 }
 
 #[tokio::test]
+#[ignore = "requires access to the live Volcengine API"]
 async fn test_streaming_engine_lifecycle_with_callback() {
     let config = create_volcengine_config();
     let mut client = StreamingSttClient::new(config, Some("zh"), SttContext::default()).unwrap();
@@ -603,6 +605,7 @@ async fn test_streaming_finish_fails_when_server_closes_without_final_result() {
 /// 3. Error handling is consistent across all chunk sends
 /// 4. finish() properly signals end of stream
 #[tokio::test]
+#[ignore = "requires access to the live Volcengine API"]
 async fn test_streaming_engine_multi_chunk_streaming() {
     let config = create_volcengine_config();
     let mut client = StreamingSttClient::new(config, Some("zh"), SttContext::default()).unwrap();
@@ -669,6 +672,7 @@ async fn test_streaming_engine_multi_chunk_streaming() {
 ///
 /// This verifies the internal audio channel queueing mechanism.
 #[tokio::test]
+#[ignore = "requires access to the live Volcengine API"]
 async fn test_streaming_engine_audio_channel_queueing() {
     let config = create_volcengine_config();
     let mut client = StreamingSttClient::new(config, Some("zh"), SttContext::default()).unwrap();
@@ -717,6 +721,7 @@ async fn test_streaming_engine_audio_channel_queueing() {
 /// Verifies that Volcengine provider is correctly dispatched and
 /// produces Volcengine-specific error messages.
 #[tokio::test]
+#[ignore = "requires access to the live Volcengine API"]
 async fn test_volcengine_dispatch_verification() {
     let config = create_volcengine_config();
     let mut client = StreamingSttClient::new(config, Some("zh"), SttContext::default()).unwrap();
@@ -751,6 +756,7 @@ async fn test_volcengine_dispatch_verification() {
 // ==================== Legacy connect() Tests ====================
 
 #[tokio::test]
+#[ignore = "requires access to the live Volcengine API"]
 async fn test_volcengine_auth_error() {
     let config = create_volcengine_config();
     let mut client = StreamingSttClient::new(config, Some("zh"), SttContext::default()).unwrap();
@@ -775,6 +781,7 @@ async fn test_volcengine_auth_error() {
 }
 
 #[tokio::test]
+#[ignore = "requires access to the live Aliyun API"]
 async fn test_aliyun_auth_error() {
     let config = create_aliyun_config();
     let mut client = StreamingSttClient::new(config, Some("zh"), SttContext::default()).unwrap();
@@ -800,6 +807,7 @@ async fn test_aliyun_auth_error() {
 }
 
 #[tokio::test]
+#[ignore = "requires access to the live ElevenLabs API"]
 async fn test_elevenlabs_auth_error() {
     let config = create_elevenlabs_config();
     let mut client = StreamingSttClient::new(config, Some("en"), SttContext::default()).unwrap();
@@ -831,7 +839,7 @@ async fn test_elevenlabs_auth_error() {
 /// Tests that the log retrieval infrastructure is available and functional.
 #[tokio::test]
 async fn test_log_retrieval_infrastructure() {
-    let log_content = ariatype_lib::commands::system::get_log_content(100);
+    let log_content = voiceflow_lib::commands::system::get_log_content(100);
     // Function should return a valid string, not panic
     assert!(true, "Log retrieval function should be callable");
 

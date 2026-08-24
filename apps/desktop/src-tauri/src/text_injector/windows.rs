@@ -1,120 +1,171 @@
 #![cfg_attr(all(test, not(target_os = "windows")), allow(dead_code))]
 
-use enigo::{Direction, Enigo, Key, Keyboard, Settings};
-use tracing::{info, warn};
+use std::time::Duration;
+
+#[cfg(target_os = "windows")]
+use enigo::Settings;
+use enigo::{Direction, Enigo, Key, Keyboard};
+#[cfg(target_os = "windows")]
+use tracing::info;
+use tracing::warn;
+
+use super::InjectionMethod;
 
 pub struct WindowsInjector;
 
 const CHUNK_SIZE: usize = 100;
 const CHUNK_DELAY_MS: u64 = 50;
 
+#[cfg(target_os = "windows")]
 impl super::TextInjector for WindowsInjector {
-    fn insert(&self, text: &str, write_clipboard: &dyn Fn()) {
+    fn insert(&self, text: &str) -> Result<InjectionMethod, String> {
         let grapheme_count = text.chars().count();
         info!(
             text_len = text.len(),
             grapheme_count, "text_injection_started"
         );
 
-        // For long text, use clipboard paste (more reliable)
-        if grapheme_count > 400 {
-            info!(grapheme_count, "text_injection_clipboard_mode-long_text");
-            write_clipboard();
-            if let Err(e) = self.paste_from_clipboard() {
-                warn!(error = %e, "clipboard_paste_failed");
-            }
-            return;
+        let mut keyboard = Enigo::new(&Settings::default())
+            .map_err(|error| format!("Failed to create Windows input driver: {error}"))?;
+        let mut clipboard = SystemClipboard::default();
+        let result = inject_with_drivers(text, &mut keyboard, &mut clipboard, &std::thread::sleep);
+        match &result {
+            Ok(method) => info!(?method, "text_injection_completed"),
+            Err(error) => warn!(error = %error, "text_injection_failed"),
         }
-
-        // Try keyboard simulation first
-        if self.try_enigo_key_sequence(text) {
-            info!("text_injection_completed-enigo");
-            return;
-        }
-
-        // Fallback to clipboard paste
-        info!("text_injection_fallback-clipboard");
-        write_clipboard();
-        if let Err(e) = self.paste_from_clipboard() {
-            warn!(error = %e, "clipboard_paste_failed");
-        }
+        result
     }
 }
 
-impl WindowsInjector {
-    fn try_enigo_key_sequence(&self, text: &str) -> bool {
-        let mut enigo = match Enigo::new(&Settings::default()) {
-            Ok(e) => e,
-            Err(e) => {
-                warn!(error = %e, "enigo_creation_failed");
-                return false;
+fn inject_with_drivers(
+    text: &str,
+    keyboard: &mut dyn KeyboardDriver,
+    clipboard: &mut dyn ClipboardDriver,
+    delay: &dyn Fn(Duration),
+) -> Result<InjectionMethod, String> {
+    let char_count = text.chars().count();
+    if !text.contains('\n') && char_count <= 400 {
+        match try_keyboard_sequence(text, keyboard, delay) {
+            Ok(()) => return Ok(InjectionMethod::Keyboard),
+            Err(error) => {
+                warn!(error = %error, "text_injection_keyboard_fallback");
             }
-        };
-
-        let char_count = text.chars().count();
-
-        if char_count <= CHUNK_SIZE {
-            match enigo.text(text) {
-                Ok(_) => {
-                    info!("text_injection_enigo_succeeded-single_chunk");
-                    true
-                }
-                Err(e) => {
-                    warn!(error = %e, "text_injection_enigo_failed");
-                    false
-                }
-            }
-        } else {
-            // Split into chunks to avoid IME issues
-            let chars: Vec<char> = text.chars().collect();
-            let chunk_count = char_count.div_ceil(CHUNK_SIZE);
-            info!(chunk_count, "text_injection_chunking_started");
-
-            for (i, chunk) in chars.chunks(CHUNK_SIZE).enumerate() {
-                let chunk_str: String = chunk.iter().collect();
-                match enigo.text(&chunk_str) {
-                    Ok(_) => {
-                        info!(
-                            chunk_index = i + 1,
-                            chunk_chars = chunk.len(),
-                            "text_injection_chunk_injected"
-                        );
-                    }
-                    Err(e) => {
-                        warn!(chunk_index = i + 1, error = %e, "text_injection_chunk_failed");
-                        return false;
-                    }
-                }
-
-                if i < chunk_count - 1 {
-                    std::thread::sleep(std::time::Duration::from_millis(CHUNK_DELAY_MS));
-                }
-            }
-
-            info!("text_injection_enigo_succeeded-chunked");
-            true
         }
     }
 
-    fn paste_from_clipboard(&self) -> Result<(), String> {
-        let mut enigo =
-            Enigo::new(&Settings::default()).map_err(|e| format!("Failed to create Enigo: {e}"))?;
+    paste_with_clipboard_transaction(text, keyboard, clipboard, delay)?;
+    Ok(InjectionMethod::Clipboard)
+}
 
-        std::thread::sleep(std::time::Duration::from_millis(20));
+fn try_keyboard_sequence(
+    text: &str,
+    keyboard: &mut dyn KeyboardDriver,
+    delay: &dyn Fn(Duration),
+) -> Result<(), String> {
+    let chars: Vec<char> = text.chars().collect();
+    let chunk_count = chars.len().div_ceil(CHUNK_SIZE);
 
-        send_clipboard_paste_shortcut(&mut enigo)?;
-        info!("clipboard_paste_ctrlv_sent");
-        Ok(())
+    for (index, chunk) in chars.chunks(CHUNK_SIZE).enumerate() {
+        let chunk_text: String = chunk.iter().collect();
+        keyboard
+            .text(&chunk_text)
+            .map_err(|error| format!("chunk {} failed: {error}", index + 1))?;
+        if index + 1 < chunk_count {
+            delay(Duration::from_millis(CHUNK_DELAY_MS));
+        }
+    }
+
+    Ok(())
+}
+
+fn paste_with_clipboard_transaction(
+    text: &str,
+    keyboard: &mut dyn KeyboardDriver,
+    clipboard: &mut dyn ClipboardDriver,
+    delay: &dyn Fn(Duration),
+) -> Result<(), String> {
+    let previous_text = clipboard
+        .read_text()
+        .map_err(|error| format!("clipboard read failed: {error}"))?;
+    clipboard
+        .write_text(text)
+        .map_err(|error| format!("clipboard write failed: {error}"))?;
+
+    delay(Duration::from_millis(20));
+    let paste_result = send_clipboard_paste_shortcut(keyboard);
+    delay(Duration::from_millis(100));
+    let restore_result = match previous_text {
+        Some(previous_text) => clipboard.write_text(&previous_text),
+        None => clipboard.clear(),
+    };
+
+    match (paste_result, restore_result) {
+        (Ok(()), Ok(())) => Ok(()),
+        (Err(paste_error), Ok(())) => Err(format!("clipboard paste failed: {paste_error}")),
+        (Ok(()), Err(restore_error)) => Err(format!("clipboard restore failed: {restore_error}")),
+        (Err(paste_error), Err(restore_error)) => Err(format!(
+            "clipboard paste failed: {paste_error}; clipboard restore failed: {restore_error}"
+        )),
     }
 }
 
 trait KeyboardDriver {
+    fn text(&mut self, text: &str) -> Result<(), String>;
     fn key(&mut self, key: Key, direction: Direction) -> Result<(), String>;
 }
 
 impl KeyboardDriver for Enigo {
+    fn text(&mut self, text: &str) -> Result<(), String> {
+        Keyboard::text(self, text).map_err(|error| error.to_string())
+    }
+
     fn key(&mut self, key: Key, direction: Direction) -> Result<(), String> {
         Keyboard::key(self, key, direction).map_err(|error| error.to_string())
+    }
+}
+
+trait ClipboardDriver {
+    fn read_text(&mut self) -> Result<Option<String>, String>;
+    fn write_text(&mut self, text: &str) -> Result<(), String>;
+    fn clear(&mut self) -> Result<(), String>;
+}
+
+#[cfg(target_os = "windows")]
+#[derive(Default)]
+struct SystemClipboard {
+    clipboard: Option<arboard::Clipboard>,
+}
+
+#[cfg(target_os = "windows")]
+impl SystemClipboard {
+    fn get(&mut self) -> Result<&mut arboard::Clipboard, String> {
+        if self.clipboard.is_none() {
+            self.clipboard = Some(arboard::Clipboard::new().map_err(|error| error.to_string())?);
+        }
+        self.clipboard
+            .as_mut()
+            .ok_or_else(|| "clipboard initialization failed".to_string())
+    }
+}
+
+#[cfg(target_os = "windows")]
+impl ClipboardDriver for SystemClipboard {
+    fn read_text(&mut self) -> Result<Option<String>, String> {
+        match self.get()?.get_text() {
+            Ok(text) => Ok(Some(text)),
+            Err(arboard::Error::ContentNotAvailable) => Ok(None),
+            Err(error) => Err(error.to_string()),
+        }
+    }
+
+    fn write_text(&mut self, text: &str) -> Result<(), String> {
+        self.get()?
+            .set_text(text)
+            .map_err(|error| error.to_string())
+    }
+
+    fn clear(&mut self) -> Result<(), String> {
+        self.get()?.clear().map_err(|error| error.to_string())
     }
 }
 
@@ -179,9 +230,12 @@ fn release_keyboard_modifiers(keyboard: &mut dyn KeyboardDriver) -> Vec<String> 
 
 #[cfg(test)]
 mod tests {
+    use std::cell::RefCell;
+    use std::time::Duration;
+
     use super::{
-        paste_shortcut_key, release_keyboard_modifiers, send_clipboard_paste_shortcut,
-        KeyboardDriver,
+        inject_with_drivers, paste_shortcut_key, release_keyboard_modifiers,
+        send_clipboard_paste_shortcut, ClipboardDriver, InjectionMethod, KeyboardDriver,
     };
     use enigo::{Direction, Key};
 
@@ -195,6 +249,8 @@ mod tests {
     struct FakeKeyboard {
         events: Vec<KeyEvent>,
         failures: Vec<(Key, Direction, &'static str)>,
+        typed_text: Vec<String>,
+        fail_text: bool,
     }
 
     impl FakeKeyboard {
@@ -202,9 +258,22 @@ mod tests {
             self.failures.push((key, direction, message));
             self
         }
+
+        fn fail_text(mut self) -> Self {
+            self.fail_text = true;
+            self
+        }
     }
 
     impl KeyboardDriver for FakeKeyboard {
+        fn text(&mut self, text: &str) -> Result<(), String> {
+            self.typed_text.push(text.to_string());
+            if self.fail_text {
+                return Err("keyboard text rejected".to_string());
+            }
+            Ok(())
+        }
+
         fn key(&mut self, key: Key, direction: Direction) -> Result<(), String> {
             self.events.push(KeyEvent { key, direction });
             if let Some((_, _, message)) =
@@ -219,6 +288,174 @@ mod tests {
 
             Ok(())
         }
+    }
+
+    #[derive(Default)]
+    struct FakeClipboard {
+        current: Option<String>,
+        writes: Vec<String>,
+        clear_count: usize,
+        fail_write: bool,
+    }
+
+    impl ClipboardDriver for FakeClipboard {
+        fn read_text(&mut self) -> Result<Option<String>, String> {
+            Ok(self.current.clone())
+        }
+
+        fn write_text(&mut self, text: &str) -> Result<(), String> {
+            if self.fail_write {
+                return Err("clipboard locked".to_string());
+            }
+            self.current = Some(text.to_string());
+            self.writes.push(text.to_string());
+            Ok(())
+        }
+
+        fn clear(&mut self) -> Result<(), String> {
+            self.current = None;
+            self.clear_count += 1;
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn long_text_is_written_before_paste_and_previous_clipboard_is_restored() {
+        let requested = "é".repeat(401);
+        let mut keyboard = FakeKeyboard::default();
+        let mut clipboard = FakeClipboard {
+            current: Some("previous value".to_string()),
+            ..FakeClipboard::default()
+        };
+
+        let method = inject_with_drivers(&requested, &mut keyboard, &mut clipboard, &|_| {})
+            .expect("long text should use clipboard delivery");
+
+        assert_eq!(method, InjectionMethod::Clipboard);
+        assert_eq!(
+            clipboard.writes,
+            vec![requested, "previous value".to_string()]
+        );
+        assert_eq!(clipboard.current.as_deref(), Some("previous value"));
+        assert!(keyboard.events.iter().any(|event| {
+            event.key == paste_shortcut_key() && event.direction == Direction::Click
+        }));
+    }
+
+    #[test]
+    fn short_unicode_text_uses_keyboard_without_touching_clipboard() {
+        let requested = "Déjà prêt — café ☕";
+        let mut keyboard = FakeKeyboard::default();
+        let mut clipboard = FakeClipboard {
+            current: Some("keep me".to_string()),
+            ..FakeClipboard::default()
+        };
+
+        let method = inject_with_drivers(requested, &mut keyboard, &mut clipboard, &|_| {})
+            .expect("Unicode keyboard delivery should succeed");
+
+        assert_eq!(method, InjectionMethod::Keyboard);
+        assert_eq!(keyboard.typed_text, vec![requested]);
+        assert!(clipboard.writes.is_empty());
+        assert_eq!(clipboard.current.as_deref(), Some("keep me"));
+    }
+
+    #[test]
+    fn medium_ascii_text_is_typed_in_bounded_chunks_with_delays() {
+        let requested = "a".repeat(250);
+        let mut keyboard = FakeKeyboard::default();
+        let mut clipboard = FakeClipboard::default();
+        let delays = RefCell::new(Vec::new());
+
+        let method = inject_with_drivers(&requested, &mut keyboard, &mut clipboard, &|delay| {
+            delays.borrow_mut().push(delay);
+        })
+        .expect("medium text should use chunked keyboard delivery");
+
+        assert_eq!(method, InjectionMethod::Keyboard);
+        assert_eq!(
+            keyboard
+                .typed_text
+                .iter()
+                .map(String::len)
+                .collect::<Vec<_>>(),
+            vec![100, 100, 50]
+        );
+        assert_eq!(
+            delays.into_inner(),
+            vec![Duration::from_millis(50), Duration::from_millis(50)]
+        );
+        assert!(clipboard.writes.is_empty());
+    }
+
+    #[test]
+    fn multiline_text_uses_clipboard_even_when_short() {
+        let mut keyboard = FakeKeyboard::default();
+        let mut clipboard = FakeClipboard::default();
+
+        let method = inject_with_drivers(
+            "first line\nsecond line",
+            &mut keyboard,
+            &mut clipboard,
+            &|_| {},
+        )
+        .expect("multiline clipboard delivery should succeed");
+
+        assert_eq!(method, InjectionMethod::Clipboard);
+        assert!(keyboard.typed_text.is_empty());
+        assert_eq!(clipboard.writes, vec!["first line\nsecond line"]);
+        assert_eq!(clipboard.clear_count, 1);
+    }
+
+    #[test]
+    fn keyboard_failure_falls_back_to_clipboard_for_emoji_text() {
+        let requested = "Reply with 👋🏽";
+        let mut keyboard = FakeKeyboard::default().fail_text();
+        let mut clipboard = FakeClipboard::default();
+
+        let method = inject_with_drivers(requested, &mut keyboard, &mut clipboard, &|_| {})
+            .expect("clipboard fallback should recover keyboard failure");
+
+        assert_eq!(method, InjectionMethod::Clipboard);
+        assert_eq!(clipboard.writes, vec![requested]);
+        assert_eq!(clipboard.clear_count, 1);
+    }
+
+    #[test]
+    fn clipboard_write_failure_is_reported_without_pasting() {
+        let mut keyboard = FakeKeyboard::default().fail_text();
+        let mut clipboard = FakeClipboard {
+            fail_write: true,
+            ..FakeClipboard::default()
+        };
+
+        let error = inject_with_drivers("hello", &mut keyboard, &mut clipboard, &|_| {})
+            .expect_err("a locked clipboard must fail delivery");
+
+        assert!(error.contains("clipboard write failed: clipboard locked"));
+        assert!(!keyboard.events.iter().any(|event| {
+            event.key == paste_shortcut_key() && event.direction == Direction::Click
+        }));
+    }
+
+    #[test]
+    fn paste_failure_restores_previous_clipboard_and_reports_error() {
+        let mut keyboard = FakeKeyboard::default().fail_text().fail_on(
+            paste_shortcut_key(),
+            Direction::Click,
+            "paste blocked",
+        );
+        let mut clipboard = FakeClipboard {
+            current: Some("original".to_string()),
+            ..FakeClipboard::default()
+        };
+
+        let error = inject_with_drivers("hello", &mut keyboard, &mut clipboard, &|_| {})
+            .expect_err("a blocked paste must fail delivery");
+
+        assert!(error.contains("clipboard paste failed"));
+        assert_eq!(clipboard.current.as_deref(), Some("original"));
+        assert_eq!(clipboard.writes, vec!["hello", "original"]);
     }
 
     #[test]

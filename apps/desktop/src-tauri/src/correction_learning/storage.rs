@@ -126,13 +126,14 @@ impl CorrectionStore {
         if corrected.is_empty() {
             return Ok(false);
         }
+        let corrected_key = dictionary_term_key(corrected);
 
         self.with_store_lock(|| {
             let now_ms = chrono::Utc::now().timestamp_millis();
             let mut file = self.load_or_empty_unlocked(now_ms)?;
             let before = file.corrections.len();
             file.corrections
-                .retain(|mapping| !mapping.corrected.eq_ignore_ascii_case(corrected));
+                .retain(|mapping| dictionary_term_key(&mapping.corrected) != corrected_key);
             let changed = file.corrections.len() != before;
 
             if changed {
@@ -194,6 +195,13 @@ impl CorrectionStore {
         let _file_guard = StoreFileLock::acquire(&self.path)?;
         operation()
     }
+}
+
+fn dictionary_term_key(term: &str) -> String {
+    term.chars()
+        .filter(|character| !character.is_whitespace())
+        .flat_map(char::to_lowercase)
+        .collect()
 }
 
 struct StoreFileLock {
@@ -586,7 +594,7 @@ mod tests {
         let result = apply_corrections_to_text(
             "Air Tap",
             &[
-                mapping("Air Tap", "AriaType"),
+                mapping("Air Tap", "Voice Flow"),
                 mapping("Air Tap", "AiraType"),
             ],
         );
@@ -631,11 +639,11 @@ mod tests {
         let store = CorrectionStore::new(dir.path().join("corrections.json"));
 
         store
-            .upsert_pair(CorrectionPair::new("Air Tap", "AriaType"))
+            .upsert_pair(CorrectionPair::new("Air Tap", "Voice Flow"))
             .unwrap()
             .unwrap();
         store
-            .upsert_pair(CorrectionPair::new("AirType", "AriaType"))
+            .upsert_pair(CorrectionPair::new("AirType", "Voice Flow"))
             .unwrap()
             .unwrap();
         store
@@ -643,7 +651,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        let deleted = store.delete_corrected_term("ariatype").unwrap();
+        let deleted = store.delete_corrected_term("voiceflow").unwrap();
 
         assert!(deleted);
         let file = store.load_or_empty(0).unwrap();
@@ -684,7 +692,7 @@ mod tests {
             version: CORRECTION_LEARNING_FILE_VERSION,
             updated_at_ms: 1,
             corrections: vec![
-                mapping("Error type", "AriaType"),
+                mapping("Error type", "Voice Flow"),
                 mapping("我", "而不"),
                 mapping("运行一下这个recipe，看看效果", "Ask for follow-up changes"),
             ],
@@ -695,7 +703,7 @@ mod tests {
 
         assert_eq!(loaded.corrections.len(), 1);
         assert_eq!(loaded.corrections[0].wrong, "Error type");
-        assert_eq!(loaded.corrections[0].corrected, "AriaType");
+        assert_eq!(loaded.corrections[0].corrected, "Voice Flow");
     }
 
     #[test]
@@ -706,7 +714,7 @@ mod tests {
             version: CORRECTION_LEARNING_FILE_VERSION,
             updated_at_ms: 1,
             corrections: vec![
-                mapping("Error type", "AriaType"),
+                mapping("Error type", "Voice Flow"),
                 mapping("我", "而不"),
                 mapping("运行一下这个recipe，看看效果", "Ask for follow-up changes"),
             ],

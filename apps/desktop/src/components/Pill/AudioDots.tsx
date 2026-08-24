@@ -22,33 +22,29 @@ const R_REM = DOT_H_REM / 2; // 0.15625rem
  * Layout & Animation rules for three dots:
  *
  * ═══════════════════════════════════════════════════════════════════════════
- * IDLE state (静止状态):
+ * IDLE state:
  * ┌─────────────────────────────────────────────────────────────────────┐
- * │  三个 dot 紧密拼接成一个完整的矩形条                                 │
+ * │  The three dots join into one rectangular bar.                      │
  * │  ┌─┐┌─┐┌─┐                                                         │
- * │  │█││█││█│  ← 无间隙，左圆角 + 方形中间 + 右圆角                     │
+ * │  │█││█││█│  No gaps; rounded left and right edges.                  │
  * │  └─┘└─┘└─┘                                                         │
  * │  0   W  2W                                                          │
- * │  left=center=right 的 border-radius 都等于 dot 高度的一半 (R)       │
+ * │  The outer radius is half the dot height (R).                       │
  * └─────────────────────────────────────────────────────────────────────┘
  *   - Container width = 3 × IDLE_W
- *   - left dot:  left=0,      borderRadius=[R, 0, 0, R] (左侧圆角)
- *   - center dot: left=W,     borderRadius=0           (方形，无圆角)
- *   - right dot:  left=2W,    borderRadius=[0, R, R, 0] (右侧圆角)
+ *   - left dot:  left=0,      borderRadius=[R, 0, 0, R]
+ *   - center dot: left=W,     borderRadius=0
+ *   - right dot:  left=2W,    borderRadius=[0, R, R, 0]
  *   - Result: seamless rectangular bar
  *
  * ═══════════════════════════════════════════════════════════════════════════
- * RECORDING state (录音状态):
+ * RECORDING state:
  * ┌─────────────────────────────────────────────────────────────────────┐
- * │  三个 dot 分散排列，各自为圆形                                       │
+ * │  The three dots separate into circles.                              │
  * │  ●      ●      ●                                                    │
  * │  ↑      ↑      ↑                                                    │
- * │  左固定  中固定  右固定                                               │
- * │                                                                     │
- * │  尺寸变化时:                                                         │
- * │  - left:   transform-origin=left center  → 左侧固定，向右延伸        │
- * │  - center: transform-origin=center center → 中间固定，两侧延伸      │
- * │  - right:  transform-origin=right center → 右侧固定，向左延伸        │
+ * │  Each dot stays anchored while its width changes.                   │
+ * │  The outer dots grow inward; the center dot grows symmetrically.    │
  * └─────────────────────────────────────────────────────────────────────┘
  *   - Each dot shrinks via scaleX = ACTIVE_W / IDLE_W (0.5)
  *   - All dots have full circular borderRadius: [R, R, R, R]

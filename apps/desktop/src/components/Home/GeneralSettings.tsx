@@ -26,7 +26,13 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { MultiSwitch } from "@/components/ui/multi-switch";
-import { systemCommands, settingsCommands } from "@/lib/tauri";
+import {
+  historyCommands,
+  systemCommands,
+  settingsCommands,
+  type RetentionPolicy,
+  type RetentionStatus,
+} from "@/lib/tauri";
 import { logger } from "@/lib/logger";
 import { analytics } from "@/lib/analytics";
 import { AnalyticsEvents } from "@/lib/events";
@@ -97,6 +103,7 @@ export function GeneralSettings({
   const [isClearingCorrectionMemory, setIsClearingCorrectionMemory] = useState(false);
   const [isOpeningCorrectionMemoryDirectory, setIsOpeningCorrectionMemoryDirectory] = useState(false);
   const [correctionMemoryCleared, setCorrectionMemoryCleared] = useState(false);
+  const [retentionStatus, setRetentionStatus] = useState<RetentionStatus | null>(null);
   const correctionMemoryClearedTimer = useRef<number | undefined>(undefined);
 
   const { refs: colorPickerRefs, floatingStyles: colorPickerFloatingStyles, context: colorPickerContext } = useFloating({
@@ -176,6 +183,18 @@ export function GeneralSettings({
         setIsInHouseBuild(identifier.endsWith(".inhouse"));
       })
       .catch((err: unknown) => logger.error("failed_to_get_app_identifier", { error: String(err) }));
+  }, []);
+
+  const refreshRetentionStatus = async () => {
+    try {
+      setRetentionStatus(await historyCommands.getRetentionStatus());
+    } catch (err) {
+      logger.error("failed_to_get_retention_status", { error: String(err) });
+    }
+  };
+
+  useEffect(() => {
+    void refreshRetentionStatus();
   }, []);
 
   useEffect(() => {
@@ -260,6 +279,21 @@ export function GeneralSettings({
     await updateSetting("analytics_opt_in", checked);
     if (checked) {
       analytics.track(AnalyticsEvents.SETTING_CHANGED, { setting: "analytics_enabled", value: "true" });
+    }
+  };
+
+  const handleRetentionChange = async (
+    setting: "text_retention" | "audio_retention",
+    value: RetentionPolicy,
+  ) => {
+    analytics.track(AnalyticsEvents.SETTING_CHANGED, { setting, value });
+    try {
+      await updateSetting(setting, value);
+    } catch (err) {
+      logger.error("retention_policy_apply_incomplete", { error: String(err), setting, value });
+      showErrorToast(t("general.privacy.retentionApplyError"));
+    } finally {
+      await refreshRetentionStatus();
     }
   };
 
@@ -415,6 +449,61 @@ export function GeneralSettings({
               <CardDescription>{t("general.startup.description")}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
+              <div className="space-y-2">
+                <Label>{t("general.privacy.textRetention")}</Label>
+                <p className="text-xs text-muted-foreground">
+                  {t("general.privacy.textRetentionDesc")}
+                </p>
+                <Select
+                  aria-label={t("general.privacy.textRetention")}
+                  value={settings.text_retention}
+                  onChange={(event) => handleRetentionChange(
+                    "text_retention",
+                    event.target.value as RetentionPolicy,
+                  )}
+                  options={[
+                    { value: "never", label: t("general.privacy.retention.never") },
+                    { value: "days_7", label: t("general.privacy.retention.days7") },
+                    { value: "days_30", label: t("general.privacy.retention.days30") },
+                    { value: "days_90", label: t("general.privacy.retention.days90") },
+                    { value: "forever", label: t("general.privacy.retention.forever") },
+                  ]}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>{t("general.privacy.audioRetention")}</Label>
+                <p className="text-xs text-muted-foreground">
+                  {t("general.privacy.audioRetentionDesc")}
+                </p>
+                <Select
+                  aria-label={t("general.privacy.audioRetention")}
+                  value={settings.audio_retention}
+                  onChange={(event) => handleRetentionChange(
+                    "audio_retention",
+                    event.target.value as RetentionPolicy,
+                  )}
+                  options={[
+                    { value: "never", label: t("general.privacy.retention.never") },
+                    { value: "days_7", label: t("general.privacy.retention.days7") },
+                    { value: "days_30", label: t("general.privacy.retention.days30") },
+                    { value: "days_90", label: t("general.privacy.retention.days90") },
+                    { value: "forever", label: t("general.privacy.retention.forever") },
+                  ]}
+                />
+              </div>
+              {retentionStatus && (
+                <p className="rounded-2xl border border-border bg-background px-4 py-3 text-xs text-muted-foreground">
+                  {t("general.privacy.retentionStatus", {
+                    textEntries: retentionStatus.text_entries,
+                    audioFiles: retentionStatus.audio_files,
+                    audioSize: new Intl.NumberFormat(i18n.language, {
+                      style: "unit",
+                      unit: "megabyte",
+                      maximumFractionDigits: 1,
+                    }).format(retentionStatus.audio_bytes / 1_000_000),
+                  })}
+                </p>
+              )}
               <div className="flex items-center justify-between space-x-4">
                 <div>
                   <Label htmlFor="auto-start">{t("general.startup.autoStart")}</Label>

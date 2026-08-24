@@ -14,6 +14,8 @@ import { LogViewer } from "./components/Home/LogViewer";
 import { ChangelogPage } from "./components/Home/ChangelogPage";
 import { PolishTemplatesPage } from "./components/Home/PolishTemplatesPage";
 import { DictionaryPage } from "./components/Home/DictionaryPage";
+import { PlatformQualityPage } from "./components/Home/PlatformQualityPage";
+import { WorkflowPage } from "./components/Home/WorkflowPage";
 
 function App() {
   return (
@@ -98,6 +100,8 @@ function App() {
           <Route index element={<Dashboard />} />
           <Route path="history" element={<HistoryPage />} />
           <Route path="dictionary" element={<DictionaryPage />} />
+          <Route path="workflows" element={<WorkflowPage />} />
+          <Route path="quality" element={<PlatformQualityPage />} />
           <Route path="settings" element={<GeneralSettings />} />
           <Route path="hotkey" element={<HotkeySettings />} />
           <Route path="private-ai" element={<ModelSettings />} />

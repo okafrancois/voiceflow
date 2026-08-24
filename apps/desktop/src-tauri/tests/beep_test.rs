@@ -3,10 +3,10 @@
 //! Tests the `beep_generator` module which creates WAV beep audio files.
 //! The `beep.rs` module handles playback and is tested separately via integration tests.
 
-use ariatype_lib::audio::beep_generator;
 use std::fs::File;
 use std::io::Read;
 use tempfile::tempdir;
+use voiceflow_lib::audio::beep_generator;
 
 const MAX_BOUNDARY_RMS_RATIO: f64 = 0.18;
 

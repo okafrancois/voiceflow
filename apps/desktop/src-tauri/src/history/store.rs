@@ -1,4 +1,5 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::path::Path;
 
 use chrono::{Duration, Local, TimeZone};
 use rusqlite::{params, Connection, Result as SqlResult};
@@ -7,6 +8,8 @@ use super::models::{
     DailyUsage, DashboardStats, EngineUsage, HistoryFilter, NewTranscriptionEntry,
     TranscriptionEntry,
 };
+use super::RetentionPolicy;
+#[cfg(not(test))]
 use crate::utils::AppPaths;
 
 const CREATE_TABLE_SQL: &str = "\
@@ -27,11 +30,39 @@ CREATE TABLE IF NOT EXISTS transcription_history (\
     is_cloud INTEGER NOT NULL DEFAULT 0,\
     audio_path TEXT,\
     status TEXT NOT NULL DEFAULT 'success',\
-    error TEXT\
+    error TEXT,\
+    source_kind TEXT NOT NULL DEFAULT 'recording',\
+    source_path TEXT,\
+    translation_target TEXT,\
+    timed_segments TEXT NOT NULL DEFAULT '[]',\
+    delivery_status TEXT NOT NULL DEFAULT 'not_recorded'\
 )";
 
 const CREATE_INDEX_SQL: &str = "\
 CREATE INDEX IF NOT EXISTS idx_history_created_at ON transcription_history(created_at)";
+
+const CREATE_RETAINED_AUDIO_TABLE_SQL: &str = "\
+CREATE TABLE IF NOT EXISTS retained_audio (\
+    path TEXT PRIMARY KEY,\
+    created_at INTEGER NOT NULL\
+)";
+
+const CREATE_RETAINED_AUDIO_INDEX_SQL: &str = "\
+CREATE INDEX IF NOT EXISTS idx_retained_audio_created_at ON retained_audio(created_at)";
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize)]
+pub struct RetentionCleanupReport {
+    pub text_entries_deleted: u64,
+    pub audio_files_deleted: u64,
+    pub missing_audio_references_cleared: u64,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize)]
+pub struct RetentionStatus {
+    pub text_entries: u64,
+    pub audio_files: u64,
+    pub audio_bytes: u64,
+}
 
 pub struct HistoryStore {
     conn: parking_lot::Mutex<Connection>,
@@ -63,15 +94,47 @@ pub struct EntryUpdates {
     pub is_cloud: bool,
 }
 
+#[derive(Debug, Clone)]
+pub struct WorkbenchEntryUpdates {
+    pub raw_text: String,
+    pub final_text: String,
+    pub stt_engine: String,
+    pub stt_model: Option<String>,
+    pub language: Option<String>,
+    pub audio_duration_ms: Option<i64>,
+    pub stt_duration_ms: Option<i64>,
+    pub polish_duration_ms: Option<i64>,
+    pub total_duration_ms: Option<i64>,
+    pub polish_applied: bool,
+    pub polish_engine: Option<String>,
+    pub is_cloud: bool,
+    pub translation_target: Option<String>,
+    pub timed_segments: Vec<super::models::TimedSegment>,
+}
+
 impl HistoryStore {
+    pub fn new_in_memory() -> Result<Self, String> {
+        let connection = Connection::open_in_memory()
+            .map_err(|error| format!("failed to open in-memory history database: {error}"))?;
+        Self::from_connection(connection)
+    }
+
     pub fn new() -> Result<Self, String> {
-        let db_path = AppPaths::data_dir().join("transcription_history.db");
-        if let Some(parent) = db_path.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        #[cfg(test)]
+        {
+            Self::new_in_memory()
         }
-        let conn =
-            Connection::open(&db_path).map_err(|e| format!("failed to open database: {e}"))?;
-        Self::from_connection(conn)
+
+        #[cfg(not(test))]
+        {
+            let db_path = AppPaths::data_dir().join("transcription_history.db");
+            if let Some(parent) = db_path.parent() {
+                std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+            }
+            let conn =
+                Connection::open(&db_path).map_err(|e| format!("failed to open database: {e}"))?;
+            Self::from_connection(conn)
+        }
     }
 
     fn from_connection(conn: Connection) -> Result<Self, String> {
@@ -132,20 +195,78 @@ impl HistoryStore {
                 .map_err(|e| format!("failed to set user_version: {e}"))?;
         }
 
+        if current_version < 3 {
+            conn.execute_batch(
+                format!(
+                    "BEGIN;
+                     {CREATE_RETAINED_AUDIO_TABLE_SQL};
+                     {CREATE_RETAINED_AUDIO_INDEX_SQL};
+                     INSERT OR IGNORE INTO retained_audio (path, created_at)
+                     SELECT audio_path, created_at FROM transcription_history
+                     WHERE audio_path IS NOT NULL AND audio_path != '';
+                     PRAGMA user_version = 3;
+                     COMMIT;"
+                )
+                .as_str(),
+            )
+            .map_err(|e| format!("migration v3 failed: {e}"))?;
+        }
+
+        if current_version < 4 {
+            Self::add_column_if_missing(conn, "source_kind", "TEXT NOT NULL DEFAULT 'recording'")?;
+            Self::add_column_if_missing(conn, "source_path", "TEXT")?;
+            Self::add_column_if_missing(conn, "translation_target", "TEXT")?;
+            Self::add_column_if_missing(conn, "timed_segments", "TEXT NOT NULL DEFAULT '[]'")?;
+            Self::add_column_if_missing(
+                conn,
+                "delivery_status",
+                "TEXT NOT NULL DEFAULT 'not_recorded'",
+            )?;
+            conn.execute("PRAGMA user_version = 4", [])
+                .map_err(|e| format!("failed to set history schema version 4: {e}"))?;
+        }
+
+        Ok(())
+    }
+
+    fn add_column_if_missing(
+        conn: &Connection,
+        column: &str,
+        declaration: &str,
+    ) -> Result<(), String> {
+        let present: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('transcription_history') WHERE name = ?1",
+                params![column],
+                |row| row.get(0),
+            )
+            .map_err(|error| format!("failed to inspect history schema: {error}"))?;
+        if present == 0 {
+            conn.execute_batch(
+                format!("ALTER TABLE transcription_history ADD COLUMN {column} {declaration};")
+                    .as_str(),
+            )
+            .map_err(|error| format!("migration v4 failed for {column}: {error}"))?;
+        }
         Ok(())
     }
 
     pub fn insert(&self, entry: NewTranscriptionEntry) -> Result<String, String> {
         let id = uuid::Uuid::new_v4().to_string();
         let created_at = chrono::Utc::now().timestamp_millis();
+        let retained_audio_path = entry.audio_path.clone();
 
-        let conn = self.conn.lock();
-        conn.execute(
+        let mut conn = self.conn.lock();
+        let tx = conn
+            .transaction()
+            .map_err(|e| format!("failed to start history insert: {e}"))?;
+        tx.execute(
             "INSERT INTO transcription_history \
              (id, created_at, raw_text, final_text, stt_engine, stt_model, language, \
               audio_duration_ms, stt_duration_ms, polish_duration_ms, total_duration_ms, \
-              polish_applied, polish_engine, is_cloud, audio_path, status, error) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
+              polish_applied, polish_engine, is_cloud, audio_path, status, error, source_kind, \
+              source_path, translation_target, timed_segments, delivery_status) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)",
             params![
                 id,
                 created_at,
@@ -164,9 +285,26 @@ impl HistoryStore {
                 entry.audio_path,
                 entry.status,
                 entry.error,
+                entry.source_kind,
+                entry.source_path,
+                entry.translation_target,
+                serde_json::to_string(&entry.timed_segments)
+                    .map_err(|error| format!("failed to serialize timed segments: {error}"))?,
+                entry.delivery_status,
             ],
         )
         .map_err(|e| format!("failed to insert history: {e}"))?;
+
+        if let Some(path) = retained_audio_path.as_deref() {
+            tx.execute(
+                "INSERT OR REPLACE INTO retained_audio (path, created_at) VALUES (?1, ?2)",
+                params![path, created_at],
+            )
+            .map_err(|e| format!("failed to register retained audio: {e}"))?;
+        }
+
+        tx.commit()
+            .map_err(|e| format!("failed to commit history insert: {e}"))?;
 
         Ok(id)
     }
@@ -175,7 +313,8 @@ impl HistoryStore {
         let mut sql = String::from(
             "SELECT id, created_at, raw_text, final_text, stt_engine, \
              stt_model, language, audio_duration_ms, stt_duration_ms, polish_duration_ms, \
-             total_duration_ms, polish_applied, polish_engine, is_cloud, audio_path, status, error \
+             total_duration_ms, polish_applied, polish_engine, is_cloud, audio_path, status, error, \
+             source_kind, source_path, translation_target, timed_segments, delivery_status \
              FROM transcription_history WHERE 1=1",
         );
         let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
@@ -257,6 +396,14 @@ impl HistoryStore {
                     audio_path: row.get(14)?,
                     status: row.get::<_, String>(15)?,
                     error: row.get(16)?,
+                    source_kind: row.get(17)?,
+                    source_path: row.get(18)?,
+                    translation_target: row.get(19)?,
+                    timed_segments: serde_json::from_str::<Vec<super::models::TimedSegment>>(
+                        row.get::<_, String>(20)?.as_str(),
+                    )
+                    .unwrap_or_default(),
+                    delivery_status: row.get(21)?,
                 })
             })
             .map_err(|e| format!("failed to query history: {e}"))?
@@ -267,20 +414,26 @@ impl HistoryStore {
     }
 
     pub fn delete_entry(&self, id: &str) -> Result<(), String> {
-        // First get the audio_path to delete the audio file
         let audio_path = self.get_audio_path(id)?;
-        if let Some(path) = audio_path {
-            if let Err(e) = std::fs::remove_file(&path) {
-                tracing::warn!(error = %e, path = %path, "audio_file_deletion_failed");
-            }
+        if let Some(path) = audio_path.as_deref() {
+            Self::remove_audio_file(path)?;
         }
 
-        let conn = self.conn.lock();
-        conn.execute(
+        let mut conn = self.conn.lock();
+        let tx = conn
+            .transaction()
+            .map_err(|e| format!("failed to start history deletion: {e}"))?;
+        tx.execute(
             "DELETE FROM transcription_history WHERE id = ?1",
             params![id],
         )
         .map_err(|e| format!("failed to delete history entry: {e}"))?;
+        if let Some(path) = audio_path {
+            tx.execute("DELETE FROM retained_audio WHERE path = ?1", params![path])
+                .map_err(|e| format!("failed to delete retained audio record: {e}"))?;
+        }
+        tx.commit()
+            .map_err(|e| format!("failed to commit history deletion: {e}"))?;
         Ok(())
     }
 
@@ -291,7 +444,8 @@ impl HistoryStore {
             .prepare(
                 "SELECT id, created_at, raw_text, final_text, stt_engine, \
                  stt_model, language, audio_duration_ms, stt_duration_ms, polish_duration_ms, \
-                 total_duration_ms, polish_applied, polish_engine, is_cloud, audio_path, status, error \
+                 total_duration_ms, polish_applied, polish_engine, is_cloud, audio_path, status, error, \
+                 source_kind, source_path, translation_target, timed_segments, delivery_status \
                  FROM transcription_history WHERE id = ?1",
             )
             .map_err(|e| format!("failed to prepare query: {e}"))?;
@@ -315,6 +469,14 @@ impl HistoryStore {
                 audio_path: row.get(14)?,
                 status: row.get::<_, String>(15)?,
                 error: row.get(16)?,
+                source_kind: row.get(17)?,
+                source_path: row.get(18)?,
+                translation_target: row.get(19)?,
+                timed_segments: serde_json::from_str::<Vec<super::models::TimedSegment>>(
+                    row.get::<_, String>(20)?.as_str(),
+                )
+                .unwrap_or_default(),
+                delivery_status: row.get(21)?,
             })
         });
 
@@ -368,6 +530,92 @@ impl HistoryStore {
         Ok(())
     }
 
+    pub fn update_workbench_entry(
+        &self,
+        id: &str,
+        updates: WorkbenchEntryUpdates,
+    ) -> Result<(), String> {
+        let timed_segments = serde_json::to_string(&updates.timed_segments)
+            .map_err(|error| format!("failed to serialize timed segments: {error}"))?;
+        let conn = self.conn.lock();
+        let changed = conn
+            .execute(
+                "UPDATE transcription_history SET \
+                 raw_text = ?1, final_text = ?2, stt_engine = ?3, stt_model = ?4, \
+                 language = ?5, audio_duration_ms = ?6, stt_duration_ms = ?7, \
+                 polish_duration_ms = ?8, total_duration_ms = ?9, polish_applied = ?10, \
+                 polish_engine = ?11, is_cloud = ?12, translation_target = ?13, \
+                 timed_segments = ?14, status = 'success', error = NULL \
+                 WHERE id = ?15",
+                params![
+                    updates.raw_text,
+                    updates.final_text,
+                    updates.stt_engine,
+                    updates.stt_model,
+                    updates.language,
+                    updates.audio_duration_ms,
+                    updates.stt_duration_ms,
+                    updates.polish_duration_ms,
+                    updates.total_duration_ms,
+                    updates.polish_applied as i32,
+                    updates.polish_engine,
+                    updates.is_cloud as i32,
+                    updates.translation_target,
+                    timed_segments,
+                    id,
+                ],
+            )
+            .map_err(|error| format!("failed to update workbench entry: {error}"))?;
+        if changed == 0 {
+            return Err(format!("History entry not found: {id}"));
+        }
+        Ok(())
+    }
+
+    pub fn update_repolished_text(
+        &self,
+        id: &str,
+        final_text: &str,
+        polish_duration_ms: i64,
+        polish_engine: &str,
+        translation_target: Option<&str>,
+    ) -> Result<(), String> {
+        let conn = self.conn.lock();
+        let changed = conn
+            .execute(
+                "UPDATE transcription_history SET final_text = ?1, polish_duration_ms = ?2, \
+                 total_duration_ms = COALESCE(stt_duration_ms, 0) + ?2, polish_applied = 1, \
+                 polish_engine = ?3, translation_target = ?4, status = 'success', error = NULL \
+                 WHERE id = ?5",
+                params![
+                    final_text,
+                    polish_duration_ms,
+                    polish_engine,
+                    translation_target,
+                    id
+                ],
+            )
+            .map_err(|error| format!("failed to update polished history text: {error}"))?;
+        if changed == 0 {
+            return Err(format!("History entry not found: {id}"));
+        }
+        Ok(())
+    }
+
+    pub fn update_delivery_status(&self, id: &str, status: &str) -> Result<(), String> {
+        let conn = self.conn.lock();
+        let changed = conn
+            .execute(
+                "UPDATE transcription_history SET delivery_status = ?1 WHERE id = ?2",
+                params![status, id],
+            )
+            .map_err(|error| format!("failed to update delivery status: {error}"))?;
+        if changed == 0 {
+            return Err(format!("History entry not found: {id}"));
+        }
+        Ok(())
+    }
+
     /// Mark an entry as failed.
     pub fn mark_error(&self, id: &str, error: &str) -> Result<(), String> {
         let conn = self.conn.lock();
@@ -380,9 +628,22 @@ impl HistoryStore {
     }
 
     pub fn clear_all(&self) -> Result<(), String> {
-        let conn = self.conn.lock();
-        conn.execute("DELETE FROM transcription_history", [])
+        let paths = self.retained_audio_paths(None)?;
+        for path in paths {
+            Self::remove_audio_file(&path)?;
+            self.forget_audio_asset(&path)?;
+        }
+
+        let mut conn = self.conn.lock();
+        let tx = conn
+            .transaction()
+            .map_err(|e| format!("failed to start history clear: {e}"))?;
+        tx.execute("DELETE FROM transcription_history", [])
             .map_err(|e| format!("failed to clear history: {e}"))?;
+        tx.execute("DELETE FROM retained_audio", [])
+            .map_err(|e| format!("failed to clear retained audio: {e}"))?;
+        tx.commit()
+            .map_err(|e| format!("failed to commit history clear: {e}"))?;
         Ok(())
     }
 
@@ -524,20 +785,241 @@ impl HistoryStore {
         Ok(result)
     }
 
-    pub fn cleanup_old_entries(&self, max_age_days: u64) -> Result<u64, String> {
-        let cutoff = chrono::Utc::now()
-            - chrono::Duration::days(i64::try_from(max_age_days).unwrap_or(i64::MAX));
-        let cutoff_ms = cutoff.timestamp_millis();
+    pub fn register_audio_asset(&self, path: &str, created_at: i64) -> Result<(), String> {
+        let conn = self.conn.lock();
+        conn.execute(
+            "INSERT OR REPLACE INTO retained_audio (path, created_at) VALUES (?1, ?2)",
+            params![path, created_at],
+        )
+        .map_err(|e| format!("failed to register retained audio: {e}"))?;
+        Ok(())
+    }
+
+    pub fn cleanup_retention(
+        &self,
+        text_policy: RetentionPolicy,
+        audio_policy: RetentionPolicy,
+    ) -> Result<RetentionCleanupReport, String> {
+        self.cleanup_retention_at(
+            text_policy,
+            audio_policy,
+            chrono::Utc::now().timestamp_millis(),
+        )
+    }
+
+    fn cleanup_retention_at(
+        &self,
+        text_policy: RetentionPolicy,
+        audio_policy: RetentionPolicy,
+        now_ms: i64,
+    ) -> Result<RetentionCleanupReport, String> {
+        let mut report = RetentionCleanupReport::default();
+        let all_audio_paths = self.retained_audio_paths(None)?;
+        for path in all_audio_paths {
+            if !Path::new(&path).exists() {
+                self.forget_audio_asset(&path)?;
+                report.missing_audio_references_cleared += 1;
+            }
+        }
+
+        let mut deletion_errors = Vec::new();
+        if audio_policy != RetentionPolicy::Forever {
+            let cutoff = Self::retention_cutoff(audio_policy, now_ms);
+            for path in self.retained_audio_paths(cutoff)? {
+                match Self::remove_audio_file(&path) {
+                    Ok(()) => {
+                        self.forget_audio_asset(&path)?;
+                        report.audio_files_deleted += 1;
+                    }
+                    Err(error) => deletion_errors.push(error),
+                }
+            }
+        }
+
+        report.text_entries_deleted = self.cleanup_text_entries(text_policy, now_ms)?;
+
+        if deletion_errors.is_empty() {
+            Ok(report)
+        } else {
+            tracing::warn!(
+                failures = deletion_errors.len(),
+                "retention_audio_cleanup_incomplete"
+            );
+            Err(deletion_errors.join("; "))
+        }
+    }
+
+    pub fn cleanup_orphaned_audio_files(&self, recordings_dir: &Path) -> Result<u64, String> {
+        if !recordings_dir.exists() {
+            return Ok(0);
+        }
+
+        let tracked = self
+            .orphan_cleanup_protected_paths()?
+            .into_iter()
+            .collect::<HashSet<_>>();
+        let mut deleted = 0_u64;
+        let entries = std::fs::read_dir(recordings_dir)
+            .map_err(|e| format!("failed to read recordings directory: {e}"))?;
+
+        for entry in entries {
+            let path = entry
+                .map_err(|e| format!("failed to read recordings entry: {e}"))?
+                .path();
+            let is_wav = path
+                .extension()
+                .and_then(|extension| extension.to_str())
+                .is_some_and(|extension| extension.eq_ignore_ascii_case("wav"));
+            if path.is_file() && is_wav && !tracked.contains(path.to_string_lossy().as_ref()) {
+                Self::remove_audio_file(path.to_string_lossy().as_ref())?;
+                deleted += 1;
+            }
+        }
+
+        Ok(deleted)
+    }
+
+    pub fn get_retention_status(&self) -> Result<RetentionStatus, String> {
+        let conn = self.conn.lock();
+        let text_entries = conn
+            .query_row("SELECT COUNT(*) FROM transcription_history", [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .map_err(|e| format!("failed to count retained text entries: {e}"))?;
+        let paths = {
+            let mut statement = conn
+                .prepare("SELECT path FROM retained_audio")
+                .map_err(|e| format!("failed to prepare retained audio status: {e}"))?;
+            let rows = statement
+                .query_map([], |row| row.get::<_, String>(0))
+                .map_err(|e| format!("failed to query retained audio status: {e}"))?;
+            rows.collect::<SqlResult<Vec<_>>>()
+                .map_err(|e| format!("failed to read retained audio status: {e}"))?
+        };
+        drop(conn);
+
+        let mut audio_files = 0_u64;
+        let mut audio_bytes = 0_u64;
+        for path in paths {
+            if let Ok(metadata) = std::fs::metadata(path) {
+                if metadata.is_file() {
+                    audio_files += 1;
+                    audio_bytes = audio_bytes.saturating_add(metadata.len());
+                }
+            }
+        }
+
+        Ok(RetentionStatus {
+            text_entries: u64::try_from(text_entries).unwrap_or(0),
+            audio_files,
+            audio_bytes,
+        })
+    }
+
+    fn cleanup_text_entries(&self, policy: RetentionPolicy, now_ms: i64) -> Result<u64, String> {
+        if policy == RetentionPolicy::Forever {
+            return Ok(0);
+        }
 
         let conn = self.conn.lock();
-        let deleted = conn
-            .execute(
+        let deleted = match Self::retention_cutoff(policy, now_ms) {
+            Some(cutoff) => conn.execute(
                 "DELETE FROM transcription_history WHERE created_at < ?1",
-                params![cutoff_ms],
-            )
-            .map_err(|e| format!("failed to cleanup old entries: {e}"))?;
-
+                params![cutoff],
+            ),
+            None => conn.execute("DELETE FROM transcription_history", []),
+        }
+        .map_err(|e| format!("failed to cleanup retained text: {e}"))?;
         Ok(deleted as u64)
+    }
+
+    fn retention_cutoff(policy: RetentionPolicy, now_ms: i64) -> Option<i64> {
+        match policy.max_age_days() {
+            Some(0) => None,
+            Some(days) => Some(
+                now_ms.saturating_sub(
+                    i64::try_from(days)
+                        .unwrap_or(i64::MAX)
+                        .saturating_mul(24 * 60 * 60 * 1_000),
+                ),
+            ),
+            None => None,
+        }
+    }
+
+    fn retained_audio_paths(&self, cutoff_ms: Option<i64>) -> Result<Vec<String>, String> {
+        let conn = self.conn.lock();
+        let query = match cutoff_ms {
+            Some(_) => "SELECT path FROM retained_audio WHERE created_at < ?1",
+            None => "SELECT path FROM retained_audio",
+        };
+        let mut statement = conn
+            .prepare(query)
+            .map_err(|e| format!("failed to prepare retained audio query: {e}"))?;
+        let paths = match cutoff_ms {
+            Some(cutoff) => statement
+                .query_map(params![cutoff], |row| row.get::<_, String>(0))
+                .map_err(|e| format!("failed to query retained audio: {e}"))?
+                .collect::<SqlResult<Vec<_>>>(),
+            None => statement
+                .query_map([], |row| row.get::<_, String>(0))
+                .map_err(|e| format!("failed to query retained audio: {e}"))?
+                .collect::<SqlResult<Vec<_>>>(),
+        };
+        paths.map_err(|e| format!("failed to read retained audio: {e}"))
+    }
+
+    fn orphan_cleanup_protected_paths(&self) -> Result<Vec<String>, String> {
+        let conn = self.conn.lock();
+        let mut statement = conn
+            .prepare(
+                "SELECT path FROM retained_audio \
+                 UNION \
+                 SELECT source_path FROM transcription_history \
+                 WHERE source_path IS NOT NULL AND source_path <> ''",
+            )
+            .map_err(|e| format!("failed to prepare protected audio path query: {e}"))?;
+        let paths = statement
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(|e| format!("failed to query protected audio paths: {e}"))?
+            .collect::<SqlResult<Vec<_>>>();
+        paths.map_err(|e| format!("failed to read protected audio paths: {e}"))
+    }
+
+    fn forget_audio_asset(&self, path: &str) -> Result<(), String> {
+        let mut conn = self.conn.lock();
+        let tx = conn
+            .transaction()
+            .map_err(|e| format!("failed to start retained audio cleanup: {e}"))?;
+        tx.execute(
+            "UPDATE transcription_history SET audio_path = NULL WHERE audio_path = ?1",
+            params![path],
+        )
+        .map_err(|e| format!("failed to clear history audio reference: {e}"))?;
+        tx.execute("DELETE FROM retained_audio WHERE path = ?1", params![path])
+            .map_err(|e| format!("failed to delete retained audio record: {e}"))?;
+        tx.commit()
+            .map_err(|e| format!("failed to commit retained audio cleanup: {e}"))?;
+        Ok(())
+    }
+
+    fn remove_audio_file(path: &str) -> Result<(), String> {
+        match std::fs::remove_file(path) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(format!("failed to delete audio file '{path}': {error}")),
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn retained_audio_count(&self) -> Result<u64, String> {
+        let conn = self.conn.lock();
+        let count = conn
+            .query_row("SELECT COUNT(*) FROM retained_audio", [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .map_err(|e| format!("failed to count retained audio: {e}"))?;
+        Ok(u64::try_from(count).unwrap_or(0))
     }
 
     fn load_dashboard_entries(&self, since_ms: Option<i64>) -> Result<Vec<DashboardEntry>, String> {
@@ -785,6 +1267,8 @@ impl HistoryStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::history::RetentionPolicy;
+    use std::fs;
 
     fn test_store() -> HistoryStore {
         HistoryStore::from_connection(Connection::open_in_memory().unwrap()).unwrap()
@@ -800,17 +1284,60 @@ mod tests {
             .timestamp_millis()
     }
 
-    fn insert_entry(
-        store: &HistoryStore,
-        id: &str,
+    struct TestEntry<'a> {
+        id: &'a str,
         created_at: i64,
-        final_text: &str,
+        final_text: &'a str,
         audio_duration_ms: Option<i64>,
         stt_duration_ms: Option<i64>,
         polish_applied: bool,
         is_cloud: bool,
-        stt_engine: &str,
-    ) {
+        stt_engine: &'static str,
+    }
+
+    impl<'a> TestEntry<'a> {
+        fn new(id: &'a str, created_at: i64, final_text: &'a str) -> Self {
+            Self {
+                id,
+                created_at,
+                final_text,
+                audio_duration_ms: None,
+                stt_duration_ms: None,
+                polish_applied: false,
+                is_cloud: false,
+                stt_engine: "Whisper",
+            }
+        }
+
+        fn with_timings(mut self, audio_ms: i64, stt_ms: i64) -> Self {
+            self.audio_duration_ms = Some(audio_ms);
+            self.stt_duration_ms = Some(stt_ms);
+            self
+        }
+
+        fn polished(mut self) -> Self {
+            self.polish_applied = true;
+            self
+        }
+
+        fn cloud(mut self, engine: &'static str) -> Self {
+            self.is_cloud = true;
+            self.stt_engine = engine;
+            self
+        }
+    }
+
+    fn insert_entry(store: &HistoryStore, entry: TestEntry<'_>) {
+        let TestEntry {
+            id,
+            created_at,
+            final_text,
+            audio_duration_ms,
+            stt_duration_ms,
+            polish_applied,
+            is_cloud,
+            stt_engine,
+        } = entry;
         let conn = store.conn.lock();
         conn.execute(
             "INSERT INTO transcription_history \
@@ -838,36 +1365,29 @@ mod tests {
         let store = test_store();
         insert_entry(
             &store,
-            "entry-1",
-            timestamp_for_day_offset(2, 10),
-            "draft release note",
-            Some(12_000),
-            Some(600),
-            true,
-            false,
-            "Whisper",
+            TestEntry::new(
+                "entry-1",
+                timestamp_for_day_offset(2, 10),
+                "draft release note",
+            )
+            .with_timings(12_000, 600)
+            .polished(),
         );
         insert_entry(
             &store,
-            "entry-2",
-            timestamp_for_day_offset(1, 11),
-            "你好世界",
-            Some(8_000),
-            Some(500),
-            false,
-            true,
-            "Volcengine",
+            TestEntry::new("entry-2", timestamp_for_day_offset(1, 11), "你好世界")
+                .with_timings(8_000, 500)
+                .cloud("Volcengine"),
         );
         insert_entry(
             &store,
-            "entry-3",
-            timestamp_for_day_offset(0, 9),
-            "sprint planning notes",
-            Some(6_000),
-            Some(300),
-            true,
-            false,
-            "Whisper",
+            TestEntry::new(
+                "entry-3",
+                timestamp_for_day_offset(0, 9),
+                "sprint planning notes",
+            )
+            .with_timings(6_000, 300)
+            .polished(),
         );
 
         let stats = store.get_dashboard_stats().unwrap();
@@ -896,25 +1416,14 @@ mod tests {
         let store = test_store();
         insert_entry(
             &store,
-            "entry-1",
-            timestamp_for_day_offset(2, 10),
-            "alpha beta",
-            Some(10_000),
-            Some(400),
-            false,
-            false,
-            "Whisper",
+            TestEntry::new("entry-1", timestamp_for_day_offset(2, 10), "alpha beta")
+                .with_timings(10_000, 400),
         );
         insert_entry(
             &store,
-            "entry-2",
-            timestamp_for_day_offset(0, 9),
-            "你好",
-            Some(4_000),
-            Some(200),
-            false,
-            true,
-            "Volcengine",
+            TestEntry::new("entry-2", timestamp_for_day_offset(0, 9), "你好")
+                .with_timings(4_000, 200)
+                .cloud("Volcengine"),
         );
 
         let usage = store.get_daily_usage(3).unwrap();
@@ -936,36 +1445,19 @@ mod tests {
         let store = test_store();
         insert_entry(
             &store,
-            "entry-1",
-            timestamp_for_day_offset(1, 10),
-            "alpha beta",
-            Some(10_000),
-            Some(400),
-            false,
-            false,
-            "Whisper",
+            TestEntry::new("entry-1", timestamp_for_day_offset(1, 10), "alpha beta")
+                .with_timings(10_000, 400),
         );
         insert_entry(
             &store,
-            "entry-2",
-            timestamp_for_day_offset(0, 9),
-            "gamma delta",
-            Some(8_000),
-            Some(600),
-            false,
-            false,
-            "Whisper",
+            TestEntry::new("entry-2", timestamp_for_day_offset(0, 9), "gamma delta")
+                .with_timings(8_000, 600),
         );
         insert_entry(
             &store,
-            "entry-3",
-            timestamp_for_day_offset(0, 11),
-            "你好世界",
-            Some(5_000),
-            Some(300),
-            false,
-            true,
-            "Volcengine",
+            TestEntry::new("entry-3", timestamp_for_day_offset(0, 11), "你好世界")
+                .with_timings(5_000, 300)
+                .cloud("Volcengine"),
         );
 
         let usage = store.get_engine_usage().unwrap();
@@ -1001,14 +1493,8 @@ mod tests {
         let store = test_store();
         insert_entry(
             &store,
-            "entry-1",
-            timestamp_for_day_offset(0, 10),
-            "original text",
-            Some(10_000),
-            Some(500),
-            false,
-            false,
-            "Whisper",
+            TestEntry::new("entry-1", timestamp_for_day_offset(0, 10), "original text")
+                .with_timings(10_000, 500),
         );
 
         // Mark as error
@@ -1084,5 +1570,315 @@ mod tests {
         let entry = store.get_entry("entry-1").unwrap().unwrap();
         assert_eq!(entry.audio_path, Some("/path/to/audio.wav".to_string()));
         assert_eq!(entry.status, "error");
+    }
+
+    #[test]
+    fn migration_from_v2_registers_existing_audio_paths_and_reaches_latest_schema() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            format!(
+                "{CREATE_TABLE_SQL};
+                 {CREATE_INDEX_SQL};
+                 INSERT INTO transcription_history
+                    (id, created_at, raw_text, final_text, stt_engine, audio_path)
+                 VALUES ('legacy', 1234, 'raw', 'final', 'Whisper', '/tmp/legacy.wav');
+                 PRAGMA user_version = 2;"
+            )
+            .as_str(),
+        )
+        .unwrap();
+
+        let store = HistoryStore::from_connection(conn).unwrap();
+        let conn = store.conn.lock();
+        let version: u32 = conn
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .unwrap();
+        let registered: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM retained_audio WHERE path = '/tmp/legacy.wav' AND created_at = 1234",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+
+        assert_eq!(version, 4);
+        assert_eq!(registered, 1);
+    }
+
+    #[test]
+    fn migration_v4_adds_workbench_metadata_columns() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            format!(
+                "{CREATE_TABLE_SQL};
+                 {CREATE_INDEX_SQL};
+                 PRAGMA user_version = 3;"
+            )
+            .as_str(),
+        )
+        .unwrap();
+
+        let store = HistoryStore::from_connection(conn).unwrap();
+        let conn = store.conn.lock();
+        let version: u32 = conn
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .unwrap();
+        let columns = [
+            "source_kind",
+            "source_path",
+            "translation_target",
+            "timed_segments",
+            "delivery_status",
+        ];
+
+        assert_eq!(version, 4);
+        for column in columns {
+            let present: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM pragma_table_info('transcription_history') WHERE name = ?1",
+                    params![column],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(present, 1, "missing workbench column: {column}");
+        }
+    }
+
+    #[test]
+    fn text_never_removes_rows_but_preserves_retained_audio() {
+        let store = test_store();
+        let audio = tempfile::NamedTempFile::new().unwrap();
+        let path = audio.path().display().to_string();
+        insert_error_entry(&store, "entry-1", 1_000, Some(&path));
+        store.register_audio_asset(&path, 1_000).unwrap();
+
+        let report = store
+            .cleanup_retention_at(RetentionPolicy::Never, RetentionPolicy::Forever, 10_000)
+            .unwrap();
+
+        assert_eq!(report.text_entries_deleted, 1);
+        assert_eq!(report.audio_files_deleted, 0);
+        assert!(audio.path().exists());
+        assert_eq!(store.retained_audio_count().unwrap(), 1);
+        assert!(store.get_entry("entry-1").unwrap().is_none());
+    }
+
+    #[test]
+    fn audio_expiry_deletes_file_and_clears_history_reference() {
+        let store = test_store();
+        let audio = tempfile::NamedTempFile::new().unwrap();
+        let path = audio.path().display().to_string();
+        let now_ms = 40_i64 * 24 * 60 * 60 * 1_000;
+        insert_error_entry(&store, "entry-1", 1_000, Some(&path));
+        store.register_audio_asset(&path, 1_000).unwrap();
+
+        let report = store
+            .cleanup_retention_at(RetentionPolicy::Forever, RetentionPolicy::Days30, now_ms)
+            .unwrap();
+
+        assert_eq!(report.audio_files_deleted, 1);
+        assert!(!audio.path().exists());
+        assert_eq!(store.retained_audio_count().unwrap(), 0);
+        assert_eq!(
+            store.get_entry("entry-1").unwrap().unwrap().audio_path,
+            None
+        );
+    }
+
+    #[test]
+    fn failed_audio_deletion_keeps_database_references_for_retry() {
+        let store = test_store();
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().display().to_string();
+        insert_error_entry(&store, "entry-1", 1_000, Some(&path));
+        store.register_audio_asset(&path, 1_000).unwrap();
+
+        let result =
+            store.cleanup_retention_at(RetentionPolicy::Forever, RetentionPolicy::Never, 10_000);
+
+        assert!(result.is_err());
+        assert_eq!(store.retained_audio_count().unwrap(), 1);
+        assert_eq!(
+            store.get_entry("entry-1").unwrap().unwrap().audio_path,
+            Some(path)
+        );
+    }
+
+    #[test]
+    fn orphan_cleanup_deletes_only_unregistered_wav_files() {
+        let store = test_store();
+        let directory = tempfile::tempdir().unwrap();
+        let tracked = directory.path().join("tracked.wav");
+        let orphan = directory.path().join("orphan.wav");
+        let unrelated = directory.path().join("note.txt");
+        fs::write(&tracked, b"tracked").unwrap();
+        fs::write(&orphan, b"orphan").unwrap();
+        fs::write(&unrelated, b"note").unwrap();
+        store
+            .register_audio_asset(&tracked.display().to_string(), 1_000)
+            .unwrap();
+
+        let deleted = store
+            .cleanup_orphaned_audio_files(directory.path())
+            .unwrap();
+
+        assert_eq!(deleted, 1);
+        assert!(tracked.exists());
+        assert!(!orphan.exists());
+        assert!(unrelated.exists());
+    }
+
+    #[test]
+    fn orphan_cleanup_preserves_imported_source_inside_recordings_directory() {
+        let store = test_store();
+        let directory = tempfile::tempdir().unwrap();
+        let source = directory.path().join("user-import.wav");
+        let orphan = directory.path().join("orphan.wav");
+        fs::write(&source, b"user source").unwrap();
+        fs::write(&orphan, b"orphan").unwrap();
+        store
+            .insert(NewTranscriptionEntry {
+                raw_text: "raw".to_string(),
+                final_text: "final".to_string(),
+                stt_engine: "whisper".to_string(),
+                stt_model: Some("model".to_string()),
+                language: Some("en".to_string()),
+                audio_duration_ms: Some(1_000),
+                stt_duration_ms: Some(100),
+                polish_duration_ms: None,
+                total_duration_ms: Some(100),
+                polish_applied: false,
+                polish_engine: None,
+                is_cloud: false,
+                audio_path: None,
+                status: "success".to_string(),
+                error: None,
+                source_kind: "file".to_string(),
+                source_path: Some(source.to_string_lossy().into_owned()),
+                translation_target: None,
+                timed_segments: Vec::new(),
+                delivery_status: "not_delivered".to_string(),
+            })
+            .unwrap();
+
+        let deleted = store
+            .cleanup_orphaned_audio_files(directory.path())
+            .unwrap();
+
+        assert_eq!(deleted, 1);
+        assert!(source.exists());
+        assert!(!orphan.exists());
+    }
+
+    #[test]
+    fn retention_status_reports_existing_local_text_and_audio() {
+        let store = test_store();
+        insert_entry(&store, TestEntry::new("entry-1", 1_000, "retained text"));
+        let directory = tempfile::tempdir().unwrap();
+        let audio_path = directory.path().join("retained.wav");
+        fs::write(&audio_path, b"12345678").unwrap();
+        store
+            .register_audio_asset(audio_path.to_string_lossy().as_ref(), 1_000)
+            .unwrap();
+
+        let status = store.get_retention_status().unwrap();
+
+        assert_eq!(status.text_entries, 1);
+        assert_eq!(status.audio_files, 1);
+        assert_eq!(status.audio_bytes, 8);
+    }
+
+    #[test]
+    fn explicit_history_clear_removes_registered_audio() {
+        let store = test_store();
+        let audio = tempfile::NamedTempFile::new().unwrap();
+        let path = audio.path().display().to_string();
+        insert_error_entry(&store, "entry-1", 1_000, Some(&path));
+        store.register_audio_asset(&path, 1_000).unwrap();
+
+        store.clear_all().unwrap();
+
+        assert!(!audio.path().exists());
+        assert!(store.get_entry("entry-1").unwrap().is_none());
+        assert_eq!(store.retained_audio_count().unwrap(), 0);
+    }
+
+    #[test]
+    fn deleting_file_import_history_never_deletes_user_source() {
+        let store = test_store();
+        let source = tempfile::Builder::new().suffix(".wav").tempfile().unwrap();
+        let source_path = source.path().display().to_string();
+        let id = store
+            .insert(NewTranscriptionEntry {
+                raw_text: "raw".to_string(),
+                final_text: "final".to_string(),
+                stt_engine: "whisper".to_string(),
+                stt_model: Some("model".to_string()),
+                language: Some("en".to_string()),
+                audio_duration_ms: Some(1_000),
+                stt_duration_ms: Some(100),
+                polish_duration_ms: None,
+                total_duration_ms: Some(100),
+                polish_applied: false,
+                polish_engine: None,
+                is_cloud: false,
+                audio_path: None,
+                status: "success".to_string(),
+                error: None,
+                source_kind: "file".to_string(),
+                source_path: Some(source_path.clone()),
+                translation_target: None,
+                timed_segments: Vec::new(),
+                delivery_status: "not_delivered".to_string(),
+            })
+            .unwrap();
+
+        store.delete_entry(&id).unwrap();
+
+        assert!(source.path().is_file());
+        assert!(store.get_entry(&id).unwrap().is_none());
+        assert_eq!(store.retained_audio_count().unwrap(), 0);
+    }
+
+    #[test]
+    fn workbench_metadata_round_trips_through_history() {
+        let store = test_store();
+        let id = store
+            .insert(NewTranscriptionEntry {
+                raw_text: "bonjour".to_string(),
+                final_text: "hello".to_string(),
+                stt_engine: "whisper".to_string(),
+                stt_model: Some("model".to_string()),
+                language: Some("fr".to_string()),
+                audio_duration_ms: Some(2_000),
+                stt_duration_ms: Some(200),
+                polish_duration_ms: Some(50),
+                total_duration_ms: Some(250),
+                polish_applied: true,
+                polish_engine: Some("qwen".to_string()),
+                is_cloud: false,
+                audio_path: None,
+                status: "success".to_string(),
+                error: None,
+                source_kind: "file".to_string(),
+                source_path: Some("/tmp/source.wav".to_string()),
+                translation_target: Some("en".to_string()),
+                timed_segments: vec![super::super::models::TimedSegment {
+                    start_ms: 0,
+                    end_ms: 2_000,
+                    text: "hello".to_string(),
+                }],
+                delivery_status: "inserted_keyboard".to_string(),
+            })
+            .unwrap();
+
+        let entry = store.get_entry(&id).unwrap().unwrap();
+
+        assert_eq!(entry.source_kind, "file");
+        assert_eq!(entry.source_path.as_deref(), Some("/tmp/source.wav"));
+        assert_eq!(entry.translation_target.as_deref(), Some("en"));
+        assert_eq!(entry.timed_segments.len(), 1);
+        assert_eq!(entry.timed_segments[0].end_ms, 2_000);
+        assert_eq!(entry.delivery_status, "inserted_keyboard");
     }
 }

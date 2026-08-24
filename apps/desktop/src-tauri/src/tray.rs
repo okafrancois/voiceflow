@@ -49,7 +49,7 @@ pub fn create_tray(app: &AppHandle) -> tauri::Result<()> {
 
     let menu = Menu::with_items(app, &[&show_settings, &toggle_recording, &separator, &quit])?;
 
-    let builder = TrayIconBuilder::with_id("ariatype-tray")
+    let builder = TrayIconBuilder::with_id("voiceflow-tray")
         .icon(tray_icon)
         .menu(&menu)
         .tooltip("Voice Flow")
@@ -67,7 +67,7 @@ pub fn create_tray(app: &AppHandle) -> tauri::Result<()> {
 
 /// Remove the system tray icon.
 pub fn remove_tray(app: &AppHandle) {
-    if let Some(tray) = app.tray_by_id("ariatype-tray") {
+    if let Some(tray) = app.tray_by_id("voiceflow-tray") {
         let _ = tray.set_visible(false);
         info!("tray_hidden");
     }
@@ -75,7 +75,7 @@ pub fn remove_tray(app: &AppHandle) {
 
 /// Show the system tray icon (create if not exists).
 pub fn show_tray(app: &AppHandle) -> tauri::Result<()> {
-    if let Some(tray) = app.tray_by_id("ariatype-tray") {
+    if let Some(tray) = app.tray_by_id("voiceflow-tray") {
         let _ = tray.set_visible(true);
         info!("tray_shown");
         Ok(())
@@ -201,7 +201,7 @@ fn toggle_recording(app: &AppHandle) {
 /// Call this when recording state changes to show a visual indicator.
 #[allow(dead_code)]
 pub fn update_tray_icon_for_recording(app: &AppHandle, is_recording: bool) -> tauri::Result<()> {
-    let tray = app.tray_by_id("ariatype-tray");
+    let tray = app.tray_by_id("voiceflow-tray");
 
     if let Some(_tray) = tray {
         if is_recording {
@@ -232,7 +232,7 @@ pub fn update_tray_menu_recording_text(app: &AppHandle, is_recording: bool) -> t
         None::<&str>,
     )?;
 
-    let tray = app.tray_by_id("ariatype-tray");
+    let tray = app.tray_by_id("voiceflow-tray");
     if let Some(_tray) = tray {
         info!("tray_menu_text_update_pending");
     }

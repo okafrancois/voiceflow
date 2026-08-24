@@ -1,8 +1,8 @@
-use ariatype_lib::polish_engine::{PolishEngine, PolishEngineType, PolishRequest, PolishResult};
-use ariatype_lib::stt_engine::traits::{PartialResultCallback, RecordingConsumer};
-use ariatype_lib::stt_engine::{EngineType, TranscriptionRequest, TranscriptionResult};
 use async_trait::async_trait;
 use std::sync::Arc;
+use voiceflow_lib::polish_engine::{PolishEngine, PolishEngineType, PolishRequest, PolishResult};
+use voiceflow_lib::stt_engine::traits::{PartialResultCallback, RecordingConsumer};
+use voiceflow_lib::stt_engine::{EngineType, TranscriptionRequest, TranscriptionResult};
 
 struct MockSttEngine {
     result_text: String,

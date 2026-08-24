@@ -1,4 +1,7 @@
+pub mod platform_quality;
+pub mod product_workflows;
 pub mod recording_lifecycle;
 pub mod retry_transcription;
 pub mod shortcut;
 pub mod transcription_finalize;
+pub mod transcription_workbench;

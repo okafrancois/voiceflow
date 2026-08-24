@@ -113,6 +113,17 @@
   "general.permissions.grantPermission": "Предоставить разрешение",
   "general.privacy.title": "Конфиденциальность",
   "general.privacy.description": "Управление данными и конфиденциальностью",
+  "general.privacy.textRetention": "Срок хранения текстовой истории",
+  "general.privacy.textRetentionDesc": "Выберите, как долго хранить расшифровки на этом устройстве. Никогда сразу удаляет существующую историю.",
+  "general.privacy.audioRetention": "Срок хранения аудиозаписей",
+  "general.privacy.audioRetentionDesc": "Выберите, как долго хранить WAV-файлы на этом устройстве. После успешной расшифровки аудио по умолчанию удаляется.",
+  "general.privacy.retention.never": "Никогда",
+  "general.privacy.retention.days7": "7 дней",
+  "general.privacy.retention.days30": "30 дней",
+  "general.privacy.retention.days90": "90 дней",
+  "general.privacy.retention.forever": "Всегда",
+  "general.privacy.retentionStatus": "Локально хранится: {{textEntries}} текстов и {{audioFiles}} аудиофайлов ({{audioSize}}).",
+  "general.privacy.retentionApplyError": "Настройка сохранена, но некоторые локальные файлы удалить не удалось. Voice Flow повторит попытку автоматически.",
   "general.privacy.analytics": "Программа улучшения",
   "general.privacy.analyticsDesc": "Присоединяйтесь к нашей программе улучшения, чтобы помочь нам оптимизировать опыт. Собираются только отчеты о сбоях и статистика использования—голосовой или текстовый контент не записывается.",
   "general.privacy.correctionMemory": "Память исправлений слов",
@@ -476,5 +487,321 @@
   "dictionary.messages.imported": "Imported {{imported}}, skipped {{skipped}}",
   "dictionary.messages.importError": "Failed to import CSV",
   "dictionary.messages.deleted": "Dictionary entry deleted",
-  "dictionary.messages.deleteError": "Failed to delete dictionary entry"
+  "dictionary.messages.deleteError": "Failed to delete dictionary entry",
+  "history.workbench.title": "Transcribe a media file",
+  "history.workbench.description": "Drop a file here or choose WAV, MP3, M4A, FLAC, OGG, MP4, MOV, or WebM.",
+  "history.workbench.choose": "Choose a file",
+  "history.workbench.unsupported": "This media format is not supported.",
+  "history.workbench.queued": "Queued",
+  "history.workbench.running": "Transcribing",
+  "history.workbench.completed": "Transcription completed",
+  "history.workbench.error": "Transcription failed",
+  "history.workbench.canceled": "Transcription canceled",
+  "history.workbench.cancel": "Cancel",
+  "history.translation.target": "Translation language",
+  "history.translation.none": "No translation",
+  "history.translation.completed": "Translation completed",
+  "history.source.file": "Imported file",
+  "history.source.recording": "Recording",
+  "history.details.raw": "Raw transcription",
+  "history.details.final": "Final text",
+  "history.details.model": "Model",
+  "history.details.audioDuration": "Audio duration",
+  "history.details.processing": "Processing time",
+  "history.details.delivery": "Delivery",
+  "history.actions.details": "Show details",
+  "history.actions.copyRaw": "Copy raw transcription",
+  "history.actions.copyFinal": "Copy final text",
+  "history.actions.insertRaw": "Insert raw transcription",
+  "history.actions.insertFinal": "Insert final text",
+  "history.actions.inserted": "Text inserted",
+  "history.actions.retranscribe": "Transcribe again",
+  "history.actions.retranscribed": "Transcription updated",
+  "history.actions.repolish": "Polish again",
+  "history.actions.polished": "Text polished",
+  "history.actions.translate": "Translate",
+  "history.actions.playAudio": "Play audio",
+  "history.actions.deleteTitle": "Delete this transcription?",
+  "history.actions.deleteDescription": "The history entry and any Voice Flow-managed audio copy will be deleted. Your imported source file will not be changed.",
+  "history.actions.deleted": "Transcription deleted",
+  "history.export.overwriteTitle": "Replace the existing file?",
+  "history.export.overwriteDescription": "A file already exists at this location. Replacing it cannot be undone.",
+  "history.export.overwrite": "Replace file",
+  "history.export.completed": "Export completed",
+  "history.loading": "Loading history...",
+  "history.delivery.pending": "Waiting to insert",
+  "history.delivery.insertedKeyboard": "Inserted with keyboard",
+  "history.delivery.insertedClipboard": "Inserted with clipboard",
+  "history.delivery.insertedStream": "Inserted while processing",
+  "history.delivery.copied": "Copied",
+  "history.delivery.copyFailed": "Copy failed",
+  "history.delivery.failed": "Insertion failed",
+  "history.delivery.notDelivered": "Not delivered",
+  "history.delivery.unknown": "Unknown",
+  "nav.quality": "Quality",
+  "platformQuality": {
+    "title": "Setup and quality",
+    "description": "Check this device, configure code context, and review content-free reliability metrics.",
+    "ready": "Ready",
+    "notReady": "Not ready",
+    "diagnostics": {
+      "title": "Setup diagnostics",
+      "description": "Check the microphone and hardware, then choose a setup that fits this device.",
+      "run": "Run diagnostics",
+      "running": "Checking…",
+      "microphone": "Microphone",
+      "hardware": "Hardware",
+      "cpus": "logical CPUs",
+      "model": "Recommended local model",
+      "recommendation": "Recommended setup",
+      "privateReason": "The microphone is ready and {{model}} fits this device, so transcription can stay local.",
+      "balancedReason": "The microphone is ready and {{model}} fits this device, with cloud services remaining optional.",
+      "maximumAccuracyReason": "Configure the microphone before measuring {{model}}, or use an explicitly configured cloud provider."
+    },
+    "latency": {
+      "run": "Test a media file",
+      "running": "Testing…",
+      "completed": "Latency test completed",
+      "stt": "STT latency",
+      "total": "Total latency"
+    },
+    "presets": {
+      "private": "Private",
+      "balanced": "Balanced",
+      "maximum_accuracy": "Maximum accuracy",
+      "applied": "Setup preset applied"
+    },
+    "onboarding": {
+      "title": "Choose your privacy and quality setup",
+      "description": "You can change this later from the Quality page."
+    },
+    "code": {
+      "title": "Code context",
+      "description": "Provide optional typed editor context so code-aware profiles preserve identifiers, paths, flags, and line breaks.",
+      "language": "Language",
+      "editor": "Editor ID",
+      "file": "File path",
+      "symbol": "Symbol",
+      "clear": "Clear context",
+      "saved": "Code context saved",
+      "cleared": "Code context cleared"
+    },
+    "quality": {
+      "title": "Quality dashboard",
+      "description": "Review reliability and latency without storing transcript content."
+    },
+    "filters": {
+      "period": "Period",
+      "source": "Source",
+      "outcome": "Outcome",
+      "application": "Application ID"
+    },
+    "period": {
+      "all": "All time",
+      "days_7": "Last 7 days",
+      "days_30": "Last 30 days"
+    },
+    "source": {
+      "all": "All sources",
+      "local": "Local",
+      "cloud": "Cloud"
+    },
+    "kind": {
+      "all": "All outcomes",
+      "transcription_success": "Transcription success",
+      "transcription_failure": "Transcription failure",
+      "injection_failure": "Insertion failure",
+      "correction": "Correction learned"
+    },
+    "summary": {
+      "successes": "Successful transcriptions",
+      "failures": "Transcription failures",
+      "injectionFailures": "Insertion failures",
+      "correctionRate": "Correction rate",
+      "localCloud": "Local / cloud",
+      "sttLatency": "STT p50 / p95",
+      "polishLatency": "Polish p50 / p95",
+      "totalLatency": "Total p50 / p95"
+    },
+    "events": {
+      "empty": "No quality events match these filters.",
+      "unknownApplication": "Unknown application"
+    },
+    "appFailures": {
+      "title": "Insertion failures by application",
+      "empty": "No application insertion failures match these filters."
+    },
+    "export": {
+      "path": "JSON export path",
+      "button": "Export metrics",
+      "pathRequired": "Choose an export path.",
+      "completed": "Quality metrics exported",
+      "overwriteTitle": "Replace the existing export?",
+      "overwriteDescription": "A file already exists at this path. Replacing it cannot be undone.",
+      "overwrite": "Replace file"
+    },
+    "clear": {
+      "button": "Clear metrics",
+      "title": "Clear quality metrics?",
+      "description": "This removes content-free quality events without changing transcription history.",
+      "confirm": "Clear metrics",
+      "completed": "Quality metrics cleared"
+    },
+    "error": {
+      "load": "Could not load quality metrics.",
+      "context": "Could not update code context.",
+      "diagnostics": "Could not run diagnostics.",
+      "latency": "Could not run the latency test.",
+      "preset": "Could not apply the setup preset.",
+      "clear": "Could not clear quality metrics.",
+      "export": "Could not export quality metrics."
+    }
+  },
+  "workflow": {
+    "title": "Workflows",
+    "description": "Configure context, profiles, application rules, voice snippets, selected-text actions, and delivery controls.",
+    "loading": "Loading workflows…",
+    "tabs": {
+      "label": "Workflow sections",
+      "context": "Context",
+      "profiles": "Profiles",
+      "rules": "Application rules",
+      "snippets": "Voice snippets",
+      "actions": "Actions"
+    },
+    "actions": {
+      "save": "Save",
+      "delete": "Delete",
+      "add": "Add",
+      "cancel": "Cancel"
+    },
+    "confirm": {
+      "title": "Confirm deletion",
+      "profile": "Delete profile {{name}}?",
+      "rule": "Delete the rule for {{name}}?",
+      "snippet": "Delete voice snippet {{name}}?"
+    },
+    "context": {
+      "title": "Context capture",
+      "description": "Choose which focused-application data the backend may use. Clipboard and OCR stay off until enabled.",
+      "fields": {
+        "application_metadata": "Application name and window title",
+        "focused_field": "Focused field role",
+        "selected_text": "Selected text",
+        "clipboard": "Clipboard text",
+        "ocr_fallback": "OCR fallback"
+      },
+      "previewTitle": "Captured context",
+      "previewDescription": "Inspect the exact structured context available to profiles and actions.",
+      "capture": "Capture current context",
+      "unavailable": "Unavailable",
+      "empty": "Capture the current context to inspect it.",
+      "result": {
+        "application_id": "Application ID",
+        "application_name": "Application",
+        "window_title": "Window title",
+        "focused_field_role": "Focused field role",
+        "selected_text": "Selected text",
+        "clipboard_text": "Clipboard text",
+        "ocr_text": "OCR text"
+      }
+    },
+    "profiles": {
+      "protected": "Default profile",
+      "addTitle": "Add profile",
+      "addDescription": "Profiles are unlimited. IDs and shortcuts must be unique.",
+      "fields": {
+        "id": "Profile ID",
+        "name": "Name",
+        "hotkey": "Shortcut",
+        "trigger": "Trigger mode",
+        "language": "Language",
+        "template": "Polish template ID",
+        "translation": "Translation target",
+        "output": "Output action",
+        "codeAware": "Code-aware formatting"
+      }
+    },
+    "trigger": {
+      "hold": "Hold",
+      "toggle": "Toggle",
+      "double_tap": "Double tap"
+    },
+    "output": {
+      "insert": "Insert",
+      "preview": "Preview",
+      "copy": "Copy"
+    },
+    "rules": {
+      "addTitle": "Add application rule",
+      "description": "Select a profile automatically from the focused application and optional window title.",
+      "fields": {
+        "id": "Rule ID",
+        "application": "Application ID",
+        "title": "Window title contains",
+        "profile": "Profile",
+        "enabled": "Enabled"
+      }
+    },
+    "snippets": {
+      "addTitle": "Add voice snippet",
+      "description": "Templates accept {{date}}, {{clipboard}}, and {{selection}}.",
+      "fields": {
+        "id": "Snippet ID",
+        "trigger": "Spoken trigger",
+        "template": "Template",
+        "enabled": "Enabled"
+      },
+      "testTitle": "Test a snippet",
+      "testDescription": "Expansion uses the latest captured context.",
+      "testTrigger": "Spoken text",
+      "test": "Expand"
+    },
+    "voiceActions": {
+      "title": "Selected-text action",
+      "description": "Create a preview or copy the result. Replacement requires a captured source application.",
+      "kind": "Action",
+      "kinds": {
+        "shorten": "Shorten",
+        "translate": "Translate",
+        "reply": "Draft reply",
+        "list": "Make a list",
+        "custom": "Custom instruction"
+      },
+      "source": "Selected text",
+      "target": "Translation target",
+      "instruction": "Instruction",
+      "output": "Result handling",
+      "run": "Run action",
+      "replace": "Replace in source application"
+    },
+    "quick": {
+      "title": "Quick controls",
+      "description": "Use the latest completed delivery or control the active task.",
+      "undo_last_insertion": "Undo last insertion",
+      "reinsert_raw": "Reinsert raw text",
+      "reinsert_final": "Reinsert final text",
+      "copy_raw": "Copy raw text",
+      "copy_final": "Copy final text",
+      "repolish": "Polish again",
+      "submit_enter": "Press Enter",
+      "cancel_active_task": "Cancel active task"
+    },
+    "messages": {
+      "loadError": "Could not load workflows.",
+      "saveError": "Could not save the workflow.",
+      "captureError": "Could not capture context.",
+      "contextSaved": "Context settings saved",
+      "profileSaved": "Profile saved",
+      "profileDeleted": "Profile deleted",
+      "profileCreated": "Profile created",
+      "ruleSaved": "Application rule saved",
+      "ruleDeleted": "Application rule deleted",
+      "snippetSaved": "Voice snippet saved",
+      "snippetDeleted": "Voice snippet deleted",
+      "actionError": "The selected-text action failed.",
+      "quickDone": "Quick control completed"
+    }
+  },
+  "nav.workflows": "Workflows"
 }
