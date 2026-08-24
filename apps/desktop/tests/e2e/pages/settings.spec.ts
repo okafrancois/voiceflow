@@ -40,7 +40,18 @@ async function getSettingsModalState(tauriPage: E2EPage) {
     return 'unmounted';
   }
 
-  return modal.evaluate((element) => element.getAttribute('data-state') ?? 'mounted');
+  try {
+    return await modal.evaluate((element) => element.getAttribute('data-state') ?? 'mounted');
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message.includes("command 'eval' failed: not found")
+    ) {
+      return 'unmounted';
+    }
+
+    throw error;
+  }
 }
 
 test('Settings modal navigation matches current sections', async ({ tauriPage }, testInfo) => {

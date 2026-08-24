@@ -4,11 +4,15 @@ All notable changes to the desktop application will be documented in this file.
 
 ## Unreleased
 
+### Features
+
+- Add contextual voice workflows (ae8d826)
+
 ### Bug Fixes
 
-- Prevent long recordings from being truncated (20ba799)
+- Prevent long recordings from being truncated (ced1d10)
 
-## v1.0.6 (2026-08-23)
+## v1.0.7 (2026-08-23)
 
 ### Features
 
@@ -16,6 +20,7 @@ All notable changes to the desktop application will be documented in this file.
 
 ### Bug Fixes
 
+- Prevent long recordings from being truncated (ced1d10)
 - Exclude E2E tool from release bundle (a9fbe79)
 - Embed manifest in Windows tests (d972d55)
 - Restore macOS permissions and model downloads (fd0df15)
