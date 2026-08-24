@@ -320,7 +320,7 @@ export default function HomePage() {
           >
             <HomeDownloadButton lang={lang} />
             <Link
-              href="https://github.com/joe223/AriaType"
+              href="https://github.com/okafrancois/voiceflow"
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex h-11 items-center justify-center rounded-full border border-border bg-card px-6 text-sm font-medium text-foreground transition-colors hover:bg-secondary"

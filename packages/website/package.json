@@ -1,5 +1,5 @@
 {
-  "name": "@ariatype/website",
+  "name": "@voiceflow/website",
   "version": "1.0.0",
   "private": true,
   "license": "AGPL-3.0-only",
@@ -8,8 +8,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "deploy": "pnpm build && wrangler pages deploy out --project-name ariatype-website",
-    "deploy:preview": "pnpm build && wrangler pages deploy out --project-name ariatype-website --branch preview"
+    "deploy": "pnpm build && wrangler pages deploy out --project-name voiceflow-website",
+    "deploy:preview": "pnpm build && wrangler pages deploy out --project-name voiceflow-website --branch preview"
   },
   "dependencies": {
     "@aptabase/react": "^0.4.0",

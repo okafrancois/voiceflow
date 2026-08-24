@@ -11,14 +11,14 @@ export function generateStaticParams() {
 
 const metadataByLang = {
   en: {
-    title: 'AriaType - Voice Layer for Your Desktop',
+    title: 'Voice Flow - Voice Layer for Your Desktop',
     description:
-      'AriaType is the voice layer for your desktop, turning spoken thoughts into context-aware work right where your cursor is.',
+      'Voice Flow is the voice layer for your desktop, turning spoken thoughts into context-aware work right where your cursor is.',
   },
   zh: {
-    title: 'AriaType - 桌面语音工作层',
+    title: 'Voice Flow - 桌面语音工作层',
     description:
-      'AriaType 是桌面上的语音工作层，把你说出口的想法变成贴合上下文的内容，直接落到当前光标位置。',
+      'Voice Flow 是桌面上的语音工作层，把你说出口的想法变成贴合上下文的内容，直接落到当前光标位置。',
   },
 } as const;
 
@@ -37,7 +37,7 @@ export async function generateMetadata({
     openGraph: {
       title: metadata.title,
       description: metadata.description,
-      siteName: 'AriaType',
+      siteName: 'Voice Flow',
       type: 'website',
     },
     twitter: {

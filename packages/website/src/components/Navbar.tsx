@@ -63,7 +63,7 @@ export default function Navbar() {
           >
             <Image
               src="/logo.svg"
-              alt="AriaType"
+              alt="Voice Flow"
               width={28}
               height={28}
               className="rounded-md group-hover:opacity-80 transition-opacity"
@@ -90,10 +90,10 @@ export default function Navbar() {
 
           <div className="flex items-center gap-4">
             <Link
-              href="https://github.com/joe223/AriaType"
+              href="https://github.com/okafrancois/voiceflow"
               target="_blank"
               rel="noopener noreferrer"
-              onClick={() => trackEvent(AnalyticsEvents.NAV_CLICK, { label: 'GitHub', href: 'https://github.com/joe223/AriaType' })}
+              onClick={() => trackEvent(AnalyticsEvents.NAV_CLICK, { label: 'GitHub', href: 'https://github.com/okafrancois/voiceflow' })}
               className="text-foreground/60 hover:text-foreground transition-colors"
               aria-label="GitHub"
             >
@@ -138,7 +138,7 @@ export default function Navbar() {
                         : 'text-muted-foreground hover:bg-background-hover hover:text-foreground'
                     }`}
                   >
-                    中文
+                    Chinese
                   </button>
                 </div>
               </div>

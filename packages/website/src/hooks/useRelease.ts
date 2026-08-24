@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 
-export const GITHUB_RELEASES_URL = 'https://github.com/joe223/AriaType/releases';
+export const GITHUB_RELEASES_URL = 'https://github.com/okafrancois/voiceflow/releases';
 export const GITHUB_LATEST_RELEASE_URL = `${GITHUB_RELEASES_URL}/latest`;
 
 export type MacArchitecture = 'aarch64' | 'x86_64' | 'universal' | 'unknown';

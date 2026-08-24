@@ -1,10 +1,10 @@
-# Contributing to @ariatype/website
+# Contributing to @voiceflow/website
 
 ## Overview
 
-**Package**: Next.js 14 marketing website for AriaType.
+**Package**: Next.js 14 marketing website for Voice Flow.
 
-**URL**: ariatype.com
+**Deployment URL**: Configure the public URL before publishing.
 
 **Deployment**: Cloudflare Pages (static export)
 
@@ -27,13 +27,13 @@
 pnpm install
 
 # Start development server
-pnpm --filter @ariatype/website dev
+pnpm --filter @voiceflow/website dev
 
 # Build (static export)
-pnpm --filter @ariatype/website build
+pnpm --filter @voiceflow/website build
 
 # Lint
-pnpm --filter @ariatype/website lint
+pnpm --filter @voiceflow/website lint
 ```
 
 ---
@@ -134,10 +134,10 @@ const nextConfig = {
 
 ```bash
 # Deploy to production
-pnpm --filter @ariatype/website deploy
+pnpm --filter @voiceflow/website deploy
 
 # Deploy preview branch
-pnpm --filter @ariatype/website deploy:preview
+pnpm --filter @voiceflow/website deploy:preview
 ```
 
 **Environment Variables** (set in Cloudflare dashboard):
@@ -155,7 +155,7 @@ pnpm --filter @ariatype/website deploy:preview
 **Build check serves as primary validation**:
 
 ```bash
-pnpm --filter @ariatype/website build
+pnpm --filter @voiceflow/website build
 ```
 
 **Note**: TypeScript/ESLint errors are ignored during build (`ignoreBuildErrors: true`, `ignoreDuringBuilds: true`) for flexibility. Manual testing recommended before deployment.
@@ -167,8 +167,8 @@ pnpm --filter @ariatype/website build
 1. Create page file in `src/app/[lang]/new-page/page.tsx`
 2. Add i18n keys to `en.json` and `zh.json`
 3. Update `Navbar.tsx` if page should be in navigation
-4. Build and test locally: `pnpm --filter @ariatype/website dev`
-5. Deploy: `pnpm --filter @ariatype/website deploy`
+4. Build and test locally: `pnpm --filter @voiceflow/website dev`
+5. Deploy: `pnpm --filter @voiceflow/website deploy`
 
 ---
 
