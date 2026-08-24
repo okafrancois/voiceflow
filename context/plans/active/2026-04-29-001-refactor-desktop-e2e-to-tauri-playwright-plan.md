@@ -49,8 +49,8 @@ Desired state:
 - Reduce or remove onboarding checks that only exist because tests repeatedly re-open and re-seed the modal.
 
 **Verification:**
-- `pnpm --filter @ariatype/desktop run test:e2e -- --grep "Desktop first-run journey"`
-- `pnpm --filter @ariatype/desktop run test:e2e -- --list`
+- `pnpm --filter @voiceflow/desktop run test:e2e -- --grep "Desktop first-run journey"`
+- `pnpm --filter @voiceflow/desktop run test:e2e -- --list`
 
 ---
 
@@ -73,8 +73,8 @@ Desired state:
 - Keep test expectations compatible with current selectors and screenshots where possible.
 
 **Verification:**
-- `pnpm --filter @ariatype/desktop install`
-- `pnpm --filter @ariatype/desktop exec playwright test --config=tests/e2e/playwright.config.ts --list`
+- `pnpm --filter @voiceflow/desktop install`
+- `pnpm --filter @voiceflow/desktop exec playwright test --config=tests/e2e/playwright.config.ts --list`
 
 ---
 
@@ -111,8 +111,8 @@ Desired state:
 - Keep the same assertions first; only tighten them when the real Tauri environment requires different synchronization.
 
 **Verification:**
-- `pnpm --filter @ariatype/desktop test:e2e -- --list`
-- `pnpm --filter @ariatype/desktop test:e2e -- tests/e2e/pages/dashboard.spec.ts`
+- `pnpm --filter @voiceflow/desktop test:e2e -- --list`
+- `pnpm --filter @voiceflow/desktop test:e2e -- tests/e2e/pages/dashboard.spec.ts`
 
 ---
 

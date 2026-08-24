@@ -20,7 +20,7 @@ As a result, the page communicates "marketing site" more strongly than "carefull
 
 Redesign the homepage into a calm, clear, system-driven entry point that:
 
-- presents AriaType as a desktop voice input tool first
+- presents Voice Flow as a desktop voice input tool first
 - follows the desktop product's neutral tokens, rounded surfaces, and restrained interaction language
 - minimizes decorative iconography and SVG usage
 - explains the product through structure, copy, and state presentation rather than visual noise
@@ -28,7 +28,7 @@ Redesign the homepage into a calm, clear, system-driven entry point that:
 ## Design Context
 
 - Product: localized static-export website for a desktop voice typing app
-- Audience: people evaluating whether AriaType is trustworthy, local-first, and practical for daily work
+- Audience: people evaluating whether Voice Flow is trustworthy, local-first, and practical for daily work
 - Constraints:
   - must remain compatible with Next.js static export
   - must keep English and Chinese content in sync
@@ -124,7 +124,7 @@ Content:
 
 - Given a visitor lands on the homepage
 - When the page renders
-- Then the visitor sees what AriaType is, how it works, why it is local-first, and how to download it without reading a long feature wall
+- Then the visitor sees what Voice Flow is, how it works, why it is local-first, and how to download it without reading a long feature wall
 
 ### Scenario: homepage feels aligned with desktop product
 

@@ -17,8 +17,30 @@ User releases hotkey
   → Transcription result received
   → If polish enabled: text polished (local LLM or cloud API)
   → Final text injected at cursor (text_injector/)
-  → Session recorded in history
+  → Session text and audio retained according to their independent local policies
 ```
+
+## Local retention flow
+
+The Rust backend owns both retention policies. The frontend only reads their current values, updates them through typed IPC, and renders the backend’s storage counts.
+
+```text
+Recording finalization
+  → audio policy is Never?
+      Yes → do not write a WAV, or delete an already-created WAV
+      No  → register the WAV in retained_audio
+  → text policy is Never?
+      Yes → do not insert dictated text into transcription_history
+      No  → insert the history row and optional registered audio path
+
+Startup, hourly cleanup, or retention setting update
+  → delete each expired audio file
+  → after filesystem success, clear history.audio_path and delete retained_audio in one SQLite transaction
+  → if filesystem deletion fails, keep the durable reference for the next cleanup
+  → delete text rows expired under the independent text policy
+```
+
+Schema migration v3 copies existing non-empty history audio paths into `retained_audio`. Startup also removes WAV files in the application recordings directory that have no registry row. See [`../feat/privacy-retention/0.1.0/prd/erd.md`](../feat/privacy-retention/0.1.0/prd/erd.md) for the policy contract.
 
 ## Engine Selection Flow
 

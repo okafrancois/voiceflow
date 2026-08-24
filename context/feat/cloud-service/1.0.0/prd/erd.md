@@ -1,4 +1,4 @@
-# Cloud Service Feature Specification
+# Cloud Service feature specification
 
 ## Feature Name
 Cloud Service Tab-based Organization
@@ -37,18 +37,20 @@ Cloud Service provides cloud-based speech-to-text (STT) and text polishing (Poli
 
 ### CloudSttSection
 - Enable/disable Cloud STT toggle
-- Provider selection (volcengine-streaming, volcengine-flash, openai, openai-realtime, deepgram, custom)
-- App ID (for Volcengine providers)
+- Provider selection (`volcengine-streaming`, `aliyun-stream`, `elevenlabs`)
+- Provider fields come from the backend schema; the frontend does not keep a second provider list
+- App ID for Volcengine
 - API Key / Access Token
 - Secret fields expose a right-side reveal/hide toggle and remain hidden by default
 - Base URL
-- Model name
-- Language
+- Model or resource ID when the provider supports it
 - Check button for the active provider. The backend performs a lightweight real connection check using the saved active configuration, without sending user audio.
+- Volcengine accepts only the `bigmodel_nostream` interface on the official host
 
 ### CloudPolishSection
 - Enable/disable Cloud Polish toggle
-- Provider selection (anthropic, openai, custom)
+- Provider selection (`anthropic`, `openai`)
+- OpenAI-compatible or Anthropic-compatible gateways use the matching shipped provider with a custom Base URL; there is no `custom` provider ID
 - API Key
 - Secret fields expose a right-side reveal/hide toggle and remain hidden by default
 - Base URL
@@ -84,25 +86,22 @@ Added to all 10 supported locales: en, zh, de, es, fr, it, ja, ko, pt, ru
 3. **Content Switching**: Clicking tab shows corresponding section
 4. **i18n**: All tab labels have translations in all 10 locales
 5. **Build**: Frontend builds successfully
-6. **Tests**: All existing tests pass (312 tests)
+6. **Tests**: Deterministic provider contract tests and the complete existing suite pass
 7. **Timeout Safety**: Cloud Polish requests use a bounded adaptive timeout from 5 to 30 seconds and never hang indefinitely
 8. **Configuration Check**: Enabled Cloud STT and Cloud Polish sections expose a small manual Check action that reports success, missing fields, invalid URL, auth failure, model failure, network failure, timeout, or unsupported provider without persisting stale validation state
 9. **Secret Reveal**: API Key / Access Token style fields are hidden by default and can be temporarily revealed from a right-side icon button
+10. **Provider Alignment**: The UI, backend schema, runtime dispatch, and provider reference expose the same three STT and two Polish IDs
+11. **Offline Contract Coverage**: All shipped providers have local mock-server tests that need no credentials or internet access
 
 ## Test Coverage
 
-Current test coverage is 30.22% overall. The test infrastructure tests the Rust library code but does not exercise Tauri command handlers. This is a known architectural limitation of the current test setup.
-
-Core modules requiring additional test coverage:
-- `commands/` - Tauri IPC handlers (0-5% coverage)
-- `text_injector/` - Platform text injection (0% coverage)
-- `stt_engine/cloud/` - Cloud STT engines (0-20% coverage)
+Provider schema, request construction, response parsing, and streaming lifecycles are covered in Rust. Frontend tests verify that the settings page renders the backend-provided schema. Live vendor checks are ignored by default and do not replace local contract tests.
 
 ## Verification
 
 ```bash
 # Frontend build
-pnpm --filter @ariatype/desktop build
+pnpm --filter @voiceflow/desktop build
 
 # Rust tests
 cd apps/desktop/src-tauri && cargo test

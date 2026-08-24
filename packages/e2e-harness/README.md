@@ -1,4 +1,4 @@
-# @ariatype/e2e-harness
+# @voiceflow/e2e-harness
 
 Reusable E2E harness for real Tauri app verification.
 
@@ -54,7 +54,7 @@ Then add one script that runs the harness runner.
 ### 1. Install dependencies
 
 ```sh
-pnpm add -D @ariatype/e2e-harness @playwright/test @srsholmes/tauri-playwright
+pnpm add -D @voiceflow/e2e-harness @playwright/test @srsholmes/tauri-playwright
 ```
 
 Your app also needs a working Tauri dev command, for example `pnpm tauri dev`.
@@ -86,7 +86,7 @@ import { join } from 'node:path';
 import {
   createRunnerConfig,
   resolveHarnessDir,
-} from '@ariatype/e2e-harness/runner';
+} from '@voiceflow/e2e-harness/runner';
 
 const e2eDir = resolveHarnessDir(import.meta.url);
 const projectRoot = join(e2eDir, '..', '..');
@@ -128,7 +128,7 @@ The easiest safe defaults are:
 ### 3. Create `tests/e2e/fixtures.ts`
 
 ```ts
-import { createTauriFixturesFromConfigModule } from '@ariatype/e2e-harness/playwright';
+import { createTauriFixturesFromConfigModule } from '@voiceflow/e2e-harness/playwright';
 
 const { test, expect } = await createTauriFixturesFromConfigModule(
   './e2e.config.mjs',
@@ -144,7 +144,7 @@ This fixture automatically manages one shared Tauri runtime and exposes `tauriPa
 ### 4. Create `tests/e2e/playwright.config.ts`
 
 ```ts
-import { createTauriPlaywrightConfig } from '@ariatype/e2e-harness/playwright';
+import { createTauriPlaywrightConfig } from '@voiceflow/e2e-harness/playwright';
 import config from './e2e.config.mjs';
 
 const snapshotDir = new URL('./snapshots/', import.meta.url).pathname;
@@ -157,7 +157,7 @@ Because this config file lives under `tests/e2e/`, the harness default `testDir:
 ### 5. Write your first spec
 
 ```ts
-import { waitForContentLoaded } from '@ariatype/e2e-harness/helpers';
+import { waitForContentLoaded } from '@voiceflow/e2e-harness/helpers';
 import { test } from '../fixtures';
 
 test('app boots', async ({ tauriPage }) => {
@@ -169,7 +169,7 @@ By default, the fixture also captures a final end-of-test snapshot for passing t
 
 ### 6. Add package scripts
 
-If `@ariatype/e2e-harness` is installed as a normal dependency, use the published bin:
+If `@voiceflow/e2e-harness` is installed as a normal dependency, use the published bin:
 
 ```json
 {
@@ -428,7 +428,7 @@ Keep these in the shared harness:
 - snapshot stabilization
 - generic navigation and wait helpers
 
-If a helper mentions your product, settings schema, onboarding state, or custom IPC commands, it probably belongs in the app, not in `@ariatype/e2e-harness`.
+If a helper mentions your product, settings schema, onboarding state, or custom IPC commands, it probably belongs in the app, not in `@voiceflow/e2e-harness`.
 
 ## Waiting Strategy
 
@@ -444,7 +444,7 @@ The harness only intentionally waits during screenshot stabilization, where a sh
 
 ## Common Helpers
 
-From `@ariatype/e2e-harness/helpers`:
+From `@voiceflow/e2e-harness/helpers`:
 
 - `waitForAppReady(page)`
 - `waitForContentLoaded(page, selector)`
@@ -461,7 +461,7 @@ From `@ariatype/e2e-harness/helpers`:
 To verify the harness package itself:
 
 ```sh
-pnpm --filter @ariatype/e2e-harness test
+pnpm --filter @voiceflow/e2e-harness test
 ```
 
 To verify a consumer app using the harness:
@@ -479,7 +479,7 @@ pnpm run test:e2e:debug
 Use one of these fixes:
 
 - run it through `pnpm exec tauri-e2e-runner ...`
-- make sure `@ariatype/e2e-harness` is installed in the current package
+- make sure `@voiceflow/e2e-harness` is installed in the current package
 - if you are editing the harness inside the same workspace, call `node ../../packages/e2e-harness/src/runner-cli.mjs ...`
 
 ### The app starts, but Playwright cannot connect
@@ -502,9 +502,9 @@ Usually the fix is not a longer sleep. Prefer:
 
 Main exports:
 
-- `@ariatype/e2e-harness`
-- `@ariatype/e2e-harness/helpers`
-- `@ariatype/e2e-harness/playwright`
-- `@ariatype/e2e-harness/playwright-hooks`
-- `@ariatype/e2e-harness/runner`
-- `@ariatype/e2e-harness/snapshot`
+- `@voiceflow/e2e-harness`
+- `@voiceflow/e2e-harness/helpers`
+- `@voiceflow/e2e-harness/playwright`
+- `@voiceflow/e2e-harness/playwright-hooks`
+- `@voiceflow/e2e-harness/runner`
+- `@voiceflow/e2e-harness/snapshot`

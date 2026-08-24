@@ -24,9 +24,9 @@ const EXPECTED_RESOURCES = {
 
 const BUNDLE_RESOURCE_DIRS = {
   macos: [
-    'apps/desktop/src-tauri/target/universal-apple-darwin/release/bundle/macos/AriaType.app/Contents/Resources',
-    'apps/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/AriaType.app/Contents/Resources',
-    'apps/desktop/src-tauri/target/x86_64-apple-darwin/release/bundle/macos/AriaType.app/Contents/Resources',
+    'apps/desktop/src-tauri/target/universal-apple-darwin/release/bundle/macos/Voice Flow.app/Contents/Resources',
+    'apps/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Voice Flow.app/Contents/Resources',
+    'apps/desktop/src-tauri/target/x86_64-apple-darwin/release/bundle/macos/Voice Flow.app/Contents/Resources',
   ],
   windows: [
     'apps/desktop/src-tauri/target/release/resources',
@@ -342,7 +342,7 @@ export async function smokeRuntimeServer({
   modelPath,
   host = '127.0.0.1',
   port,
-  modelAlias = 'ariatype-smoke',
+  modelAlias = 'voiceflow-smoke',
   timeoutMs = 30000,
 } = {}) {
   if (!path) {

@@ -1,4 +1,4 @@
-# AriaType Documentation
+# Voice Flow Documentation
 
 **Philosophy**: Progressive disclosure, not encyclopedia. This index gives agents and developers a map, not a 1000-page instruction manual. Follow links for depth; stay shallow until you need to go deep.
 
@@ -77,6 +77,7 @@
 | [`guides/onboarding.md`](./guides/onboarding.md) | New contributor/agent onboarding |
 | [`guides/testing.md`](./guides/testing.md) | How to write and run tests |
 | [`guides/debugging.md`](./guides/debugging.md) | Log investigation, crash reports, root cause analysis |
+| [`guides/developer-bridge.md`](./guides/developer-bridge.md) | Local CLI, URL scheme, editor context, and bridge security |
 | [`guides/adding-stt-provider.md`](./guides/adding-stt-provider.md) | Adding a new STT provider |
 | [`guides/adding-polish-provider.md`](./guides/adding-polish-provider.md) | Adding a new Polish provider |
 
@@ -86,9 +87,9 @@
 
 | Document | Description |
 |----------|-------------|
-| [`reference/providers/stt.md`](./reference/providers/stt.md) | STT provider API reference (Volcengine, OpenAI, Deepgram, etc.) |
-| [`reference/providers/polish.md`](./reference/providers/polish.md) | Polish provider API reference (Anthropic, OpenAI, etc.) |
-| [`reference/providers/capswriter-polish-latency.md`](./reference/providers/capswriter-polish-latency.md) | CapsWriter-Offline polish latency case study and AriaType optimization guidance |
+| [`reference/providers/stt.md`](./reference/providers/stt.md) | Shipped cloud STT contracts for Volcengine, Aliyun Realtime, and ElevenLabs |
+| [`reference/providers/polish.md`](./reference/providers/polish.md) | Shipped Anthropic and OpenAI Polish contracts plus local runtime notes |
+| [`reference/providers/capswriter-polish-latency.md`](./reference/providers/capswriter-polish-latency.md) | CapsWriter-Offline polish latency case study and Voice Flow optimization guidance |
 
 ---
 
@@ -110,7 +111,14 @@ Versioned feature specs with verification status. Each lives under `feat/<name>/
 
 | Feature | Version | Status |
 |---------|---------|--------|
+| [Reliable Windows Delivery](./feat/windows-text-injection/0.1.0/prd/erd.md) | 0.1.0 | Completed |
+| [Context Workflows](./feat/context-workflows/0.1.0/prd/erd.md) | 0.1.0 | Completed |
+| [Transcription Workbench](./feat/file-history-translation/0.1.0/prd/erd.md) | 0.1.0 | Completed |
+| [Platform Bridge and Quality](./feat/platform-bridge-quality/0.1.0/prd/erd.md) | 0.1.0 | Completed |
+| [Cloud Provider Contract Alignment](./feat/provider-contract-alignment/0.1.0/prd/erd.md) | 0.1.0 | Completed |
 | [Complete Long Dictation](./feat/long-recording-transcription/0.1.0/prd/erd.md) | 0.1.0 | Completed |
+| [Voice Flow Brand Cleanup](./feat/voice-flow-brand-cleanup/0.1.0/prd/erd.md) | 0.1.0 | Completed |
+| [Privacy Retention Controls](./feat/privacy-retention/0.1.0/prd/erd.md) | 0.1.0 | Completed |
 
 ### Draft (Deferred)
 

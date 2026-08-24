@@ -1,6 +1,6 @@
 # Rust Coding Style Guide
 
-Project-specific conventions for the AriaType Rust backend (`apps/desktop/src-tauri/`). Clippy enforces most rules; this document covers patterns and conventions not mechanically enforced.
+Project-specific conventions for the Voice Flow Rust backend (`apps/desktop/src-tauri/`). Clippy enforces most rules; this document covers patterns and conventions not mechanically enforced.
 
 ---
 

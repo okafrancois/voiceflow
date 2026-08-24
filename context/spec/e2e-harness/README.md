@@ -2,7 +2,7 @@
 
 ## Overview
 
-This directory contains the complete design specification for E2E testing and Harness Engineering for AriaType (Tauri application).
+This directory contains the complete design specification for E2E testing and Harness Engineering for Voice Flow (Tauri application).
 
 ## Problem Statement
 
@@ -124,7 +124,7 @@ pnpm run verify --request '{"expectedBehavior": {"backendCommand": "start_record
 
 ## Desktop E2E Defaults
 
-- The default desktop E2E entrypoint is the ordered Tauri runner: `pnpm --filter @ariatype/desktop run test:e2e`.
+- The default desktop E2E entrypoint is the ordered Tauri runner: `pnpm --filter @voiceflow/desktop run test:e2e`.
 - The first ordered spec is a black-box first-run journey that walks the visible user flow from onboarding into the main application.
 - Shared runtime is still the default for suite speed, but the runner must clear app-specific WebKit persistence between runs so first-run semantics stay deterministic on macOS.
 - Browser-only mock IPC flows are retired from the desktop E2E path. If a test needs mocked frontend-only behavior, it belongs in a lower-layer harness, not in `apps/desktop/tests/e2e`.

@@ -1,6 +1,6 @@
 # TypeScript/React Style Guide
 
-TypeScript and React conventions for the AriaType desktop application.
+TypeScript and React conventions for the Voice Flow desktop application.
 
 ---
 

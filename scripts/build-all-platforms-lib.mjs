@@ -184,7 +184,7 @@ export function findRepoDmgMounts(hdiutilInfo, options) {
 export function detachRepoDmgMounts(options) {
   const {
     repoRoot,
-    volumeNames = ['AriaType', 'AriaType Inhouse'],
+    volumeNames = ['Voice Flow', 'Voice Flow Inhouse'],
     exec = execSync,
     log = console,
   } = options;
@@ -224,7 +224,7 @@ export function windowsCrossBuildEnv(baseEnv = process.env) {
 export function createBundleArtifactPreserver(options) {
   const {
     targetDir,
-    cacheDir = mkdtempSync(join(tmpdir(), 'ariatype-build-artifacts-')),
+    cacheDir = mkdtempSync(join(tmpdir(), 'voiceflow-build-artifacts-')),
     log = console,
   } = options;
   const preserved = new Map();
@@ -316,10 +316,10 @@ export function collectReleaseAssetsFromTarget(options) {
     const bundleDir = resolve(targetDir, target.targetTriple, 'release/bundle');
     copyFilesFrom(resolve(bundleDir, 'dmg'), (file) => file.endsWith('.dmg'));
 
-    const updaterArchive = resolve(bundleDir, 'macos/AriaType.app.tar.gz');
+    const updaterArchive = resolve(bundleDir, 'macos/Voice Flow.app.tar.gz');
     const updaterArchiveName = target.archiveSuffix
-      ? `AriaType_${target.archiveSuffix}.app.tar.gz`
-      : 'AriaType.app.tar.gz';
+      ? `Voice Flow_${target.archiveSuffix}.app.tar.gz`
+      : 'Voice Flow.app.tar.gz';
     if (copyFile(updaterArchive, updaterArchiveName)) {
       copyFile(`${updaterArchive}.sig`, `${updaterArchiveName}.sig`);
     }

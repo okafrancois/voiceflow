@@ -14,7 +14,7 @@ import {
 } from './ensure-llama-server-runtime.mjs';
 
 function createFixture() {
-  const root = mkdtempSync(join(tmpdir(), 'ariatype-ensure-runtime-'));
+  const root = mkdtempSync(join(tmpdir(), 'voiceflow-ensure-runtime-'));
   const tauriDir = resolve(root, 'apps/desktop/src-tauri');
   mkdirSync(tauriDir, { recursive: true });
   return { root, tauriDir };
@@ -23,10 +23,10 @@ function createFixture() {
 test('configuredRuntimePathEnv prefers Windows x64 env', () => {
   assert.equal(
     configuredRuntimePathEnv('windows', {
-      ARIATYPE_LLAMA_SERVER_WINDOWS_X64_PATH: '/tmp/llama-server.exe',
-      ARIATYPE_LLAMA_SERVER_WINDOWS_PATH: '/tmp/generic.exe',
+      VOICEFLOW_LLAMA_SERVER_WINDOWS_X64_PATH: '/tmp/llama-server.exe',
+      VOICEFLOW_LLAMA_SERVER_WINDOWS_PATH: '/tmp/generic.exe',
     }),
-    'ARIATYPE_LLAMA_SERVER_WINDOWS_X64_PATH'
+    'VOICEFLOW_LLAMA_SERVER_WINDOWS_X64_PATH'
   );
 });
 
@@ -84,7 +84,7 @@ test('ensureLlamaServerRuntime is a no-op when a runtime env var is configured',
     platform: 'windows',
     rootDir: root,
     env: {
-      ARIATYPE_LLAMA_SERVER_WINDOWS_PATH: '/tmp/llama-server.exe',
+      VOICEFLOW_LLAMA_SERVER_WINDOWS_PATH: '/tmp/llama-server.exe',
     },
     fetchImpl: async () => {
       throw new Error('should not download');
@@ -94,7 +94,7 @@ test('ensureLlamaServerRuntime is a no-op when a runtime env var is configured',
   assert.deepEqual(result, {
     status: 'env_configured',
     platform: 'windows',
-    pathEnv: 'ARIATYPE_LLAMA_SERVER_WINDOWS_PATH',
+    pathEnv: 'VOICEFLOW_LLAMA_SERVER_WINDOWS_PATH',
   });
 });
 

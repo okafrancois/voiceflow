@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Build AriaType for all platforms: macOS (ARM + Intel) and Windows.
+ * Build Voice Flow for all platforms: macOS (ARM + Intel) and Windows.
  *
  * Root release build:
  *   npm run build                     # Desktop all platforms, then website
@@ -328,7 +328,7 @@ function collectMacDmgDiagnostics(targetTriple, error, diagnosticsDir = createDi
   }
 }
 
-console.log('\n🚀 AriaType Multi-Platform Build\n');
+console.log('\n🚀 Voice Flow Multi-Platform Build\n');
 console.log(`   Host platform: ${isMacOS ? 'macOS' : isWindows ? 'Windows' : hostPlatform}\n`);
 
 if (!checkRequiredBuildTools(requiredBuildTools())) {

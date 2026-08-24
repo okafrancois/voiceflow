@@ -124,8 +124,8 @@ Rust-based contract testing that verifies IPC without UI:
 // tests/ipc_contract_test.rs
 #[cfg(test)]
 mod ipc_contract {
-    use ariatype_lib::commands::*;
-    use ariatype_lib::events::*;
+    use voiceflow_lib::commands::*;
+    use voiceflow_lib::events::*;
     
     struct IpcHarness {
         state: UnifiedRecordingState,

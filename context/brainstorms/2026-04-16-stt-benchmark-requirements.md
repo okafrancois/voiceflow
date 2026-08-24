@@ -7,7 +7,7 @@ topic: stt-benchmark
 
 ## Problem Frame
 
-AriaType supports 6 STT providers with different latency, accuracy, and cost profiles. Developers and architects need a standardized benchmark to:
+Voice Flow supports 6 STT providers with different latency, accuracy, and cost profiles. Developers and architects need a standardized benchmark to:
 - Make informed engine selection decisions
 - Quantify performance tradeoffs when changing engines or configurations
 - Track performance changes over time (e.g., after API updates, model version changes)

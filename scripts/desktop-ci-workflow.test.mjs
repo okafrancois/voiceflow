@@ -25,8 +25,8 @@ test('desktop CI watches backend, frontend, and shared desktop dependencies', ()
 });
 
 test('desktop CI validates frontend contracts', () => {
-  assert.match(workflow, /pnpm --filter @ariatype\/desktop build/);
-  assert.match(workflow, /pnpm --filter @ariatype\/shared typecheck/);
+  assert.match(workflow, /pnpm --filter @voiceflow\/desktop build/);
+  assert.match(workflow, /pnpm --filter @voiceflow\/shared typecheck/);
   assert.match(workflow, /pnpm check:i18n/);
   assert.match(workflow, /version:\s*8\.15\.0/);
 });
@@ -36,9 +36,11 @@ test('desktop CI keeps Rust checks blocking and serializes tests', () => {
   assert.match(workflow, /--test-threads=1/);
 });
 
-test('desktop CI is macOS-only', () => {
+test('desktop CI keeps full Rust coverage on macOS and checks Windows delivery', () => {
   assert.match(workflow, /test-macos:[\s\S]*runs-on: macos-latest/);
-  assert.doesNotMatch(workflow, /test-windows:|build-windows:|windows-latest/);
+  assert.match(workflow, /test-windows-delivery:[\s\S]*runs-on: windows-latest/);
+  assert.match(workflow, /cargo test --lib text_injector::windows::tests/);
+  assert.doesNotMatch(workflow, /build-windows:/);
 });
 
 test('Windows builds use the static MSVC runtime required by sherpa-onnx', () => {

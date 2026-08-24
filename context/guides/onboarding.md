@@ -1,12 +1,12 @@
 # Onboarding Guide
 
-Welcome to AriaType. This guide helps you (human contributor or AI agent) quickly understand the project and become productive.
+Welcome to Voice Flow. This guide helps you (human contributor or AI agent) quickly understand the project and become productive.
 
 ---
 
-## What is AriaType?
+## What is Voice Flow?
 
-AriaType is a **local-first voice keyboard for macOS and Windows**. Hold a hotkey, speak naturally, and release—the app transcribes your speech and types it into any active application. Powered by optimized local AI models for STT (Whisper, SenseVoice) and text polish.
+Voice Flow is a **local-first voice keyboard for macOS and Windows**. Hold a hotkey, speak naturally, and release—the app transcribes your speech and types it into any active application. Powered by optimized local AI models for STT (Whisper, SenseVoice) and text polish.
 
 **Tech stack**: Tauri v2 (Rust backend + React 19 frontend), strict TypeScript, Tailwind CSS, zero runtime dependencies in shared package.
 
@@ -60,27 +60,27 @@ Package dependency: packages/shared/ → apps/desktop/src/ → apps/desktop/src-
 
 ```bash
 # 1. Clone repository
-git clone https://github.com/joe223/AriaType.git
-cd AriaType
+git clone https://github.com/okafrancois/voiceflow.git
+cd Voice Flow
 
 # 2. Install dependencies
 pnpm install
 
 # 3. Start development server
-pnpm --filter @ariatype/desktop tauri:dev
+pnpm --filter @voiceflow/desktop tauri:dev
 
 # 4. Verify toolchain
 cd apps/desktop/src-tauri
 cargo test && cargo clippy --all-features -- -D warnings
 cd ../..
-pnpm --filter @ariatype/desktop build
+pnpm --filter @voiceflow/desktop build
 ```
 
 **Detailed setup**: See [`apps/desktop/CONTRIBUTING.md`](../../apps/desktop/CONTRIBUTING.md) for full development environment configuration.
 
 ### Desktop Dev Variant Notes
 
-- `pnpm --filter @ariatype/desktop tauri:dev` launches the inhouse/dev app variant, not the production-branded bundle.
+- `pnpm --filter @voiceflow/desktop tauri:dev` launches the inhouse/dev app variant, not the production-branded bundle.
 - The dev entrypoint regenerates inhouse icon assets automatically before launching Tauri.
 - Generated inhouse app icons live in `apps/desktop/assets/icons/inhouse/`; the tray variant lives at `apps/desktop/src-tauri/assets/tray-icon-inhouse.png`.
 - If the Dock or packaged dev app loses the green corner marker, check `scripts/generate-inhouse-icons.sh`, `apps/desktop/package.json`, and `apps/desktop/src-tauri/tauri.dev.conf.json` together.
@@ -103,7 +103,7 @@ pnpm --filter @ariatype/desktop build
 | Module | Purpose |
 |--------|---------|
 | `audio/` | Recording, resampling, VAD, beep, level meter |
-| `stt_engine/` | Whisper, SenseVoice, cloud STT (Volcengine, Deepgram, etc.) |
+| `stt_engine/` | Whisper, SenseVoice, and shipped cloud STT clients for Volcengine, Aliyun, and ElevenLabs |
 | `polish_engine/` | Local LFM, Qwen polish; cloud polish (Anthropic, OpenAI) |
 | `services/` | Backend use cases and orchestration; may depend on state/history/engines but never on Tauri commands |
 | `commands/` | Tauri IPC handlers and adapters—thin layer, delegates to services and performs side effects |
@@ -193,12 +193,12 @@ cd apps/desktop/src-tauri
 cargo test && cargo clippy --all-features -- -D warnings && cargo fmt -- --check
 
 # Frontend
-pnpm --filter @ariatype/desktop build
-pnpm --filter @ariatype/shared typecheck
+pnpm --filter @voiceflow/desktop build
+pnpm --filter @voiceflow/shared typecheck
 pnpm check:i18n
 
 # Website
-pnpm --filter @ariatype/website build && pnpm --filter @ariatype/website lint
+pnpm --filter @voiceflow/website build && pnpm --filter @voiceflow/website lint
 ```
 
 ---
@@ -285,7 +285,7 @@ text_injector/macos.rs
 
 ## Next Steps
 
-1. Run the app locally (`pnpm --filter @ariatype/desktop tauri:dev`)
+1. Run the app locally (`pnpm --filter @voiceflow/desktop tauri:dev`)
 2. Try the core workflow (hold hotkey, speak, release)
 3. Read [`AGENTS.md`](../../AGENTS.md) for agent rules
 4. Pick a task from "Common Tasks" above and trace the dependency graph

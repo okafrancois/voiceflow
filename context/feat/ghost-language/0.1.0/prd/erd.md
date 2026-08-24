@@ -48,7 +48,7 @@ Key insight: Learning is passive observation. User makes corrections → system 
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                     AriaType App (Tauri v2)                         │
+│                     Voice Flow App (Tauri v2)                         │
 │  ┌─────────────────────────────────────────────────────────────┐   │
 │  │                     Frontend (React)                         │   │
 │  │   - Ghost learning progress indicator                        │   │
@@ -338,10 +338,10 @@ cargo test language_decay::
 
 ```bash
 # Component tests for Ghost-Language UI
-pnpm --filter @ariatype/desktop test ghost-language
+pnpm --filter @voiceflow/desktop test ghost-language
 
 # Build verification
-pnpm --filter @ariatype/desktop build
+pnpm --filter @voiceflow/desktop build
 ```
 
 ### Manual Verification

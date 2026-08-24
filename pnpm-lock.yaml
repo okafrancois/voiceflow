@@ -41,10 +41,10 @@ importers:
       '@aptabase/tauri':
         specifier: ^0.4.1
         version: 0.4.1
-      '@ariatype/e2e-harness':
+      '@voiceflow/e2e-harness':
         specifier: workspace:*
         version: link:../../packages/e2e-harness
-      '@ariatype/shared':
+      '@voiceflow/shared':
         specifier: workspace:*
         version: link:../../packages/shared
       '@floating-ui/react':

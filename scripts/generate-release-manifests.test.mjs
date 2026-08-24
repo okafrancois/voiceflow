@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
 function withTempReleaseDir(run) {
-  const releaseDir = mkdtempSync(join(tmpdir(), 'ariatype-release-'));
+  const releaseDir = mkdtempSync(join(tmpdir(), 'voiceflow-release-'));
   try {
     return run(releaseDir);
   } finally {
@@ -23,7 +23,7 @@ function runGenerateReleaseManifests(args) {
 
 test('fails when updater manifest is required but no signed updater artifacts exist', () => {
   withTempReleaseDir((releaseDir) => {
-    writeFileSync(join(releaseDir, 'AriaType_1.0.5_x64-setup.exe'), 'installer');
+    writeFileSync(join(releaseDir, 'Voice Flow_1.0.5_x64-setup.exe'), 'installer');
 
     const result = runGenerateReleaseManifests([
       '--release-dir',
@@ -40,10 +40,10 @@ test('fails when updater manifest is required but no signed updater artifacts ex
 
 test('generates updater manifest when signed updater artifacts are present', () => {
   withTempReleaseDir((releaseDir) => {
-    writeFileSync(join(releaseDir, 'AriaType.app.tar.gz'), 'mac updater archive');
-    writeFileSync(join(releaseDir, 'AriaType.app.tar.gz.sig'), 'mac-signature\n');
-    writeFileSync(join(releaseDir, 'AriaType_1.0.5_x64-setup.exe'), 'windows installer');
-    writeFileSync(join(releaseDir, 'AriaType_1.0.5_x64-setup.exe.sig'), 'windows-signature\n');
+    writeFileSync(join(releaseDir, 'Voice Flow.app.tar.gz'), 'mac updater archive');
+    writeFileSync(join(releaseDir, 'Voice Flow.app.tar.gz.sig'), 'mac-signature\n');
+    writeFileSync(join(releaseDir, 'Voice Flow_1.0.5_x64-setup.exe'), 'windows installer');
+    writeFileSync(join(releaseDir, 'Voice Flow_1.0.5_x64-setup.exe.sig'), 'windows-signature\n');
 
     const result = runGenerateReleaseManifests([
       '--release-dir',
@@ -51,7 +51,7 @@ test('generates updater manifest when signed updater artifacts are present', () 
       '--version',
       '1.0.5',
       '--base-url',
-      'https://github.com/joe223/AriaType/releases/download/v1.0.5',
+      'https://github.com/okafrancois/voiceflow/releases/download/v1.0.5',
       '--require-updater',
       '--require-updater-platform',
       'darwin-aarch64',
@@ -65,21 +65,21 @@ test('generates updater manifest when signed updater artifacts are present', () 
     const latest = JSON.parse(readFileSync(join(releaseDir, 'latest.json'), 'utf8'));
     assert.equal(
       latest.platforms.windows.exe,
-      'https://github.com/joe223/AriaType/releases/download/v1.0.5/AriaType_1.0.5_x64-setup.exe',
+      'https://github.com/okafrancois/voiceflow/releases/download/v1.0.5/Voice%20Flow_1.0.5_x64-setup.exe',
     );
 
     const manifest = JSON.parse(readFileSync(join(releaseDir, 'latest.updater.json'), 'utf8'));
     assert.deepEqual(manifest.platforms, {
       'darwin-aarch64': {
-        url: 'https://github.com/joe223/AriaType/releases/download/v1.0.5/AriaType.app.tar.gz',
+        url: 'https://github.com/okafrancois/voiceflow/releases/download/v1.0.5/Voice%20Flow.app.tar.gz',
         signature: 'mac-signature',
       },
       'darwin-x86_64': {
-        url: 'https://github.com/joe223/AriaType/releases/download/v1.0.5/AriaType.app.tar.gz',
+        url: 'https://github.com/okafrancois/voiceflow/releases/download/v1.0.5/Voice%20Flow.app.tar.gz',
         signature: 'mac-signature',
       },
       'windows-x86_64': {
-        url: 'https://github.com/joe223/AriaType/releases/download/v1.0.5/AriaType_1.0.5_x64-setup.exe',
+        url: 'https://github.com/okafrancois/voiceflow/releases/download/v1.0.5/Voice%20Flow_1.0.5_x64-setup.exe',
         signature: 'windows-signature',
       },
     });
@@ -88,8 +88,8 @@ test('generates updater manifest when signed updater artifacts are present', () 
 
 test('fails when a required updater platform is missing', () => {
   withTempReleaseDir((releaseDir) => {
-    writeFileSync(join(releaseDir, 'AriaType.app.tar.gz'), 'mac updater archive');
-    writeFileSync(join(releaseDir, 'AriaType.app.tar.gz.sig'), 'mac-signature\n');
+    writeFileSync(join(releaseDir, 'Voice Flow.app.tar.gz'), 'mac updater archive');
+    writeFileSync(join(releaseDir, 'Voice Flow.app.tar.gz.sig'), 'mac-signature\n');
 
     const result = runGenerateReleaseManifests([
       '--release-dir',

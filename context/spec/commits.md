@@ -1,6 +1,6 @@
 # Commit Message Specification
 
-Conventions and format for AriaType commit messages.
+Conventions and format for Voice Flow commit messages.
 
 ---
 
@@ -43,7 +43,7 @@ ci: add macOS binary pre-signing for smoother install
 
 `commitlint.config.cjs` validates the standard Conventional Commit
 shape, allowed types and scopes, header length, body spacing, and body
-wrapping. `scripts/check-commit-msg.mjs` enforces AriaType-specific
+wrapping. `scripts/check-commit-msg.mjs` enforces Voice Flow-specific
 rules that commitlint does not cover, including English-only ASCII text,
 staged-file scope checks, and contiguous Git trailer blocks.
 

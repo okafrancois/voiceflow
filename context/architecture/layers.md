@@ -47,7 +47,7 @@ events/         # backend → frontend event emission
 ## Frontend Layers (TypeScript/React)
 
 ```
-types/          # From @ariatype/shared + local type definitions
+types/          # From @voiceflow/shared + local type definitions
     ↓
 lib/            # tauri.ts IPC boundary, logger.ts
     ↓

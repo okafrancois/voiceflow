@@ -351,7 +351,7 @@ Update TypeScript `isCjkLanguage` → `isSenseVoicePreferred` in `OnboardingGuid
 5. Remove the CJK skip logic — all languages go through this simplified step (it's just a download, not a choice)
 6. Step count stays at 6 for all languages, but model step is now trivial (auto-download only)
 
-**Verification**: `pnpm --filter @ariatype/desktop build` passes
+**Verification**: `pnpm --filter @voiceflow/desktop build` passes
 
 ## Unit 5: Startup Model Auto-Ensure
 
@@ -473,7 +473,7 @@ Update TypeScript `isCjkLanguage` → `isSenseVoicePreferred` in `OnboardingGuid
 _To be filled during implementation:_
 - [ ] `cargo test` passes
 - [ ] `cargo clippy --all-features -- -D warnings` clean
-- [ ] `pnpm --filter @ariatype/desktop build` passes
+- [ ] `pnpm --filter @voiceflow/desktop build` passes
 - [ ] Manual test: streaming recording with unified session works (cloud STT)
 - [ ] Manual test: local recording with unified session works (local STT)
 - [ ] Manual test: onboarding model step shows single model

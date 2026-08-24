@@ -12,7 +12,7 @@ const {
 } = await import('./run-tauri-build-with-updater-signing.mjs');
 
 function withTempDesktop(run) {
-  const cwd = mkdtempSync(join(tmpdir(), 'ariatype-updater-config-'));
+  const cwd = mkdtempSync(join(tmpdir(), 'voiceflow-updater-config-'));
   try {
     mkdirSync(join(cwd, 'src-tauri'), { recursive: true });
     writeFileSync(
@@ -22,7 +22,7 @@ function withTempDesktop(run) {
         plugins: {
           updater: {
             pubkey: '${TAURI_UPDATER_PUBKEY}',
-            endpoints: ['https://github.com/joe223/AriaType/releases/latest/download/latest.updater.json'],
+            endpoints: ['https://github.com/okafrancois/voiceflow/releases/latest/download/latest.updater.json'],
           },
         },
       }, null, 2)}\n`,
@@ -106,7 +106,7 @@ test('builds signer probe command with explicit private key path', () => {
   const command = buildTauriSignerProbeCommand(
     ['npm', 'run', 'tauri', '--', 'build'],
     '/tmp/probe.txt',
-    { privateKeyPath: '/Users/example/.tauri/ariatype-updater.key' },
+    { privateKeyPath: '/Users/example/.tauri/voiceflow-updater.key' },
   );
 
   assert.deepEqual(command, [
@@ -117,7 +117,7 @@ test('builds signer probe command with explicit private key path', () => {
     'signer',
     'sign',
     '--private-key-path',
-    '/Users/example/.tauri/ariatype-updater.key',
+    '/Users/example/.tauri/voiceflow-updater.key',
     '/tmp/probe.txt',
   ]);
 });

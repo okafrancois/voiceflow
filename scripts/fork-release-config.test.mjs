@@ -13,7 +13,7 @@ test('production release configuration points to the Voice Flow fork', () => {
   for (const file of releaseFiles) {
     const contents = readFileSync(new URL(file, import.meta.url), 'utf8');
 
-    assert.doesNotMatch(contents, /github\.com\/joe223\/AriaType/);
+    assert.doesNotMatch(contents, /github\.com\/joe223/);
   }
 
   const updaterConfig = readFileSync(

@@ -27,7 +27,7 @@ function writeJson(path, value) {
 }
 
 function createFixture() {
-  const root = mkdtempSync(join(tmpdir(), 'ariatype-runtime-resources-'));
+  const root = mkdtempSync(join(tmpdir(), 'voiceflow-runtime-resources-'));
   const tauriDir = resolve(root, 'apps/desktop/src-tauri');
   mkdirSync(tauriDir, { recursive: true });
 
@@ -129,9 +129,9 @@ test('sidecar specs expose arch-specific macOS artifact slots', () => {
       spec.destinationResource,
     ]),
     [
-      ['ARIATYPE_LLAMA_SERVER_MACOS_ARM64_PATH', 'bin/apple-silicon/llama-server'],
-      ['ARIATYPE_LLAMA_SERVER_MACOS_X64_PATH', 'bin/intel/llama-server'],
-      ['ARIATYPE_LLAMA_SERVER_MACOS_PATH', 'bin/universal/llama-server'],
+      ['VOICEFLOW_LLAMA_SERVER_MACOS_ARM64_PATH', 'bin/apple-silicon/llama-server'],
+      ['VOICEFLOW_LLAMA_SERVER_MACOS_X64_PATH', 'bin/intel/llama-server'],
+      ['VOICEFLOW_LLAMA_SERVER_MACOS_PATH', 'bin/universal/llama-server'],
     ]
   );
 });
@@ -153,10 +153,10 @@ test('sidecar preparation copies arch-specific macOS artifacts', () => {
     platform: 'macos',
     rootDir: root,
     env: {
-      ARIATYPE_LLAMA_SERVER_MACOS_ARM64_PATH: arm64Source,
-      ARIATYPE_LLAMA_SERVER_MACOS_ARM64_SHA256: sha256('arm64'),
-      ARIATYPE_LLAMA_SERVER_MACOS_X64_PATH: x64Source,
-      ARIATYPE_LLAMA_SERVER_MACOS_X64_SHA256: sha256('x64'),
+      VOICEFLOW_LLAMA_SERVER_MACOS_ARM64_PATH: arm64Source,
+      VOICEFLOW_LLAMA_SERVER_MACOS_ARM64_SHA256: sha256('arm64'),
+      VOICEFLOW_LLAMA_SERVER_MACOS_X64_PATH: x64Source,
+      VOICEFLOW_LLAMA_SERVER_MACOS_X64_SHA256: sha256('x64'),
     },
   });
 
@@ -184,13 +184,13 @@ test('sidecar preparation prefers Windows x64 artifact over generic Windows arti
     platform: 'windows',
     rootDir: root,
     env: {
-      ARIATYPE_LLAMA_SERVER_WINDOWS_X64_PATH: x64Source,
-      ARIATYPE_LLAMA_SERVER_WINDOWS_PATH: genericSource,
+      VOICEFLOW_LLAMA_SERVER_WINDOWS_X64_PATH: x64Source,
+      VOICEFLOW_LLAMA_SERVER_WINDOWS_PATH: genericSource,
     },
   });
 
   assert.equal(results.length, 1);
-  assert.equal(results[0].pathEnv, 'ARIATYPE_LLAMA_SERVER_WINDOWS_X64_PATH');
+  assert.equal(results[0].pathEnv, 'VOICEFLOW_LLAMA_SERVER_WINDOWS_X64_PATH');
   assert.equal(
     readFileSync(resolve(tauriDir, 'bin/windows/llama-server.exe'), 'utf8'),
     'x64'
@@ -208,7 +208,7 @@ test('required sidecar preparation names accepted environment variables', () => 
         env: {},
         required: true,
       }),
-    /ARIATYPE_LLAMA_SERVER_WINDOWS_X64_PATH/
+    /VOICEFLOW_LLAMA_SERVER_WINDOWS_X64_PATH/
   );
 });
 

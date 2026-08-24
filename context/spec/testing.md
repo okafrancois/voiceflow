@@ -1,6 +1,6 @@
 # Testing Specification
 
-This document defines the testing strategy, coverage requirements, and verification workflows for the AriaType monorepo.
+This document defines the testing strategy, coverage requirements, and verification workflows for the Voice Flow monorepo.
 
 ## Test Pyramid
 
@@ -27,7 +27,7 @@ Must cover: Happy path, error paths, edge cases, regression scenarios.
 cd apps/desktop/src-tauri && cargo llvm-cov --html
 
 # Frontend
-pnpm --filter @ariatype/desktop test -- --coverage
+pnpm --filter @voiceflow/desktop test -- --coverage
 ```
 
 ## TDD Execution Order
@@ -76,15 +76,15 @@ cargo clippy --all-features -- -D warnings
 cargo fmt -- --check
 
 # Frontend
-pnpm --filter @ariatype/desktop build
-pnpm --filter @ariatype/desktop test
+pnpm --filter @voiceflow/desktop build
+pnpm --filter @voiceflow/desktop test
 
 # Website
-pnpm --filter @ariatype/website build
-pnpm --filter @ariatype/website lint
+pnpm --filter @voiceflow/website build
+pnpm --filter @voiceflow/website lint
 
 # Shared types
-pnpm --filter @ariatype/shared typecheck
+pnpm --filter @voiceflow/shared typecheck
 
 # i18n
 pnpm check:i18n

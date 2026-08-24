@@ -34,7 +34,14 @@ Feature specs are versioned delivery contracts. Each spec at `context/feat/[name
 
 | Feature | Version | Status | Spec |
 |---------|---------|--------|------|
+| Reliable Windows Delivery | 0.1.0 | Completed | [erd.md](./windows-text-injection/0.1.0/prd/erd.md) |
+| Context Workflows | 0.1.0 | Completed | [erd.md](./context-workflows/0.1.0/prd/erd.md) |
+| Transcription Workbench | 0.1.0 | Completed | [erd.md](./file-history-translation/0.1.0/prd/erd.md) |
+| Platform Bridge and Quality | 0.1.0 | Completed | [erd.md](./platform-bridge-quality/0.1.0/prd/erd.md) |
+| Cloud Provider Contract Alignment | 0.1.0 | Completed | [erd.md](./provider-contract-alignment/0.1.0/prd/erd.md) |
 | Complete Long Dictation | 0.1.0 | Completed | [erd.md](./long-recording-transcription/0.1.0/prd/erd.md) |
+| Voice Flow Brand Cleanup | 0.1.0 | Completed | [erd.md](./voice-flow-brand-cleanup/0.1.0/prd/erd.md) |
+| Privacy Retention Controls | 0.1.0 | Completed | [erd.md](./privacy-retention/0.1.0/prd/erd.md) |
 
 ## Spec Format
 

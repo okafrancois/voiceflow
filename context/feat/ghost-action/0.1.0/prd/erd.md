@@ -15,23 +15,23 @@ See also:
 
 ## Problem
 
-After transcription completes, users want to act on the transcribed text—send an email, post a message, fill a form, or navigate to a URL. Currently, AriaType only injects text at the cursor position. The user must manually switch apps, find the right field, and paste.
+After transcription completes, users want to act on the transcribed text—send an email, post a message, fill a form, or navigate to a URL. Currently, Voice Flow only injects text at the cursor position. The user must manually switch apps, find the right field, and paste.
 
 This manual handoff breaks the voice-first workflow. Users speak, see the text, then perform a series of mouse/keyboard operations themselves. For frequent workflows like "send email to X about Y" or "search arXiv for Z", this friction accumulates.
 
 ## Goal
 
-Integrate Ghost OS (a macOS computer-use MCP server) into AriaType so that after transcription, users can delegate follow-up UI operations to Ghost via voice commands or UI triggers. AriaType becomes an orchestrator: capture speech → transcribe → route to Ghost for execution.
+Integrate Ghost OS (a macOS computer-use MCP server) into Voice Flow so that after transcription, users can delegate follow-up UI operations to Ghost via voice commands or UI triggers. Voice Flow becomes an orchestrator: capture speech → transcribe → route to Ghost for execution.
 
 ## First-Principles Model
 
 The integration must answer three questions:
 
-1. **How does AriaType talk to Ghost?** — Process-level integration via MCP protocol (stdio), not FFI or library embedding.
+1. **How does Voice Flow talk to Ghost?** — Process-level integration via MCP protocol (stdio), not FFI or library embedding.
 2. **When does Ghost get involved?** — After transcription completes, when user explicitly requests action execution.
 3. **What does Ghost do?** — Execute recipes (learned workflows) or direct tool calls (click, type, scroll) on macOS apps.
 
-Key insight: Ghost OS is a Swift program that runs as an independent MCP server. AriaType (Rust) cannot embed Swift code directly. The only clean integration path is process orchestration via MCP's stdio transport.
+Key insight: Ghost OS is a Swift program that runs as an independent MCP server. Voice Flow (Rust) cannot embed Swift code directly. The only clean integration path is process orchestration via MCP's stdio transport.
 
 ## Information Architecture
 
@@ -39,7 +39,7 @@ Key insight: Ghost OS is a Swift program that runs as an independent MCP server.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                     AriaType App (Tauri v2)                         │
+│                     Voice Flow App (Tauri v2)                         │
 │  ┌─────────────────────────────────────────────────────────────┐   │
 │  │                     Frontend (React)                         │   │
 │  │   - Ghost status indicator (installed, running, permissions) │   │
@@ -255,7 +255,7 @@ The 29 Ghost OS tools available via MCP:
 ### Scenario: Ghost OS not installed
 
 - Given Ghost OS CLI is not installed on the system
-- When AriaType starts
+- When Voice Flow starts
 - Then `ghost_action_status` returns `{ installed: false, running: false, healthy: false }`
 - And frontend shows "Ghost not installed" with installation instructions link
 
@@ -263,7 +263,7 @@ The 29 Ghost OS tools available via MCP:
 
 - Given Ghost OS CLI is installed
 - And macOS Accessibility permission is not granted
-- When AriaType starts
+- When Voice Flow starts
 - Then `ghost_action_status` returns `{ installed: true, permissions: { accessibility: false } }`
 - And frontend shows permission prompt with guidance
 
@@ -335,19 +335,19 @@ cargo test mcp_client::
 
 ```bash
 # Component tests for Ghost-Action UI
-pnpm --filter @ariatype/desktop test ghost-action
+pnpm --filter @voiceflow/desktop test ghost-action
 
 # Build verification
-pnpm --filter @ariatype/desktop build
+pnpm --filter @voiceflow/desktop build
 ```
 
 ### Manual Verification
 
 1. Install Ghost OS: `brew install ghostwright/ghost-os/ghost-os && ghost setup`
-2. Run AriaType, verify Ghost-Action status shows installed + permissions granted
+2. Run Voice Flow, verify Ghost-Action status shows installed + permissions granted
 3. Transcribe text, click "Execute with Ghost", select recipe
 4. Verify Ghost OS executes the workflow and UI updates
-5. Kill Ghost OS subprocess, verify AriaType handles gracefully
+5. Kill Ghost OS subprocess, verify Voice Flow handles gracefully
 
 ## Implementation Notes
 

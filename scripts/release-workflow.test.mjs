@@ -16,7 +16,7 @@ test('release workflow prepares the macOS local polish runtimes', () => {
 });
 
 test('release workflow requires bundled local polish runtime during packaging', () => {
-  const requiredGateCount = releaseWorkflow.match(/ARIATYPE_REQUIRE_LOCAL_POLISH_RUNTIME:\s*"1"/g)
+  const requiredGateCount = releaseWorkflow.match(/VOICEFLOW_REQUIRE_LOCAL_POLISH_RUNTIME:\s*"1"/g)
     ?.length ?? 0;
 
   assert.equal(requiredGateCount, 1);

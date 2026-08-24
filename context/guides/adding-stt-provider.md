@@ -117,32 +117,36 @@ Add provider name to all 10 locale files in `src/i18n/locales/`:
 
 Supported locales: `de`, `en`, `es`, `fr`, `it`, `ja`, `ko`, `pt`, `ru`, `zh`.
 
-## Step 6: Contract Tests
+## Step 6: Contract tests
 
-In `tests/cloud_provider_api_test.rs`:
+Add a deterministic test under `tests/` with a local WebSocket or HTTP server. The test must inspect authentication, URL parameters, initial provider messages, audio messages, finish behavior, and final response parsing.
 
 ```rust
 #[tokio::test]
 async fn test_stt_new_provider_schema() {
+    let mock_url = start_new_provider_mock_server().await;
     let config = CloudSttConfig {
         enabled: true,
         provider_type: "new-provider".to_string(),
         api_key: mock_credentials::API_KEY.to_string(),
         app_id: mock_credentials::APP_ID.to_string(),
-        base_url: "wss://api.newprovider.com/stt".to_string(),
+        base_url: mock_url,
         model: "default".to_string(),
         language: "en".to_string(),
     };
 
-    // Use UnifiedEngineManager to create the engine
+    // Connect to a local mock endpoint that asserts this provider's contract.
     let mut engine = StreamingSttClient::new(config, Some("en"), SttContext::default()).unwrap();
     engine.connect().await.unwrap();
 
-    // Send a chunk and finish — expect auth error from real endpoint
-    engine.send_chunk(vec![0i16; 512]).await.unwrap_err();
-    // Auth error (401/403) proves endpoint URL and request format are correct
+    let sender = engine.get_audio_sender().await.unwrap();
+    sender.send(vec![0i16; 512]).await.unwrap();
+    drop(sender);
+    assert_eq!(engine.finish().await.unwrap(), "mock final transcript");
 }
 ```
+
+Live endpoint checks are optional ignored tests. They do not replace the local contract test.
 
 ## Step 7: Integration Tests
 
@@ -155,5 +159,5 @@ Add pipeline tests in `src-tauri/tests/` that exercise the full transcription fl
 - [ ] Engine registration works
 - [ ] Frontend renders new option
 - [ ] All 10 locales have keys
-- [ ] Contract test runs and gets auth error
+- [ ] Deterministic local contract test completes a full lifecycle
 - [ ] Integration test passes

@@ -5,7 +5,7 @@
 
 # Notype Desktop Design System
 
-This document outlines the core design tokens, visual guidelines, and component patterns for the Notype/AriaType application, specifically focusing on the Desktop UI. It serves as the single source of truth to ensure absolute consistency, high-end aesthetics, and a cohesive user experience across all modules.
+This document outlines the core design tokens, visual guidelines, and component patterns for the Notype/Voice Flow application, specifically focusing on the Desktop UI. It serves as the single source of truth to ensure absolute consistency, high-end aesthetics, and a cohesive user experience across all modules.
 
 ---
 

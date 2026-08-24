@@ -20,7 +20,7 @@ function runWithEnv(env) {
 
 test('accepts a signing private key path with updater public key', () => {
   const result = runWithEnv({
-    TAURI_SIGNING_PRIVATE_KEY_PATH: '/Users/example/.tauri/ariatype-updater.key',
+    TAURI_SIGNING_PRIVATE_KEY_PATH: '/Users/example/.tauri/voiceflow-updater.key',
     TAURI_UPDATER_PUBKEY: 'public-key',
   });
 
@@ -30,29 +30,29 @@ test('accepts a signing private key path with updater public key', () => {
 test('normalizes private key path into the Tauri signing environment variable', () => {
   const result = normalizeUpdaterSigningEnv({
     PATH: '/usr/bin',
-    TAURI_SIGNING_PRIVATE_KEY_PATH: '/Users/example/.tauri/ariatype-updater.key',
+    TAURI_SIGNING_PRIVATE_KEY_PATH: '/Users/example/.tauri/voiceflow-updater.key',
     TAURI_UPDATER_PUBKEY: 'public-key',
   });
 
   assert.equal(result.ok, true);
   assert.equal(
     result.env.TAURI_SIGNING_PRIVATE_KEY,
-    '/Users/example/.tauri/ariatype-updater.key',
+    '/Users/example/.tauri/voiceflow-updater.key',
   );
   assert.equal(result.env.PATH, '/usr/bin');
-  assert.equal(result.privateKeyPath, '/Users/example/.tauri/ariatype-updater.key');
+  assert.equal(result.privateKeyPath, '/Users/example/.tauri/voiceflow-updater.key');
 });
 
 test('prefers an explicit private key path over a stale private key value', () => {
   const result = normalizeUpdaterSigningEnv({
-    TAURI_SIGNING_PRIVATE_KEY: '/Users/example/.tauri/ariatype.key',
-    TAURI_SIGNING_PRIVATE_KEY_PATH: '/Users/example/.tauri/ariatype-updater.key',
+    TAURI_SIGNING_PRIVATE_KEY: '/Users/example/.tauri/voiceflow.key',
+    TAURI_SIGNING_PRIVATE_KEY_PATH: '/Users/example/.tauri/voiceflow-updater.key',
     TAURI_UPDATER_PUBKEY: 'public-key',
   });
 
   assert.equal(result.ok, true);
-  assert.equal(result.env.TAURI_SIGNING_PRIVATE_KEY, '/Users/example/.tauri/ariatype-updater.key');
-  assert.equal(result.privateKeyPath, '/Users/example/.tauri/ariatype-updater.key');
+  assert.equal(result.env.TAURI_SIGNING_PRIVATE_KEY, '/Users/example/.tauri/voiceflow-updater.key');
+  assert.equal(result.privateKeyPath, '/Users/example/.tauri/voiceflow-updater.key');
 });
 
 test('accepts signing private key contents with updater public key', () => {
@@ -74,8 +74,8 @@ test('fails when both private key forms are missing', () => {
 });
 
 test('uses private key path sibling public key when updater public key is missing', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'ariatype-updater-key-'));
-  const privateKeyPath = join(dir, 'ariatype-updater.key');
+  const dir = mkdtempSync(join(tmpdir(), 'voiceflow-updater-key-'));
+  const privateKeyPath = join(dir, 'voiceflow-updater.key');
   writeFileSync(privateKeyPath, 'private-key');
   writeFileSync(`${privateKeyPath}.pub`, 'actual-public-key\n');
 
@@ -87,8 +87,8 @@ test('uses private key path sibling public key when updater public key is missin
 });
 
 test('prefers private key path sibling public key over stale updater public key', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'ariatype-updater-key-'));
-  const privateKeyPath = join(dir, 'ariatype-updater.key');
+  const dir = mkdtempSync(join(tmpdir(), 'voiceflow-updater-key-'));
+  const privateKeyPath = join(dir, 'voiceflow-updater.key');
   writeFileSync(privateKeyPath, 'private-key');
   writeFileSync(`${privateKeyPath}.pub`, 'actual-public-key\n');
 

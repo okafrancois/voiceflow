@@ -1,127 +1,99 @@
-# Engine API Contract Testing
+# Engine API contract testing
 
-Engines (STT and Polish) abstract vendor API differences behind unified interfaces. Each engine must correctly construct requests for its vendor and parse vendor-specific responses into unified types.
+STT and Polish engines hide provider-specific protocols behind backend-owned interfaces. Contract tests must prove request construction and response parsing without moving provider logic into the frontend.
 
-## Engine Traits
+## Recording consumer
 
-### Unified SttEngine (recording lifecycle — all engines)
+Every live recording uses `RecordingConsumer`:
 
 ```rust
 #[async_trait]
-pub trait SttEngine: Send + Sync {
-    fn engine_type(&self) -> EngineType;
+pub trait RecordingConsumer: Send + Sync {
     async fn send_chunk(&self, pcm_data: Vec<i16>) -> Result<(), String>;
     async fn finish(&self) -> Result<String, String>;
-    fn set_partial_callback(&mut self, callback: PartialResultCallback);
+    fn set_partial_callback(&mut self, callback: PartialResultCallback) {}
 }
 ```
 
-All recordings follow the same consumer task pattern:
+The recording pipeline owns the lifecycle:
+
 ```rust
 while let Some(chunk) = rx.recv().await {
-    engine.send_chunk(chunk).await?;
+    consumer.send_chunk(chunk).await?;
 }
-let text = engine.finish().await?;  // channel closed = recording ended
+let text = consumer.finish().await?;
 ```
 
-Engine implementations decide internally what `send_chunk` does:
-- **Local (`SherpaOnnxBufferingEngine`)**: `self.pcm_chunks.lock().push(pcm_data)` — just buffer
-- **Cloud streaming (`StreamingSttClient`)**: forward to internal mpsc → WebSocket — real-time
-- **Cloud non-streaming**: buffer, then write WAV + HTTP at `finish()`
+Local `BufferingConsumer` instances collect PCM and call the local engine at `finish()`. Cloud `StreamingConsumer` instances connect before they are returned, forward PCM to the selected WebSocket client, drop the audio sender at `finish()`, and wait for the provider's final result.
 
-### File-Based Transcription (non-recording)
+## Batch transcription
 
-For drag-drop and file import, `UnifiedEngineManager::transcribe()` provides a batch API separate from the `SttEngine` trait.
+`UnifiedEngineManager::transcribe(engine_type, TranscriptionRequest)` is the local batch API. `TranscriptionRequest` carries in-memory 16 kHz mono samples, language, model name, and an optional initial prompt. Cloud STT is not available through this batch function.
 
-## Engine Types
+Long Whisper input is split into contiguous sample ranges. The ranges cover every sample exactly once and move internal boundaries toward nearby low-energy points. A failed range fails the whole transcription instead of returning a partial success.
 
-| EngineType | Implementation | `send_chunk` | `finish` |
-|------------|---------------|-------------|----------|
-| `SenseVoice` | `SherpaOnnxBufferingEngine` | Buffer Vec<i16> | Flatten → f32 → sherpa-onnx transcribe |
-| `Whisper` | `SherpaOnnxBufferingEngine` | Buffer Vec<i16> | Flatten → f32 → segment long audio → transcribe each range → join text |
-| `Qwen3Asr` | `SherpaOnnxBufferingEngine` | Buffer Vec<i16> | Flatten → f32 → sherpa-onnx transcribe |
-| `Cloud` | `StreamingSttClient` | Forward to WebSocket | Await WebSocket final result |
+## Shipped cloud providers
 
-## Audio Source (for file-based transcription)
+Cloud STT dispatch accepts exactly:
 
-```rust
-pub enum AudioSource {
-    File(PathBuf),       // WAV file path (cloud non-streaming, drag-drop)
-    Memory(Vec<f32>),    // f32 16kHz mono samples (local STT, zero file I/O)
-}
+- `volcengine-streaming`
+- `aliyun-stream`
+- `elevenlabs`
+
+Cloud Polish dispatch accepts exactly:
+
+- `anthropic`
+- `openai`
+
+`provider_schema.rs` is the UI-facing list. Backend dispatch must reject any ID missing from that schema. Schema endpoint and model defaults must use the same constants as the runtime clients.
+
+Volcengine has an extra invariant. Production connections use only `wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_nostream`. The backend rejects official `bigmodel` and `bigmodel_async` paths before network I/O.
+
+See [the STT reference](../reference/providers/stt.md) and [the Polish reference](../reference/providers/polish.md) for request fields and endpoints.
+
+## Deterministic provider tests
+
+The default suite must not need internet access, vendor credentials, billing, or account permissions. Local mock servers verify the complete contract.
+
+| Contract | Required evidence | Test location |
+|----------|-------------------|---------------|
+| Volcengine STT | Handshake headers, initial binary request, audio packet flags, final frame parsing | `tests/volcengine_streaming_mock_test.rs`, `tests/cloud_stt_streaming_lifecycle_test.rs` |
+| Aliyun STT | Bearer header, model query, `session.update`, audio append, commit, finish, final transcript | `tests/cloud_stt_provider_contract_test.rs` |
+| ElevenLabs STT | API key header, query fields, `previous_text`, audio chunk, commit, final transcript | `tests/cloud_stt_provider_contract_test.rs` |
+| Anthropic Polish | Messages path, auth and version headers, request JSON, response parsing, connection check | `tests/cloud_polish_mock_test.rs` |
+| OpenAI Polish | Chat Completions path, bearer header, request JSON, response parsing, SSE preview, connection check | `tests/cloud_polish_mock_test.rs` |
+| Provider membership | Exact IDs, endpoint defaults, model defaults, unsupported dispatch | `src/provider_schema.rs`, cloud integration tests |
+
+Every mock-server lifecycle test must await its server task. A panic inside an unobserved task is not valid evidence.
+
+## Optional live checks
+
+Live checks are ignored by default. They may verify that a vendor reaches an authentication rejection or accepts configured credentials, but they remain dependent on DNS, internet access, vendor uptime, account entitlements, and current model availability.
+
+```bash
+cd apps/desktop/src-tauri
+cargo test --test cloud_stt_streaming_lifecycle_test -- --ignored --nocapture
+cargo test --test cloud_provider_api_test -- --ignored --nocapture
 ```
 
-Local STT uses `AudioSource::Memory` — audio is passed directly from the recording pipeline to sherpa-onnx without writing a temporary WAV file.
+A `401` or `403` from a vendor can show that the endpoint and handshake were understood. It does not prove successful transcription or Polish output. A `400` may indicate a request contract mismatch, but vendor account policies can also affect the response. Record the exact observed response when using live checks as evidence.
 
-### Long local Whisper input
+## Local engine tests
 
-Whisper input longer than 28 seconds is decoded as contiguous, balanced sample
-ranges. Each internal boundary moves to the lowest-energy point within three
-seconds of its balanced target. Every sample appears in exactly one range.
-Short Whisper input, SenseVoice input, and Qwen3-ASR input keep one decode call.
+Local engine tests remain responsible for:
 
-The engine joins non-empty segment results in recording order. If any segment
-decode fails, the complete transcription fails instead of returning the earlier
-segments as a successful result.
+- model selection and installed-file completeness;
+- short and empty input;
+- complete long-audio segmentation;
+- prompt and language propagation;
+- model cache behavior;
+- failure propagation without partial success.
 
-## Model Management
+The strongest routine verification is the complete Rust suite, followed by Clippy and rustfmt:
 
-All local STT models are defined in `stt_engine/models.rs`:
-
-| Model | Name | Engine | Size | Preferred Languages |
-|-------|------|--------|------|---------------------|
-| Whisper Tiny INT8 | `whisper-tiny` | Whisper | 99M | All languages |
-| SenseVoice Small | `sense-voice-small` | SenseVoice | 234M | zh, yue, ja, ko, en |
-| Whisper Base | `whisper-base` | Whisper | 279M | All languages |
-| Qwen3-ASR 0.6B INT8 | `qwen3-asr-0.6b-int8` | Qwen3Asr | 838M | Manual selection |
-| Whisper Medium INT8 | `whisper-medium` | Whisper | 902M | All languages |
-| Whisper Small | `whisper-small` | Whisper | 925M | All languages |
-| Whisper Turbo INT8 | `whisper-turbo` | Whisper | 989M | All languages |
-| Whisper Large v3 INT8 | `whisper-large-v3` | Whisper | 1.69G | All languages |
-
-Model recommendation: `is_sensevoice_preferred(lang)` returns true for zh/yue/ja/ko/en — these languages get SenseVoice Small. All others get Whisper Base. Qwen3-ASR and the additional Whisper sizes are manual, opt-in choices and are not auto-downloaded during onboarding.
-
-Each model definition owns its repository, exact source filenames, runtime filenames, and verified file sizes. Downloads emit completion only after the installed files pass the model definition's completeness check. Small support files are required to be non-empty instead of being compared against rounded megabyte estimates.
-
-## Auth Error Verification Pattern
-
-Tests verify API contract correctness by expecting authentication errors from real endpoints with mock credentials.
-
-```rust
-mod mock_credentials {
-    pub const API_KEY: &str = "mock_api_key_for_testing";
-    pub const APP_ID: &str = "mock_app_id_for_testing";
-}
+```bash
+cd apps/desktop/src-tauri
+cargo test
+cargo clippy --all-features -- -D warnings
+cargo fmt -- --check
 ```
-
-| Error Type | Proves |
-|------------|--------|
-| 401/403 Auth Error | Endpoint URL, headers, and request body are correctly formed |
-| 400 Bad Request | Request body or headers are malformed |
-| 404 Not Found | Endpoint URL is incorrect |
-
-## Test Requirements by Engine Type
-
-| Engine Category | Test Requirement | Location |
-|-----------------|------------------|----------|
-| Local engines (SherpaOnnxBufferingEngine) | send_chunk accumulation, finish transcription, empty input, complete long Whisper segmentation | `src/stt_engine/` inline + `tests/` |
-| Cloud STT engines | Real API calls with mock credentials to verify auth errors | `tests/cloud_provider_api_test.rs` |
-| Cloud Polish engines | Real API calls with mock credentials to verify auth errors | `tests/cloud_provider_api_test.rs` |
-| Response parsing (all vendors) | Mock server or recorded responses | `tests/common/mock_server.rs` |
-| Consumer task lifecycle | send_chunk × N → finish produces correct result | `src/stt_engine/` inline |
-
-## Test Locations
-
-| Purpose | Location |
-|---------|----------|
-| Cloud STT API contract tests | `tests/cloud_provider_api_test.rs` |
-| Cloud STT integration tests | `tests/cloud_stt_test.rs` |
-| Streaming client tests | `tests/volcengine_streaming_test.rs`, `tests/volcengine_streaming_mock_test.rs` |
-| Streaming lifecycle tests | `tests/cloud_stt_streaming_lifecycle_test.rs` |
-| Model recommendation tests | `src/stt_engine/models.rs` (inline) |
-| Engine manager tests | `src/stt_engine/unified_manager.rs` (inline) |
-| VAD tests | `src/audio/stream_processor.rs` (inline) |
-
-## Core Testing Principle
-
-For cloud engines, tests must verify the API contract without requiring valid credentials or successful API responses. An auth error proves the endpoint, headers, and request body are correctly formed.

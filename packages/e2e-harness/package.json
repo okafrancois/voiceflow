@@ -1,5 +1,5 @@
 {
-  "name": "@ariatype/e2e-harness",
+  "name": "@voiceflow/e2e-harness",
   "version": "1.0.0",
   "license": "AGPL-3.0-only",
   "description": "Reusable E2E harness utilities for real Tauri app verification",

@@ -1,6 +1,6 @@
 # Local STT Model Research Report
 
-Evaluation of local STT models available via [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) for AriaType's desktop voice typing use case. Focus: Chinese-English bilingual accuracy, inference speed on consumer hardware, and model size constraints.
+Evaluation of local STT models available via [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) for Voice Flow's desktop voice typing use case. Focus: Chinese-English bilingual accuracy, inference speed on consumer hardware, and model size constraints.
 
 **Date**: 2026-08-23
 **Status**: Active research — Qwen3-ASR 0.6B INT8 and multilingual Whisper Tiny, Base, Small, Medium INT8, Turbo INT8, and Large v3 INT8 are available as local options
@@ -17,7 +17,7 @@ The application catalogue is intentionally curated to model exports already supp
 | 🥈 | **SenseVoice Small** | ⭐⭐⭐⭐ | ⭐⭐⭐⭐ | 27.4 tok/s | ~240 MB (INT8) | 5 (zh/en/ja/ko/yue) | Speed champion, smallest footprint |
 | 🥉 | **Paraformer Bilingual** | ⭐⭐⭐⭐⭐ | ⭐⭐⭐ | ~6.7 tok/s (est.) | ~226 MB (INT8) | 2 (zh/en) | Best Chinese CER, streaming native |
 | 4 | **FireRedAsr v2** | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ | N/A | ~1.9 GB (INT8) | 2 (zh/en) + 20 dialects | Industrial Chinese, widest dialect set |
-| 5 | **Whisper Small** | ⭐⭐⭐ | ⭐⭐⭐⭐ | ~1.2 tok/s (sherpa-onnx) | ~490 MB | 99+ languages | **Current AriaType default**, broadest language net |
+| 5 | **Whisper Small** | ⭐⭐⭐ | ⭐⭐⭐⭐ | ~1.2 tok/s (sherpa-onnx) | ~490 MB | 99+ languages | **Current Voice Flow default**, broadest language net |
 | 6 | **Whisper Turbo** | ⭐⭐⭐ | ⭐⭐⭐⭐⭐ | 1.9 tok/s (CoreML) | ~1.5 GB | 99+ languages | Best Whisper speed-accuracy, needs CoreML |
 | 7 | **Whisper Large-v3** | ⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ~0.16 tok/s (sherpa-onnx) | ~2.9 GB | 99+ languages | Best Whisper accuracy, too slow for voice typing |
 | 8 | **Parakeet TDT 0.6B v3** | ❌ | ⭐⭐⭐⭐⭐ | **171.6 tok/s** (CoreML) | ~640 MB (INT8) | 25 EU langs | Fastest on Apple Silicon, no Chinese |
@@ -31,7 +31,7 @@ The application catalogue is intentionally curated to model exports already supp
 
 ## All Variants Comparison Matrix
 
-Every model variant available in sherpa-onnx, sorted by model family. Bold = recommended for AriaType.
+Every model variant available in sherpa-onnx, sorted by model family. Bold = recommended for Voice Flow.
 
 ### Size & Accuracy
 
@@ -185,7 +185,7 @@ All models are evaluated on sherpa-onnx (ONNX Runtime). Metrics from:
 | Beats Whisper Large-v3 on Chinese CER | No native streaming |
 | Smallest footprint (~240 MB) | Cantonese only dialect |
 | Unique emotion + audio event detection | No hotword support |
-| Already used in AriaType (migration path clear) | — |
+| Already used in Voice Flow (migration path clear) | — |
 
 ---
 
@@ -209,12 +209,12 @@ All models are evaluated on sherpa-onnx (ONNX Runtime). Metrics from:
 |---------|--------|-------------|------------|--------------------------|---------------------------------|
 | Tiny | 39M | ~75 MB | 289 ms | — | 4.00% ³ |
 | Base | 74M | ~140 MB | 553 ms | — | 3.00% ³ |
-| **Small** ⬅️ AriaType | **244M** | **~490 MB** | **1,940 ms** | **2.10%** | **2.50%** ¹ |
+| **Small** ⬅️ Voice Flow | **244M** | **~490 MB** | **1,940 ms** | **2.10%** | **2.50%** ¹ |
 | Medium | 769M | ~1.5 GB | ~5,000 ms (est.) | 1.90% ³ | 2.00% ³ |
 | Turbo | 809M | ~1.5 GB | ~3,000 ms (est.) | ~1.80% | ~1.80% |
 | Large-v3 | 1,550M | ~2.9 GB | 11,286 ms | 1.80% ³ | **1.80%** ² |
 
-> ¹ Whisper Small WER varies by source: Whisper paper reports ~3.3% (multilingual), 2.50% is from AriaType's sherpa-onnx/whisper.cpp evaluation. The `.en` variant achieves ~2.8%.
+> ¹ Whisper Small WER varies by source: Whisper paper reports ~3.3% (multilingual), 2.50% is from Voice Flow's sherpa-onnx/whisper.cpp evaluation. The `.en` variant achieves ~2.8%.
 > ² Whisper Large-v3 WER varies by evaluation: 1.80% from Whisper paper, 1.51% from Qwen3-ASR paper (different decoding settings), 2.70% from HF Open ASR Leaderboard (greedy, no LM). Cross-paper comparisons should use same evaluation methodology.
 > ³ Whisper paper (Radford et al., 2022) Table 8 reports higher greedy-decoding WER: Tiny 7.6%, Base 5.0%, Medium 2.9%, Large 2.7%. Our numbers use sherpa-onnx eval with beam search + temperature fallback, which produces better results. Chinese CER numbers (AISHELL-1, WenetSpeech) are from sherpa-onnx evaluation — the original Whisper paper does NOT report Chinese benchmarks.
 > ³ Whisper Small Common Voice WER: 5.40% from sherpa-onnx eval, 9.00% from SenseVoice paper (likely different test split).
@@ -222,7 +222,7 @@ All models are evaluated on sherpa-onnx (ONNX Runtime). Metrics from:
 ### Key Observations
 
 1. **Tiny and Base** — too inaccurate for voice typing (WER >3%), only useful for low-resource embedded devices
-2. **Small** — AriaType's current default. Good balance of size (490 MB) and accuracy, but 1.94s latency on M3 is slow
+2. **Small** — Voice Flow's current default. Good balance of size (490 MB) and accuracy, but 1.94s latency on M3 is slow
 3. **Medium** — marginal accuracy improvement over Small (CER 1.90% vs 2.10%), but 3x larger and ~2.5x slower
 4. **Turbo** — similar accuracy to Large-v3 at half the size. Best "quality" option if you accept 3s latency
 5. **Large-v3** — best English WER (1.80%), but 11.3s latency makes it unusable for real-time voice typing
@@ -262,13 +262,13 @@ All models are evaluated on sherpa-onnx (ONNX Runtime). Metrics from:
 
 ### Architecture Limitations (All Variants)
 
-1. **Fixed 30-second input window** — wastes compute on zero-padding for short utterances (AriaType's typical 3-10s recordings)
+1. **Fixed 30-second input window** — wastes compute on zero-padding for short utterances (Voice Flow's typical 3-10s recordings)
 2. **No KV caching** — recomputes identical audio on every call
 3. **Language quality cliff** — only 33/82 languages achieve sub-20% WER
 4. **No streaming** — must wait for full 30s chunk processing
 5. **Autoregressive decoding** — generates tokens sequentially, inherently slower than non-autoregressive models
 
-### AriaType Migration Note
+### Voice Flow Migration Note
 
 Whisper Small is the current default. Any replacement must:
 1. Offer at least 99+ language auto-detect OR explicitly target Chinese-English users
@@ -372,17 +372,17 @@ Distil-Whisper's primary design goal is to serve as a **draft model for speculat
 | Lower hallucination than full Whisper | No streaming support |
 | Speculative decoding (2x full Whisper, 0% loss) | INT8 ONNX sizes are large (~4 GB for large) |
 | distil-large-v3.5 beats Whisper large-v3 on long-form | Only offline inference |
-| MIT license, production-ready | Not useful for AriaType's Chinese use case |
+| MIT license, production-ready | Not useful for Voice Flow's Chinese use case |
 
-### Why Distil-Whisper Is Not Recommended for AriaType
+### Why Distil-Whisper Is Not Recommended for Voice Flow
 
 Distil-Whisper is an excellent English STT model family. However:
 
 1. **No Chinese support** — all variants trained on English data only
 2. **sherpa-onnx INT8 sizes (0.97–4.01 GB)** are significantly larger than SenseVoice (240 MB) or even Whisper Small FP16 (490 MB)
 3. **No streaming** — same fixed 30-second window limitation as regular Whisper
-4. AriaType's primary differentiator is Chinese-English bilingual quality — Distil-Whisper contributes nothing on the Chinese side
-5. **Useful only if**: AriaType adds speculative decoding in the future, where distil-large-v3 could accelerate Whisper large-v3 with zero accuracy loss
+4. Voice Flow's primary differentiator is Chinese-English bilingual quality — Distil-Whisper contributes nothing on the Chinese side
+5. **Useful only if**: Voice Flow adds speculative decoding in the future, where distil-large-v3 could accelerate Whisper large-v3 with zero accuracy loss
 
 ---
 
@@ -845,7 +845,7 @@ Combined with **FastConformer** (8x aggressive subsampling via depthwise-separab
 | TDT frame-skipping = fewer decoder steps | 1.1B variant is worse on average WER than 0.6B (overfitting?) |
 | 25 European languages in v3 | CTC 110M variant is tiny but no benchmarks published |
 
-### Why Not Recommended for AriaType
+### Why Not Recommended for Voice Flow
 
 Parakeet TDT is the **fastest and most accurate English-only STT** in this report. However:
 
@@ -853,7 +853,7 @@ Parakeet TDT is the **fastest and most accurate English-only STT** in this repor
 2. **CoreML speed depends on FluidAudio conversion** — not available via standard sherpa-onnx
 3. **CC-BY-4.0 license** — requires attribution (less permissive than MIT/Apache)
 4. **No streaming** — offline only, same as Whisper
-5. **Potentially useful if**: AriaType adds an English-optimized mode or if NVIDIA releases a Chinese variant
+5. **Potentially useful if**: Voice Flow adds an English-optimized mode or if NVIDIA releases a Chinese variant
 
 ---
 
@@ -905,7 +905,7 @@ sherpa-onnx is **51x faster** than whisper.cpp for the same Whisper model on mob
 ## Model Selection Decision Tree
 
 ```
-AriaType primary use case: Chinese + English voice typing
+Voice Flow primary use case: Chinese + English voice typing
 │
 ├─ Need maximum accuracy + dialect coverage?
 │  └─ ✅ Qwen3-ASR 0.6B
@@ -946,7 +946,7 @@ AriaType primary use case: Chinese + English voice typing
 
 ---
 
-## Recommended Strategy for AriaType
+## Recommended Strategy for Voice Flow
 
 ### Phase 1: Migrate SenseVoice to sherpa-onnx
 

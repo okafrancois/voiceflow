@@ -14,10 +14,10 @@ When asked to "check and fix" or "investigate":
 1. **Check latest logs first**:
    ```bash
    # macOS
-   cat ~/Library/Logs/ariatype/ariatype.log.$(date +%Y-%m-%d-)* | tail -200
+   cat ~/Library/Logs/voiceflow/voiceflow.log.$(date +%Y-%m-%d-)* | tail -200
    
    # Or check for crash reports
-   ls -la ~/Library/Logs/DiagnosticReports/ | grep -i ariatype
+   ls -la ~/Library/Logs/DiagnosticReports/ | grep -i voiceflow
    ```
 
 2. **Identify failure point** — Look for:
@@ -28,17 +28,17 @@ When asked to "check and fix" or "investigate":
 
 3. **Check crash reports if logs incomplete**:
    ```bash
-   head -200 ~/Library/Logs/DiagnosticReports/ariatype-*.ips
+   head -200 ~/Library/Logs/DiagnosticReports/voiceflow-*.ips
    ```
 
 ## 2. Log File Locations
 
 | Platform | Path |
 |----------|------|
-| macOS | `~/Library/Logs/ariatype/` |
-| Windows | `%LOCALAPPDATA%\ariatype\logs\` |
+| macOS | `~/Library/Logs/voiceflow/` |
+| Windows | `%LOCALAPPDATA%\voiceflow\logs\` |
 
-Log files are named `ariatype.log.YYYY-MM-DDTHH` (hourly rotation).
+Log files are named `voiceflow.log.YYYY-MM-DDTHH` (hourly rotation).
 
 ## 3. IPC Log Access
 

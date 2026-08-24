@@ -133,7 +133,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           TAURI_UPDATER_PUBKEY: ${{ secrets.TAURI_UPDATER_PUBKEY }}
-          ARIATYPE_REQUIRE_LOCAL_POLISH_RUNTIME: "1"
+          VOICEFLOW_REQUIRE_LOCAL_POLISH_RUNTIME: "1"
         run: pnpm tauri:build:mac-universal
 
       - name: Verify bundled local polish runtimes

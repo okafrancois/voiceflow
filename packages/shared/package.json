@@ -1,8 +1,8 @@
 {
-  "name": "@ariatype/shared",
+  "name": "@voiceflow/shared",
   "version": "1.0.0",
   "license": "AGPL-3.0-only",
-  "description": "Shared utilities and types for AriaType",
+  "description": "Shared utilities and types for Voice Flow",
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",

@@ -1,10 +1,10 @@
-# Contributing to @ariatype/shared
+# Contributing to @voiceflow/shared
 
 ## Overview
 
-**Package**: Shared TypeScript utilities for the AriaType monorepo.
+**Package**: Shared TypeScript utilities for the Voice Flow monorepo.
 
-**Purpose**: Types and constants used across `@ariatype/desktop` and `@ariatype/website`.
+**Purpose**: Types and constants used across `@voiceflow/desktop` and `@voiceflow/website`.
 
 **Entry Point**: `src/index.ts`
 
@@ -27,9 +27,9 @@
 | Constant | Value | Usage |
 |----------|-------|-------|
 | `APP_VERSION` | `'1.0.0'` | Version display |
-| `APP_NAME` | `'AriaType'` | App name display |
-| `GITHUB_RELEASES_URL` | `github.com/joe223/AriaType/releases` | GitHub Releases index |
-| `DOWNLOAD_URL` | `github.com/joe223/AriaType/releases/latest` | Download fallback page |
+| `APP_NAME` | `'Voice Flow'` | App name display |
+| `GITHUB_RELEASES_URL` | `github.com/okafrancois/voiceflow/releases` | GitHub Releases index |
+| `DOWNLOAD_URL` | `github.com/okafrancois/voiceflow/releases/latest` | Download fallback page |
 
 ---
 
@@ -40,7 +40,7 @@
 pnpm install
 
 # Type checking (primary validation)
-pnpm --filter @ariatype/shared typecheck
+pnpm --filter @voiceflow/shared typecheck
 
 # Or from package directory
 cd packages/shared && pnpm typecheck
@@ -75,13 +75,13 @@ cd packages/shared && pnpm typecheck
 
 3. **Run typecheck**:
    ```bash
-   pnpm --filter @ariatype/shared typecheck
+   pnpm --filter @voiceflow/shared typecheck
    ```
 
 4. **Validate in dependent packages**:
    ```bash
-   pnpm --filter @ariatype/desktop build
-   pnpm --filter @ariatype/website build
+   pnpm --filter @voiceflow/desktop build
+   pnpm --filter @voiceflow/website build
    ```
 
 ---
@@ -98,8 +98,8 @@ cd packages/shared && pnpm typecheck
 ## Usage in Other Packages
 
 ```typescript
-// In @ariatype/desktop or @ariatype/website
-import { Settings, Model, APP_VERSION } from '@ariatype/shared';
+// In @voiceflow/desktop or @voiceflow/website
+import { Settings, Model, APP_VERSION } from '@voiceflow/shared';
 
 // Type usage
 const settings: Settings = {
@@ -131,8 +131,8 @@ This package is consumed by:
 
 | Package | Import Path |
 |---------|-------------|
-| `@ariatype/desktop` | `workspace:*` (monorepo internal) |
-| `@ariatype/website` | `workspace:*` (monorepo internal) |
+| `@voiceflow/desktop` | `workspace:*` (monorepo internal) |
+| `@voiceflow/website` | `workspace:*` (monorepo internal) |
 
 ---
 

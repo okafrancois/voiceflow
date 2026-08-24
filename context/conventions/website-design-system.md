@@ -1,6 +1,6 @@
-# AriaType Website — UI Design System
+# Voice Flow Website — UI Design System
 
-> Source of truth for visual and interaction patterns across ariatype.com.
+> Source of truth for visual and interaction patterns across the Voice Flow website.
 > When in doubt, match what exists. When adding new, follow these tokens.
 
 ---

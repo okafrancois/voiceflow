@@ -7,10 +7,10 @@
 ## Purpose
 
 This document explains why CapsWriter-Offline can feel fast when users compare
-its "polish" behavior with AriaType local polish. The goal is not to copy its
+its "polish" behavior with Voice Flow local polish. The goal is not to copy its
 implementation directly. The goal is to separate latency sources, identify the
 product and architecture choices that create the fast user experience, and turn
-those findings into concrete AriaType design guidance.
+those findings into concrete Voice Flow design guidance.
 
 ## Executive Summary
 
@@ -28,7 +28,7 @@ Its fast path is:
 5. Stream LLM chunks and optionally type them into the focused app as soon as
    each chunk arrives.
 
-AriaType local polish previously had a different performance shape:
+Voice Flow local polish previously had a different performance shape:
 
 1. It invokes in-process llama.cpp work from the desktop backend.
 2. The shared blocking path validates the model file, initializes llama.cpp,
@@ -38,7 +38,7 @@ AriaType local polish previously had a different performance shape:
    budget, which improve reliability but can increase memory pressure and make
    slow local models more visible.
 
-The practical takeaway: to approach CapsWriter's perceived latency, AriaType
+The practical takeaway: to approach CapsWriter's perceived latency, Voice Flow
 should treat LLM polish as a tiered enhancement, not as the default correction
 path. Deterministic correction should handle the common case; LLM polish should
 be explicit, streamed, bounded, and preferably backed by a resident model
@@ -62,7 +62,7 @@ CapsWriter-Offline sources used for this analysis:
 | Message construction | [llm_message_builder.py](https://github.com/HaujetZhao/CapsWriter-Offline/blob/4e4e16bbabdb5b4ebd522cc9f58528b48c87e08e/core/client/llm/llm_message_builder.py) |
 | LLM defaults and timeouts | [llm_constants.py](https://github.com/HaujetZhao/CapsWriter-Offline/blob/4e4e16bbabdb5b4ebd522cc9f58528b48c87e08e/core/client/llm/llm_constants.py) |
 
-AriaType sources used for comparison:
+Voice Flow sources used for comparison:
 
 | Area | Source |
 |------|--------|
@@ -112,7 +112,7 @@ Evidence:
 This means the common path can be fast even when the product contains an LLM
 polish feature.
 
-Implication for AriaType:
+Implication for Voice Flow:
 
 - Do not make "LLM polish" synonymous with "basic transcript correctness".
 - The basic path should be STT plus correction learning, hotwords, punctuation,
@@ -141,7 +141,7 @@ Why this matters:
 - LLMs are expensive for this class of problem because they re-generate the
   whole text to fix a small number of tokens.
 
-AriaType already has correction-learning work. That should become the first
+Voice Flow already has correction-learning work. That should become the first
 latency-sensitive correction layer, with LLM polish reserved for transformations
 that rules cannot safely perform.
 
@@ -158,7 +158,7 @@ The model runtime is outside the CapsWriter process. For local models, the
 expensive work is owned by Ollama or LM Studio, which can keep the model warm.
 For cloud models, model loading is hidden by the provider.
 
-Before the resident-runtime migration, AriaType local polish differed in a
+Before the resident-runtime migration, Voice Flow local polish differed in a
 critical way:
 
 - `UnifiedPolishManager` caches a `PolishEngineInstance`, but the shared local
@@ -172,7 +172,7 @@ The current implementation has moved local GGUF polish to an OpenAI-compatible
 localhost runtime, so this is now the historical latency problem the redesign is
 meant to avoid.
 
-Implication for AriaType:
+Implication for Voice Flow:
 
 - A truly fast local polish mode needs a resident model runtime.
 - Options:
@@ -206,10 +206,10 @@ The tradeoff is important:
 - It is more suitable for assistant/continuation roles than strict transcript
   replacement.
 
-Implication for AriaType:
+Implication for Voice Flow:
 
 - Do not stream directly into the user's target input by default for polish,
-  because AriaType's polish is expected to produce a final corrected transcript.
+  because Voice Flow's polish is expected to produce a final corrected transcript.
 - A safer version is:
   - stream into pill tooltip or a transient preview;
   - paste the final text only after completion;
@@ -229,7 +229,7 @@ This is important because polish should usually be a low-reasoning task:
 - The model should not plan, execute, or reinterpret commands.
 - The model should not spend tokens on hidden or visible reasoning.
 
-Implication for AriaType:
+Implication for Voice Flow:
 
 - Keep no-thinking as the default for local and cloud polish.
 - Maintain model-specific controls because "disable thinking" is not portable.
@@ -252,7 +252,7 @@ The message builder also keeps context targeted:
 
 It does not blindly attach a large window snapshot to every request.
 
-Implication for AriaType:
+Implication for Voice Flow:
 
 - Keep polish prompt context small by default.
 - Include only high-confidence correction candidates, not broad visible text.
@@ -265,16 +265,16 @@ CapsWriter's LLM constants set a short default timeout for local and cloud
 providers. This makes failures quick and preserves typing flow. It also means
 CapsWriter can feel fast because slow LLM calls fail or degrade early.
 
-Implication for AriaType:
+Implication for Voice Flow:
 
-- AriaType should expose different latency contracts for different modes:
+- Voice Flow should expose different latency contracts for different modes:
   - correction-only: sub-100ms target after STT;
   - cloud-fast polish: low single-digit seconds;
   - local-fast resident model: low single-digit seconds after warmup;
   - local-accurate GGUF fallback: bounded, slower, and visibly labelled.
 - Fallback must be explicit: use original STT and show a short tooltip reason.
 
-## Current AriaType Local Polish Shape
+## Current Voice Flow Local Polish Shape
 
 The current local polish flow is:
 
@@ -312,7 +312,7 @@ Recent improvements:
 
 Remaining latency issue:
 
-- AriaType can reuse an already-running localhost runtime, spawn a bundled
+- Voice Flow can reuse an already-running localhost runtime, spawn a bundled
   `llama-server` resource, use a PATH-installed `llama-server`, or spawn a
   configured command. Build scripts now add existing `llama-server` sidecars to
   Tauri resources through a generated config, but the repository does not yet
@@ -325,7 +325,7 @@ Remaining latency issue:
 
 ## Side-by-Side Comparison
 
-| Dimension | CapsWriter-Offline | AriaType Current |
+| Dimension | CapsWriter-Offline | Voice Flow Current |
 |-----------|--------------------|------------------|
 | Default LLM polish | Default role disabled | User can enable polish as processing step |
 | Basic correction | Hotwords and regex are first-class | Correction learning exists, still maturing |
@@ -337,7 +337,7 @@ Remaining latency issue:
 | Timeout | Very aggressive provider timeout | 10-30s local timeout |
 | Product tradeoff | Optimizes perceived speed | Optimizes atomic final transcript |
 
-## Recommended AriaType Architecture
+## Recommended Voice Flow Architecture
 
 ### 1. Split Correction From Polish
 
@@ -378,11 +378,11 @@ For fast local polish, prefer a resident runtime:
 - Ollama for broad local model compatibility;
 - LM Studio for user-managed desktop local models;
 - llama-server for direct llama.cpp control;
-- a dedicated sidecar if AriaType needs fully managed offline behavior.
+- a dedicated sidecar if Voice Flow needs fully managed offline behavior.
 
 The key requirement is that model load is not part of every polish request.
 
-If AriaType keeps an in-process model cache, it must cache actual loaded model
+If Voice Flow keeps an in-process model cache, it must cache actual loaded model
 state, not only wrapper objects. The design must address:
 
 - ownership and thread safety;
@@ -416,7 +416,7 @@ ESC / cancel
   -> stop stream and keep partial text
 ```
 
-The default should preserve AriaType's current guarantee that the target field
+The default should preserve Voice Flow's current guarantee that the target field
 receives a complete final transcript.
 
 ### 5. Keep Prompt Budgets Small by Default
@@ -488,8 +488,8 @@ Current implementation status:
   applied after STT and before LLM polish.
 - OpenAI-compatible local responses preserve llama.cpp-style
   `timings.prompt_ms` / `timings.predicted_ms` as `prefill_ms` /
-  `inference_ms`, and AriaType-managed sidecars can expose
-  `ariatype_timings.model_load_ms`, `context_create_ms`, `prefill_ms`, and
+  `inference_ms`, and Voice Flow-managed sidecars can expose
+  `voiceflow_timings.model_load_ms`, `context_create_ms`, `prefill_ms`, and
   `inference_ms`.
 - `model_load_ms` and `context_create_ms` are populated only when the runtime
   exposes them; stock OpenAI providers usually omit these fields.
@@ -545,7 +545,7 @@ Current implementation status:
   lightweight `/v1/models` endpoint health check.
 - A managed sidecar can be started via saved runtime command configuration.
   Build and release scripts can bundle `llama-server`; when a packaged runtime
-  is absent, AriaType can still use a `llama-server` on `PATH` or a custom
+  is absent, Voice Flow can still use a `llama-server` on `PATH` or a custom
   OpenAI-compatible command.
 - For the `llama-server` preset, an empty start command now auto-detects a
   bundled `llama-server` resource, then `llama-server` from `PATH`, before
@@ -556,7 +556,7 @@ Current implementation status:
 - Build-time sidecar preparation can copy a release-provided `llama-server`
   artifact into the recognized Tauri resource location, validate its optional
   SHA-256 checksum, and fail fast when
-  `ARIATYPE_REQUIRE_LOCAL_POLISH_RUNTIME=1` is set.
+  `VOICEFLOW_REQUIRE_LOCAL_POLISH_RUNTIME=1` is set.
 - macOS sidecar preparation supports separate arm64 and x64 binaries, and
   runtime discovery now prefers the current architecture before trying the other
   architecture. This keeps universal macOS packages from launching the wrong
@@ -680,11 +680,11 @@ Remaining higher-level evidence gap:
   executable answered `--help`, started with the real GGUF model, and served
   `/v1/models`.
 - A local unsigned Tauri macOS arm64 package build has also proven the app
-  bundle resource path: `AriaType Inhouse.app/Contents/Resources/bin/apple-silicon/llama-server`
+  bundle resource path: `Voice Flow Inhouse.app/Contents/Resources/bin/apple-silicon/llama-server`
   answered `--help`, started with the real GGUF model, and served `/v1/models`.
 - The unsigned macOS arm64 DMG has been mounted locally and verified from the
   mounted app bundle resource directory:
-  `/private/tmp/ariatype-dmg-mount/AriaType Inhouse.app/Contents/Resources/bin/apple-silicon/llama-server`
+  `/private/tmp/voiceflow-dmg-mount/Voice Flow Inhouse.app/Contents/Resources/bin/apple-silicon/llama-server`
   answered `--help`, started with the real GGUF model, and served `/v1/models`.
 - Packaging/E2E has not yet proven the same flow from a final notarized app.
   Current implementation supports existing runtimes, explicit

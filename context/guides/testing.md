@@ -1,6 +1,6 @@
 # Testing Guide
 
-Guide for writing and running tests in AriaType (Tauri v2 + React 19 + Rust).
+Guide for writing and running tests in Voice Flow (Tauri v2 + React 19 + Rust).
 
 ## When to Read This
 
@@ -37,9 +37,9 @@ cargo test -- --ignored                       # Run ignored tests (requires mode
 cargo llvm-cov --html                         # Generate HTML coverage report
 
 # === Frontend ===
-pnpm --filter @ariatype/desktop test          # Run all tests
-pnpm --filter @ariatype/desktop test:watch    # Watch mode
-pnpm --filter @ariatype/desktop test:coverage # With coverage
+pnpm --filter @voiceflow/desktop test          # Run all tests
+pnpm --filter @voiceflow/desktop test:watch    # Watch mode
+pnpm --filter @voiceflow/desktop test:coverage # With coverage
 
 # === Linting ===
 cargo clippy --all-features -- -D warnings    # Lint (warnings are errors)
@@ -50,7 +50,7 @@ cargo fmt -- --check                          # Format check
 
 ```bash
 cd apps/desktop/src-tauri && cargo test && cargo clippy --all-features -- -D warnings && cargo fmt -- --check
-pnpm --filter @ariatype/desktop build && pnpm --filter @ariatype/shared typecheck && pnpm check:i18n
+pnpm --filter @voiceflow/desktop build && pnpm --filter @voiceflow/shared typecheck && pnpm check:i18n
 ```
 
 ---
@@ -67,9 +67,10 @@ pnpm --filter @ariatype/desktop build && pnpm --filter @ariatype/shared typechec
 
 | Purpose | Location |
 |---------|----------|
-| Cloud STT API contract | `tests/cloud_provider_api_test.rs` |
-| Cloud STT integration | `tests/cloud_stt_test.rs` |
-| Streaming client tests | `tests/volcengine_streaming_test.rs` |
+| Cloud STT deterministic contracts | `tests/cloud_stt_provider_contract_test.rs`, `tests/volcengine_streaming_mock_test.rs` |
+| Cloud STT lifecycle and dispatch | `tests/cloud_stt_streaming_lifecycle_test.rs` |
+| Cloud Polish deterministic contracts | `tests/cloud_polish_mock_test.rs` |
+| Optional live provider checks | `tests/cloud_provider_api_test.rs`, ignored by default |
 | Pipeline integration | `tests/pipeline_integration_test.rs` |
 | Shared utilities | `tests/common/mod.rs` (mocks, fixtures) |
 
@@ -103,17 +104,7 @@ fn test_parse_hotkey_rejects_modifier_only_keys() {
 
 Use the library crate in `tests/`:
 
-```rust
-// tests/cloud_provider_api_test.rs
-use ariatype_lib::stt_engine::traits::{SttEngine, TranscriptionRequest};
-
-#[tokio::test]
-async fn test_cloud_stt_batch_mode_rejected() {
-    let engine = CloudSttEngine::new().unwrap();
-    let result = engine.transcribe(request).await;
-    assert!(result.unwrap_err().contains("streaming lifecycle"));
-}
-```
+Cloud provider integration tests must use a local mock server and assert the handshake, provider messages, and parsed final result. See `cloud_stt_provider_contract_test.rs` for JSON WebSocket providers and `volcengine_streaming_mock_test.rs` for the Volcengine binary protocol. Await the mock server task so a server-side assertion failure fails the test.
 
 ### Test Utilities
 
@@ -236,7 +227,7 @@ Then:  observable UI state, events, output
 cd apps/desktop/src-tauri && cargo llvm-cov --html
 
 # Frontend coverage
-pnpm --filter @ariatype/desktop test -- --coverage
+pnpm --filter @voiceflow/desktop test -- --coverage
 ```
 
 ### No-Fabrication Policy

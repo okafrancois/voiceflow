@@ -1,6 +1,6 @@
 # Architecture Overview
 
-This document describes the high-level architecture of AriaType, a Tauri v2 desktop voice keyboard application.
+This document describes the high-level architecture of Voice Flow, a Tauri v2 desktop voice keyboard application.
 
 ## When to Read This
 

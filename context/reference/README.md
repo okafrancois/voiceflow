@@ -1,6 +1,6 @@
 # Provider Reference
 
-API reference documentation for cloud and local providers integrated into AriaType.
+API reference documentation for cloud and local providers integrated into Voice Flow.
 
 ## When to Read This
 
@@ -17,10 +17,10 @@ This directory contains stable API reference documentation for external provider
 
 | Category | Document | Description |
 |----------|----------|-------------|
-| **STT (Speech-to-Text)** | [providers/stt.md](./providers/stt.md) | All STT providers: Volcengine, OpenAI, Deepgram, ElevenLabs, Qwen Omni, Custom Endpoint |
+| **STT (Speech-to-Text)** | [providers/stt.md](./providers/stt.md) | Shipped cloud STT providers: Volcengine, Aliyun Realtime, and ElevenLabs |
 | **Local STT Models** | [providers/local-stt-models.md](./providers/local-stt-models.md) | Local STT model research: SenseVoice, Whisper, Distil-Whisper, Parakeet TDT, Moonshine, Qwen3-ASR, Paraformer, FireRedAsr comparison |
-| **Polish (Text Enhancement)** | [providers/polish.md](./providers/polish.md) | All text polishing providers: Anthropic, OpenAI, Qwen, Custom Endpoint |
-| **Polish Latency Case Study** | [providers/capswriter-polish-latency.md](./providers/capswriter-polish-latency.md) | CapsWriter-Offline polish latency analysis and AriaType architecture recommendations |
+| **Polish (Text Enhancement)** | [providers/polish.md](./providers/polish.md) | Shipped cloud Polish providers: Anthropic and OpenAI, plus the separate local runtime |
+| **Polish Latency Case Study** | [providers/capswriter-polish-latency.md](./providers/capswriter-polish-latency.md) | CapsWriter-Offline Polish latency analysis and Voice Flow architecture recommendations |
 
 ## How These Docs Relate
 
@@ -37,5 +37,5 @@ This directory contains stable API reference documentation for external provider
 ## Maintenance
 
 - Update provider docs when API contracts change or new providers are added
-- Verify provider URLs and authentication methods against actual provider documentation
+- Verify provider URLs and authentication methods against provider documentation and deterministic local contract tests
 - Keep feature comparison tables current with implemented functionality

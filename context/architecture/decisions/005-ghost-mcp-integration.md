@@ -39,7 +39,7 @@ Ghost OS already exposes MCP server via stdio. rmcp provides Rust client. This i
 | **Local learning (chosen)** | Privacy-first, no cloud dependency, works offline |
 | **Cloud learning** | Latency, privacy concerns, requires sync infrastructure |
 
-Language learning is sensitive (vocabulary, style patterns). Local storage aligns with AriaType's privacy-first principle.
+Language learning is sensitive (vocabulary, style patterns). Local storage aligns with Voice Flow's privacy-first principle.
 
 ## Alternatives Considered
 

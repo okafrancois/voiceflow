@@ -180,7 +180,7 @@ export function prepareLlamaServerReleaseAssets({
       normalizedPlatform
     );
 
-    const tempDir = mkdtempSync(join(tmpdir(), 'ariatype-llama-server-'));
+    const tempDir = mkdtempSync(join(tmpdir(), 'voiceflow-llama-server-'));
     try {
       const extractedPath = extractArchiveMember(archivePath, member, tempDir);
       const destinationPath = resolve(tauriDir(rootDir), target.destinationResource);

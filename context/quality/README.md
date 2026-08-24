@@ -27,14 +27,13 @@ Quality index tracking grades across all product domains. Grades are updated per
 | VAD (Voice Activity Detection) | Backend | C | 2026-04 | Build-verified only |
 | Local STT (Whisper) | Backend | B | 2026-04 | Integration tests, manual QA |
 | Local STT (SenseVoice) | Backend | B | 2026-04 | Integration tests |
-| Cloud STT (Volcengine) | Backend | B | 2026-04 | Auth error tests pass |
-| Cloud STT (Qwen Omni) | Backend | C | 2026-04 | Missing #[instrument], no contract tests |
-| Cloud STT (ElevenLabs) | Backend | C | 2026-04 | Missing #[instrument], no contract tests |
-| Cloud STT (Deepgram) | Backend | C | 2026-04 | No contract tests |
+| Cloud STT (Volcengine) | Backend | B | 2026-08 | Local binary-protocol lifecycle tests; official endpoint locked to `bigmodel_nostream` |
+| Cloud STT (Aliyun Realtime) | Backend | B | 2026-08 | Local handshake, message lifecycle, callback, and final-result contract test |
+| Cloud STT (ElevenLabs) | Backend | B | 2026-08 | Local handshake, context, audio, commit, callback, and final-result contract test |
 | Local Polish (LFM) | Backend | B | 2026-04 | Unit tests for prompt construction |
 | Local Polish (Qwen) | Backend | B | 2026-04 | Unit tests |
-| Cloud Polish (Anthropic) | Backend | B | 2026-04 | Auth error tests |
-| Cloud Polish (OpenAI) | Backend | B | 2026-04 | Auth error tests |
+| Cloud Polish (Anthropic) | Backend | B | 2026-08 | Local request, response, and connection-check contract tests |
+| Cloud Polish (OpenAI) | Backend | B | 2026-08 | Local request, response, streaming, and connection-check contract tests |
 | Text Injection (macOS) | Backend | B | 2026-04 | Layer 0 + Layer 2 tested |
 | Text Injection (Windows) | Backend | D | 2026-04 | Not implemented |
 | Settings Persistence | Backend | B | 2026-04 | Unit tests |
@@ -60,8 +59,7 @@ These are hard requirements, not grades:
 
 Sorted by impact:
 
-1. Cloud STT contract tests for Qwen Omni, ElevenLabs, Deepgram (raise from C to B)
-2. VAD testing (raise from C to B)
-3. Text Injection Windows implementation (raise from D)
-4. History storage tests (raise from C to B)
-5. Visual regression for UI components (raise from C to B)
+1. VAD testing (raise from C to B)
+2. Text Injection Windows implementation (raise from D)
+3. History storage tests (raise from C to B)
+4. Visual regression for UI components (raise from C to B)

@@ -5,9 +5,9 @@
 
 ## Decision
 
-Use two injection strategies based on text length:
-- **Layer 0**: Keyboard simulation (CGEvent) for short text ≤ 200 chars
-- **Layer 2**: Clipboard paste (NSPasteboard + Cmd+V) for long/multiline text > 200 chars
+Use two injection strategies based on text shape and length:
+- **Layer 0**: Keyboard simulation for short, single-line text up to 400 characters
+- **Layer 2**: Transactional clipboard paste for multiline or longer text, and as the keyboard failure fallback
 
 ## Rationale
 
@@ -22,6 +22,9 @@ Keyboard simulation loses characters on long input due to event queue limitation
 ## Consequences
 
 - Short text injected without clipboard modification
-- Long text uses clipboard (user's previous clipboard content is lost)
-- Text length threshold is configurable at compile time
-- macOS-specific implementation (Windows uses different approach)
+- Long and multiline text temporarily uses the clipboard.
+- macOS restores every pasteboard item and Windows restores prior text content.
+- Delivery failures propagate to the caller instead of being logged as success.
+- The text length threshold is configurable at compile time.
+- macOS sends `Cmd+V`; Windows sends `Ctrl+V` and releases common modifiers after
+  the attempt.

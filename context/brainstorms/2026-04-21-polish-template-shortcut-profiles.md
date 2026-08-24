@@ -777,8 +777,8 @@ cargo fmt -- --check
 ### Frontend
 
 ```bash
-pnpm --filter @ariatype/desktop build
-pnpm --filter @ariatype/shared typecheck
+pnpm --filter @voiceflow/desktop build
+pnpm --filter @voiceflow/shared typecheck
 ```
 
 ### Manual

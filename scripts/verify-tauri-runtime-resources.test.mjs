@@ -14,7 +14,7 @@ import {
 } from './verify-tauri-runtime-resources.mjs';
 
 function createFixture() {
-  const root = mkdtempSync(join(tmpdir(), 'ariatype-runtime-verify-'));
+  const root = mkdtempSync(join(tmpdir(), 'voiceflow-runtime-verify-'));
   mkdirSync(resolve(root, 'apps/desktop/src-tauri'), { recursive: true });
   return root;
 }
@@ -88,7 +88,7 @@ test('expected runtime resources include macOS architecture-specific sidecars', 
 test('bundle resource dirs include the universal macOS app resources path', () => {
   assert.ok(
     bundleResourceDirs('macos').some((dir) =>
-      dir.includes('target/universal-apple-darwin/release/bundle/macos/AriaType.app/Contents/Resources')
+      dir.includes('target/universal-apple-darwin/release/bundle/macos/Voice Flow.app/Contents/Resources')
     )
   );
 });
@@ -110,22 +110,22 @@ test('discovers macOS app bundle resources for renamed apps', () => {
   const root = createFixture();
   writeResource(root, 'bin/apple-silicon/llama-server');
   writeResource(root, 'bin/intel/llama-server');
-  writeAppResource(root, 'AriaType Inhouse.app', 'bin/apple-silicon/llama-server');
-  writeAppResource(root, 'AriaType Inhouse.app', 'bin/intel/llama-server');
+  writeAppResource(root, 'Voice Flow Inhouse.app', 'bin/apple-silicon/llama-server');
+  writeAppResource(root, 'Voice Flow Inhouse.app', 'bin/intel/llama-server');
 
   const result = verifyRuntimeResources({ platform: 'macos', rootDir: root });
 
-  assert.ok(result.roots[0].endsWith('AriaType Inhouse.app/Contents/Resources'));
+  assert.ok(result.roots[0].endsWith('Voice Flow Inhouse.app/Contents/Resources'));
   assert.ok(
     result.checked.every((item) =>
-      item.path.includes('AriaType Inhouse.app/Contents/Resources')
+      item.path.includes('Voice Flow Inhouse.app/Contents/Resources')
     )
   );
 });
 
 test('verifies an explicit mounted app resource root', () => {
   const root = createFixture();
-  const mountedResourceRoot = resolve(root, 'mounted/AriaType Inhouse.app/Contents/Resources');
+  const mountedResourceRoot = resolve(root, 'mounted/Voice Flow Inhouse.app/Contents/Resources');
   mkdirSync(resolve(mountedResourceRoot, 'bin/apple-silicon'), { recursive: true });
   mkdirSync(resolve(mountedResourceRoot, 'bin/intel'), { recursive: true });
   writeFileSync(resolve(mountedResourceRoot, 'bin/apple-silicon/llama-server'), 'binary');

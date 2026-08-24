@@ -9,7 +9,7 @@
 
 The current desktop home screen shows isolated totals, a single daily count chart, and an engine pie chart. It does not answer the questions a voice-typing user actually cares about after repeated use:
 
-1. Am I using AriaType regularly?
+1. Am I using Voice Flow regularly?
 2. How long do I usually speak each time?
 3. How much usable text do I get from each capture?
 4. Is my workflow leaning toward local privacy or cloud power?

@@ -93,11 +93,11 @@ export function verifyUpdaterSigningKeyCanSign({
   privateKeyPath = '',
   spawn = spawnSync,
 } = {}) {
-  const dir = mkdtempSync(join(tmpdir(), 'ariatype-updater-sign-'));
+  const dir = mkdtempSync(join(tmpdir(), 'voiceflow-updater-sign-'));
   const probePath = join(dir, 'probe.txt');
 
   try {
-    writeFileSync(probePath, 'ariatype updater signing probe');
+    writeFileSync(probePath, 'voiceflow updater signing probe');
 
     const signerCommand = buildTauriSignerProbeCommand(commandArgs, probePath, { privateKeyPath });
     if (!signerCommand) {

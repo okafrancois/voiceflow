@@ -83,7 +83,7 @@ export async function downloadOfficialLlamaServerAsset({
 
   const response = await fetchImpl(assetUrl, {
     headers: {
-      'user-agent': 'AriaType build/runtime preparation',
+      'user-agent': 'Voice Flow build/runtime preparation',
     },
     redirect: 'follow',
   });

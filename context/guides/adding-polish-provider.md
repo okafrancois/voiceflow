@@ -65,7 +65,7 @@ let result = match self.config.provider_type.as_str() {
     "anthropic" => self.call_anthropic_api(&system_prompt, &input_text).await?,
     "openai" => self.call_openai_api(&system_prompt, &input_text).await?,
     "new-provider" => self.call_new_provider_api(&system_prompt, &input_text).await?,
-    _ => self.call_openai_api(&system_prompt, &input_text).await?,
+    provider => return Err(format!("Unsupported cloud polish provider: {provider}")),
 };
 ```
 
@@ -108,16 +108,14 @@ pub use new_provider::NewProviderEngine;
 
 ## Step 4: Frontend Configuration
 
-In `src/components/Home/cloud/CloudPolishSection.tsx`:
+Add the provider and its fields to `POLISH_SCHEMAS` in `src-tauri/src/provider_schema.rs`. `CloudPolishSection.tsx` renders the backend schema and must not keep a second provider list.
 
-```typescript
-type CloudPolishProvider = "anthropic" | "openai" | "new-provider" | "custom";
-
-const POLISH_PROVIDERS = [
-  { value: "anthropic", labelKey: "model.polish.cloud.providerAnthropic" },
-  { value: "openai", labelKey: "model.polish.cloud.providerOpenAI" },
-  { value: "new-provider", labelKey: "model.polish.cloud.providerNewProvider" },
-];
+```rust
+ProviderSchema {
+    id: "new-provider",
+    name: "New Provider",
+    fields: NEW_PROVIDER_FIELDS,
+}
 ```
 
 ## Step 5: i18n Keys

@@ -137,10 +137,10 @@ When recovery is triggered:
 cd apps/desktop/src-tauri && cargo test && cargo clippy --all-features -- -D warnings && cargo fmt -- --check
 
 # Frontend
-pnpm --filter @ariatype/desktop build && pnpm --filter @ariatype/shared typecheck && pnpm check:i18n
+pnpm --filter @voiceflow/desktop build && pnpm --filter @voiceflow/shared typecheck && pnpm check:i18n
 
 # Website
-pnpm --filter @ariatype/website build && pnpm --filter @ariatype/website lint
+pnpm --filter @voiceflow/website build && pnpm --filter @voiceflow/website lint
 ```
 
 ---

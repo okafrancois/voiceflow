@@ -61,48 +61,48 @@ const RUNTIME_RESOURCE_DESTINATIONS = {
 const RUNTIME_SIDECAR_SPECS = {
   macos: [
     {
-      pathEnv: 'ARIATYPE_LLAMA_SERVER_MACOS_ARM64_PATH',
-      shaEnv: 'ARIATYPE_LLAMA_SERVER_MACOS_ARM64_SHA256',
+      pathEnv: 'VOICEFLOW_LLAMA_SERVER_MACOS_ARM64_PATH',
+      shaEnv: 'VOICEFLOW_LLAMA_SERVER_MACOS_ARM64_SHA256',
       destinationResource: 'bin/apple-silicon/llama-server',
     },
     {
-      pathEnv: 'ARIATYPE_LLAMA_SERVER_MACOS_X64_PATH',
-      shaEnv: 'ARIATYPE_LLAMA_SERVER_MACOS_X64_SHA256',
+      pathEnv: 'VOICEFLOW_LLAMA_SERVER_MACOS_X64_PATH',
+      shaEnv: 'VOICEFLOW_LLAMA_SERVER_MACOS_X64_SHA256',
       destinationResource: 'bin/intel/llama-server',
     },
     {
-      pathEnv: 'ARIATYPE_LLAMA_SERVER_MACOS_PATH',
-      shaEnv: 'ARIATYPE_LLAMA_SERVER_MACOS_SHA256',
+      pathEnv: 'VOICEFLOW_LLAMA_SERVER_MACOS_PATH',
+      shaEnv: 'VOICEFLOW_LLAMA_SERVER_MACOS_SHA256',
       destinationResource: 'bin/universal/llama-server',
     },
   ],
   windows: [
     {
-      pathEnv: 'ARIATYPE_LLAMA_SERVER_WINDOWS_X64_PATH',
-      shaEnv: 'ARIATYPE_LLAMA_SERVER_WINDOWS_X64_SHA256',
+      pathEnv: 'VOICEFLOW_LLAMA_SERVER_WINDOWS_X64_PATH',
+      shaEnv: 'VOICEFLOW_LLAMA_SERVER_WINDOWS_X64_SHA256',
       destinationResource: 'bin/windows/llama-server.exe',
     },
     {
-      pathEnv: 'ARIATYPE_LLAMA_SERVER_WINDOWS_PATH',
-      shaEnv: 'ARIATYPE_LLAMA_SERVER_WINDOWS_SHA256',
+      pathEnv: 'VOICEFLOW_LLAMA_SERVER_WINDOWS_PATH',
+      shaEnv: 'VOICEFLOW_LLAMA_SERVER_WINDOWS_SHA256',
       destinationResource: 'bin/windows/llama-server.exe',
     },
   ],
   linux: [
     {
-      pathEnv: 'ARIATYPE_LLAMA_SERVER_LINUX_X64_PATH',
-      shaEnv: 'ARIATYPE_LLAMA_SERVER_LINUX_X64_SHA256',
+      pathEnv: 'VOICEFLOW_LLAMA_SERVER_LINUX_X64_PATH',
+      shaEnv: 'VOICEFLOW_LLAMA_SERVER_LINUX_X64_SHA256',
       destinationResource: 'bin/linux/llama-server',
     },
     {
-      pathEnv: 'ARIATYPE_LLAMA_SERVER_LINUX_PATH',
-      shaEnv: 'ARIATYPE_LLAMA_SERVER_LINUX_SHA256',
+      pathEnv: 'VOICEFLOW_LLAMA_SERVER_LINUX_PATH',
+      shaEnv: 'VOICEFLOW_LLAMA_SERVER_LINUX_SHA256',
       destinationResource: 'bin/linux/llama-server',
     },
   ],
 };
 
-const REQUIRED_RUNTIME_ENV = 'ARIATYPE_REQUIRE_LOCAL_POLISH_RUNTIME';
+const REQUIRED_RUNTIME_ENV = 'VOICEFLOW_REQUIRE_LOCAL_POLISH_RUNTIME';
 
 function tauriDir(rootDir) {
   return resolve(rootDir, 'apps/desktop/src-tauri');
@@ -224,7 +224,7 @@ export function prepareRuntimeSidecarArtifact({
       throw new Error(
         [
           `Missing local polish runtime artifact for ${normalizedPlatform}.`,
-          'Set a matching ARIATYPE_LLAMA_SERVER_*_PATH environment variable',
+          'Set a matching VOICEFLOW_LLAMA_SERVER_*_PATH environment variable',
           `or disable ${REQUIRED_RUNTIME_ENV}.`,
         ].join(' ')
       );

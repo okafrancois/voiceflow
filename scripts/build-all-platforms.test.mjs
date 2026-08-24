@@ -30,7 +30,7 @@ const {
 } = await import('./build-all-platforms-lib.mjs');
 
 test('preserves and restores bundle artifacts after later target cleanups', () => {
-  const tempDir = mkdtempSync(join(tmpdir(), 'ariatype-target-preserve-'));
+  const tempDir = mkdtempSync(join(tmpdir(), 'voiceflow-target-preserve-'));
   try {
     const targetDir = join(tempDir, 'target');
     const bundleDmgDir = join(
@@ -49,9 +49,9 @@ test('preserves and restores bundle artifacts after later target cleanups', () =
     );
     mkdirSync(bundleDmgDir, { recursive: true });
     mkdirSync(bundleMacosDir, { recursive: true });
-    writeFileSync(join(bundleDmgDir, 'AriaType_1.0.4_aarch64.dmg'), 'dmg');
-    writeFileSync(join(bundleMacosDir, 'AriaType.app.tar.gz'), 'archive');
-    writeFileSync(join(bundleMacosDir, 'AriaType.app.tar.gz.sig'), 'signature');
+    writeFileSync(join(bundleDmgDir, 'Voice Flow_1.0.4_aarch64.dmg'), 'dmg');
+    writeFileSync(join(bundleMacosDir, 'Voice Flow.app.tar.gz'), 'archive');
+    writeFileSync(join(bundleMacosDir, 'Voice Flow.app.tar.gz.sig'), 'signature');
 
     const preserver = createBundleArtifactPreserver({
       targetDir,
@@ -67,10 +67,10 @@ test('preserves and restores bundle artifacts after later target cleanups', () =
 
     assert.deepEqual(preserver.restore(), ['aarch64-apple-darwin']);
     assert.equal(
-      readFileSync(join(bundleDmgDir, 'AriaType_1.0.4_aarch64.dmg'), 'utf8'),
+      readFileSync(join(bundleDmgDir, 'Voice Flow_1.0.4_aarch64.dmg'), 'utf8'),
       'dmg',
     );
-    assert.equal(readFileSync(join(bundleMacosDir, 'AriaType.app.tar.gz.sig'), 'utf8'), 'signature');
+    assert.equal(readFileSync(join(bundleMacosDir, 'Voice Flow.app.tar.gz.sig'), 'utf8'), 'signature');
 
     preserver.cleanup();
     assert.equal(existsSync(join(tempDir, 'cache')), false);
@@ -80,7 +80,7 @@ test('preserves and restores bundle artifacts after later target cleanups', () =
 });
 
 test('collects release assets from restored target bundles with unique updater names', () => {
-  const tempDir = mkdtempSync(join(tmpdir(), 'ariatype-release-assets-'));
+  const tempDir = mkdtempSync(join(tmpdir(), 'voiceflow-release-assets-'));
   try {
     const targetDir = join(tempDir, 'target');
     const releaseDir = join(targetDir, 'release', 'github-release');
@@ -88,21 +88,21 @@ test('collects release assets from restored target bundles with unique updater n
     const armBundle = join(targetDir, 'aarch64-apple-darwin', 'release', 'bundle');
     mkdirSync(join(armBundle, 'dmg'), { recursive: true });
     mkdirSync(join(armBundle, 'macos'), { recursive: true });
-    writeFileSync(join(armBundle, 'dmg', 'AriaType_1.0.4_aarch64.dmg'), 'arm dmg');
-    writeFileSync(join(armBundle, 'macos', 'AriaType.app.tar.gz'), 'arm archive');
-    writeFileSync(join(armBundle, 'macos', 'AriaType.app.tar.gz.sig'), 'arm signature');
+    writeFileSync(join(armBundle, 'dmg', 'Voice Flow_1.0.4_aarch64.dmg'), 'arm dmg');
+    writeFileSync(join(armBundle, 'macos', 'Voice Flow.app.tar.gz'), 'arm archive');
+    writeFileSync(join(armBundle, 'macos', 'Voice Flow.app.tar.gz.sig'), 'arm signature');
 
     const intelBundle = join(targetDir, 'x86_64-apple-darwin', 'release', 'bundle');
     mkdirSync(join(intelBundle, 'dmg'), { recursive: true });
     mkdirSync(join(intelBundle, 'macos'), { recursive: true });
-    writeFileSync(join(intelBundle, 'dmg', 'AriaType_1.0.4_x64.dmg'), 'intel dmg');
-    writeFileSync(join(intelBundle, 'macos', 'AriaType.app.tar.gz'), 'intel archive');
-    writeFileSync(join(intelBundle, 'macos', 'AriaType.app.tar.gz.sig'), 'intel signature');
+    writeFileSync(join(intelBundle, 'dmg', 'Voice Flow_1.0.4_x64.dmg'), 'intel dmg');
+    writeFileSync(join(intelBundle, 'macos', 'Voice Flow.app.tar.gz'), 'intel archive');
+    writeFileSync(join(intelBundle, 'macos', 'Voice Flow.app.tar.gz.sig'), 'intel signature');
 
     const windowsBundle = join(targetDir, 'x86_64-pc-windows-msvc', 'release', 'bundle', 'nsis');
     mkdirSync(windowsBundle, { recursive: true });
-    writeFileSync(join(windowsBundle, 'AriaType_1.0.4_x64-setup.exe'), 'setup');
-    writeFileSync(join(windowsBundle, 'AriaType_1.0.4_x64-setup.exe.sig'), 'setup signature');
+    writeFileSync(join(windowsBundle, 'Voice Flow_1.0.4_x64-setup.exe'), 'setup');
+    writeFileSync(join(windowsBundle, 'Voice Flow_1.0.4_x64-setup.exe.sig'), 'setup signature');
 
     const copied = collectReleaseAssetsFromTarget({
       targetDir,
@@ -115,17 +115,17 @@ test('collects release assets from restored target bundles with unique updater n
     });
 
     assert.deepEqual(copied.sort(), [
-      'AriaType_1.0.4_aarch64.app.tar.gz',
-      'AriaType_1.0.4_aarch64.app.tar.gz.sig',
-      'AriaType_1.0.4_aarch64.dmg',
-      'AriaType_1.0.4_x64-setup.exe',
-      'AriaType_1.0.4_x64-setup.exe.sig',
-      'AriaType_1.0.4_x64.app.tar.gz',
-      'AriaType_1.0.4_x64.app.tar.gz.sig',
-      'AriaType_1.0.4_x64.dmg',
+      'Voice Flow_1.0.4_aarch64.app.tar.gz',
+      'Voice Flow_1.0.4_aarch64.app.tar.gz.sig',
+      'Voice Flow_1.0.4_aarch64.dmg',
+      'Voice Flow_1.0.4_x64-setup.exe',
+      'Voice Flow_1.0.4_x64-setup.exe.sig',
+      'Voice Flow_1.0.4_x64.app.tar.gz',
+      'Voice Flow_1.0.4_x64.app.tar.gz.sig',
+      'Voice Flow_1.0.4_x64.dmg',
     ]);
-    assert.equal(readFileSync(join(releaseDir, 'AriaType_1.0.4_x64.app.tar.gz'), 'utf8'), 'intel archive');
-    assert.equal(readFileSync(join(releaseDir, 'AriaType_1.0.4_x64-setup.exe.sig'), 'utf8'), 'setup signature');
+    assert.equal(readFileSync(join(releaseDir, 'Voice Flow_1.0.4_x64.app.tar.gz'), 'utf8'), 'intel archive');
+    assert.equal(readFileSync(join(releaseDir, 'Voice Flow_1.0.4_x64-setup.exe.sig'), 'utf8'), 'setup signature');
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }
@@ -133,41 +133,41 @@ test('collects release assets from restored target bundles with unique updater n
 
 test('extracts the last bundled DMG path from a Tauri build log', () => {
   const buildLog = `
-    Bundling AriaType_1.0.0_aarch64.dmg (/repo/target/aarch64/release/bundle/dmg/AriaType_1.0.0_aarch64.dmg)
+    Bundling Voice Flow_1.0.0_aarch64.dmg (/repo/target/aarch64/release/bundle/dmg/Voice Flow_1.0.0_aarch64.dmg)
      Running bundle_dmg.sh
-    Bundling AriaType_1.0.0_x64.dmg (/repo/target/x86/release/bundle/dmg/AriaType_1.0.0_x64.dmg)
+    Bundling Voice Flow_1.0.0_x64.dmg (/repo/target/x86/release/bundle/dmg/Voice Flow_1.0.0_x64.dmg)
      Running bundle_dmg.sh
 `;
 
   assert.equal(
     findLastBundledDmgPath(buildLog),
-    '/repo/target/x86/release/bundle/dmg/AriaType_1.0.0_x64.dmg',
+    '/repo/target/x86/release/bundle/dmg/Voice Flow_1.0.0_x64.dmg',
   );
 });
 
 test('builds a replayable bundle_dmg trace command with required arguments', () => {
   const command = createDmgTraceCommand({
     scriptPath: '/repo/target/x86/release/bundle/dmg/bundle_dmg.sh',
-    dmgPath: '/repo/target/x86/release/bundle/dmg/AriaType_1.0.0_x64.dmg',
+    dmgPath: '/repo/target/x86/release/bundle/dmg/Voice Flow_1.0.0_x64.dmg',
     sourceDir: '/repo/target/x86/release/bundle/macos',
-    traceDmgPath: '/repo/target/x86/release/bundle/dmg/trace.AriaType_1.0.0_x64.dmg',
+    traceDmgPath: '/repo/target/x86/release/bundle/dmg/trace.Voice Flow_1.0.0_x64.dmg',
     traceLogPath: '/repo/apps/desktop/.build-diagnostics/run/bundle_dmg.trace.log',
     backgroundPath: '/repo/apps/desktop/assets/background.png',
     windowSize: { width: 660, height: 400 },
   });
 
   assert.match(command, /^set -o pipefail; cd '\/repo\/target\/x86\/release\/bundle\/dmg' && bash -x \.\/bundle_dmg\.sh /);
-  assert.match(command, /'--volname' 'AriaType'/);
+  assert.match(command, /'--volname' 'Voice Flow'/);
   assert.match(command, /'--background' '\/repo\/apps\/desktop\/assets\/background\.png'/);
   assert.match(command, /'--window-size' '660' '400'/);
-  assert.match(command, /'\/repo\/target\/x86\/release\/bundle\/dmg\/trace\.AriaType_1\.0\.0_x64\.dmg' '\/repo\/target\/x86\/release\/bundle\/macos'/);
+  assert.match(command, /'\/repo\/target\/x86\/release\/bundle\/dmg\/trace\.Voice Flow_1\.0\.0_x64\.dmg' '\/repo\/target\/x86\/release\/bundle\/macos'/);
   assert.match(command, /2>&1 \| tee '\/repo\/apps\/desktop\/\.build-diagnostics\/run\/bundle_dmg\.trace\.log'$/);
 });
 
 test('infers DMG volume names for release artifacts with spaces', () => {
   assert.equal(
-    inferDmgVolumeName('/repo/dmg/AriaType Inhouse_0.5.2_x64.dmg'),
-    'AriaType Inhouse',
+    inferDmgVolumeName('/repo/dmg/Voice Flow Inhouse_0.5.2_x64.dmg'),
+    'Voice Flow Inhouse',
   );
 });
 
@@ -270,13 +270,13 @@ test('mirrors command output to a build log when requested', () => {
       error() {},
       warn() {},
     },
-    logFile: '/tmp/ariatype build.log',
+    logFile: '/tmp/voiceflow build.log',
   });
 
   assert.equal(success, true);
   assert.equal(
     observedCommand,
-    "set -o pipefail; (npm run tauri -- build) 2>&1 | tee '/tmp/ariatype build.log'",
+    "set -o pipefail; (npm run tauri -- build) 2>&1 | tee '/tmp/voiceflow build.log'",
   );
   assert.equal(observedOptions.shell, '/bin/bash');
   assert.equal(observedOptions.stdio, 'inherit');
@@ -443,9 +443,9 @@ test('windows cross-build env does not duplicate crt-static rustflag', () => {
 test('parses hdiutil mounted images with volume mount points', () => {
   const parsed = parseHdiutilMountedImages(`
 ================================================
-image-path      : /repo/apps/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/AriaType_0.6.4_aarch64.dmg
+image-path      : /repo/apps/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/Voice Flow_0.6.4_aarch64.dmg
 /dev/disk8\tGUID_partition_scheme\t
-/dev/disk8s1\t48465300-0000-11AA-AA11-00306543ECAC\t/Volumes/AriaType
+/dev/disk8s1\t48465300-0000-11AA-AA11-00306543ECAC\t/Volumes/Voice Flow
 ================================================
 image-path      : /Users/me/Downloads/Other.dmg
 /dev/disk9s1\t48465300-0000-11AA-AA11-00306543ECAC\t/Volumes/Other
@@ -453,8 +453,8 @@ image-path      : /Users/me/Downloads/Other.dmg
 
   assert.deepEqual(parsed, [
     {
-      imagePath: '/repo/apps/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/AriaType_0.6.4_aarch64.dmg',
-      mountPoints: ['/Volumes/AriaType'],
+      imagePath: '/repo/apps/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/Voice Flow_0.6.4_aarch64.dmg',
+      mountPoints: ['/Volumes/Voice Flow'],
     },
     {
       imagePath: '/Users/me/Downloads/Other.dmg',
@@ -463,19 +463,19 @@ image-path      : /Users/me/Downloads/Other.dmg
   ]);
 });
 
-test('finds only stale AriaType dmg mounts inside the repo', () => {
+test('finds only stale Voice Flow dmg mounts inside the repo', () => {
   const info = `
-image-path      : /repo/apps/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/AriaType_0.6.4_aarch64.dmg
-/dev/disk8s1\t48465300-0000-11AA-AA11-00306543ECAC\t/Volumes/AriaType
+image-path      : /repo/apps/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/Voice Flow_0.6.4_aarch64.dmg
+/dev/disk8s1\t48465300-0000-11AA-AA11-00306543ECAC\t/Volumes/Voice Flow
 ================================================
-image-path      : /repo/apps/desktop/src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/AriaType_0.6.4_x64.dmg
-/dev/disk9s1\t48465300-0000-11AA-AA11-00306543ECAC\t/Volumes/AriaType 1
+image-path      : /repo/apps/desktop/src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/Voice Flow_0.6.4_x64.dmg
+/dev/disk9s1\t48465300-0000-11AA-AA11-00306543ECAC\t/Volumes/Voice Flow 1
 ================================================
-image-path      : /repo/apps/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/AriaType Inhouse_0.6.5_aarch64.dmg
-/dev/disk10s1\t48465300-0000-11AA-AA11-00306543ECAC\t/Volumes/AriaType Inhouse
+image-path      : /repo/apps/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/Voice Flow Inhouse_0.6.5_aarch64.dmg
+/dev/disk10s1\t48465300-0000-11AA-AA11-00306543ECAC\t/Volumes/Voice Flow Inhouse
 ================================================
-image-path      : /Users/me/Downloads/AriaType_0.6.5_aarch64.dmg
-/dev/disk11s1\t48465300-0000-11AA-AA11-00306543ECAC\t/Volumes/AriaType 2
+image-path      : /Users/me/Downloads/Voice Flow_0.6.5_aarch64.dmg
+/dev/disk11s1\t48465300-0000-11AA-AA11-00306543ECAC\t/Volumes/Voice Flow 2
 ================================================
 image-path      : /repo/apps/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/Polywise.dmg
 /dev/disk12s1\t48465300-0000-11AA-AA11-00306543ECAC\t/Volumes/Polywise
@@ -483,12 +483,12 @@ image-path      : /repo/apps/desktop/src-tauri/target/aarch64-apple-darwin/relea
 
   const mounts = findRepoDmgMounts(info, {
     repoRoot: '/repo',
-    volumeNames: ['AriaType', 'AriaType Inhouse'],
+    volumeNames: ['Voice Flow', 'Voice Flow Inhouse'],
   });
 
   assert.deepEqual(
     mounts.map((mount) => mount.mountPoint),
-    ['/Volumes/AriaType', '/Volumes/AriaType 1', '/Volumes/AriaType Inhouse']
+    ['/Volumes/Voice Flow', '/Volumes/Voice Flow 1', '/Volumes/Voice Flow Inhouse']
   );
 });
 
@@ -496,8 +496,8 @@ test('detaches stale repo dmg mounts before mac packaging', () => {
   const commands = [];
   const warnings = [];
   const info = `
-image-path      : /repo/apps/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/AriaType_0.6.4_aarch64.dmg
-/dev/disk8s1\t48465300-0000-11AA-AA11-00306543ECAC\t/Volumes/AriaType 1
+image-path      : /repo/apps/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/Voice Flow_0.6.4_aarch64.dmg
+/dev/disk8s1\t48465300-0000-11AA-AA11-00306543ECAC\t/Volumes/Voice Flow 1
 `;
 
   const detached = detachRepoDmgMounts({
@@ -516,7 +516,7 @@ image-path      : /repo/apps/desktop/src-tauri/target/aarch64-apple-darwin/relea
     },
   });
 
-  assert.deepEqual(commands, ['hdiutil info', "hdiutil detach '/Volumes/AriaType 1'"]);
+  assert.deepEqual(commands, ['hdiutil info', "hdiutil detach '/Volumes/Voice Flow 1'"]);
   assert.equal(detached.length, 1);
-  assert.ok(warnings[0].includes('Detaching stale AriaType DMG mount'));
+  assert.ok(warnings[0].includes('Detaching stale Voice Flow DMG mount'));
 });

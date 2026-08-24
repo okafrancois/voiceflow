@@ -10,7 +10,7 @@ const {
 test('infers Tauri updater platform keys from artifact and bundle paths', () => {
   assert.deepEqual(
     inferUpdaterPlatforms({
-      file: 'AriaType.app.tar.gz',
+      file: 'Voice Flow.app.tar.gz',
       sourceDir: '/repo/apps/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/macos',
     }),
     ['darwin-aarch64'],
@@ -18,7 +18,7 @@ test('infers Tauri updater platform keys from artifact and bundle paths', () => 
 
   assert.deepEqual(
     inferUpdaterPlatforms({
-      file: 'AriaType.app.tar.gz',
+      file: 'Voice Flow.app.tar.gz',
       sourceDir: '/repo/apps/desktop/src-tauri/target/x86_64-apple-darwin/release/bundle/macos',
     }),
     ['darwin-x86_64'],
@@ -26,7 +26,7 @@ test('infers Tauri updater platform keys from artifact and bundle paths', () => 
 
   assert.deepEqual(
     inferUpdaterPlatforms({
-      file: 'AriaType.app.tar.gz',
+      file: 'Voice Flow.app.tar.gz',
       sourceDir: '/repo/apps/desktop/src-tauri/target/universal-apple-darwin/release/bundle/macos',
     }),
     ['darwin-aarch64', 'darwin-x86_64'],
@@ -34,7 +34,7 @@ test('infers Tauri updater platform keys from artifact and bundle paths', () => 
 
   assert.deepEqual(
     inferUpdaterPlatforms({
-      file: 'AriaType_1.0.4_x64-setup.nsis.zip',
+      file: 'Voice Flow_1.0.4_x64-setup.nsis.zip',
       sourceDir: '/repo/apps/desktop/src-tauri/target/release/bundle/nsis',
     }),
     ['windows-x86_64'],
@@ -42,7 +42,7 @@ test('infers Tauri updater platform keys from artifact and bundle paths', () => 
 
   assert.deepEqual(
     inferUpdaterPlatforms({
-      file: 'AriaType_1.0.4_x64-setup.exe',
+      file: 'Voice Flow_1.0.4_x64-setup.exe',
       sourceDir: '/tmp/release',
     }),
     ['windows-x86_64'],
@@ -56,11 +56,11 @@ test('builds a Tauri updater manifest with signature contents', () => {
     notes: 'Fast and quiet.',
     platforms: {
       'darwin-aarch64': {
-        url: 'https://github.com/joe223/AriaType/releases/latest/download/AriaType.app.tar.gz',
+        url: 'https://github.com/okafrancois/voiceflow/releases/latest/download/Voice Flow.app.tar.gz',
         signature: 'mac-signature',
       },
       'windows-x86_64': {
-        url: 'https://github.com/joe223/AriaType/releases/latest/download/AriaType_1.0.5_x64-setup.exe',
+        url: 'https://github.com/okafrancois/voiceflow/releases/latest/download/Voice Flow_1.0.5_x64-setup.exe',
         signature: 'win-signature',
       },
     },
@@ -72,11 +72,11 @@ test('builds a Tauri updater manifest with signature contents', () => {
     notes: 'Fast and quiet.',
     platforms: {
       'darwin-aarch64': {
-        url: 'https://github.com/joe223/AriaType/releases/latest/download/AriaType.app.tar.gz',
+        url: 'https://github.com/okafrancois/voiceflow/releases/latest/download/Voice Flow.app.tar.gz',
         signature: 'mac-signature',
       },
       'windows-x86_64': {
-        url: 'https://github.com/joe223/AriaType/releases/latest/download/AriaType_1.0.5_x64-setup.exe',
+        url: 'https://github.com/okafrancois/voiceflow/releases/latest/download/Voice Flow_1.0.5_x64-setup.exe',
         signature: 'win-signature',
       },
     },
@@ -90,7 +90,7 @@ test('drops stale updater platforms when the release version changes', () => {
         version: '1.0.4',
         platforms: {
           'darwin-aarch64': {
-            url: 'https://github.com/joe223/AriaType/releases/download/v1.0.4/old.app.tar.gz',
+            url: 'https://github.com/okafrancois/voiceflow/releases/download/v1.0.4/old.app.tar.gz',
             signature: 'old',
           },
         },
@@ -98,14 +98,14 @@ test('drops stale updater platforms when the release version changes', () => {
       version: '1.0.5',
       nextPlatforms: {
         'windows-x86_64': {
-          url: 'https://github.com/joe223/AriaType/releases/download/v1.0.5/new.nsis.zip',
+          url: 'https://github.com/okafrancois/voiceflow/releases/download/v1.0.5/new.nsis.zip',
           signature: 'new',
         },
       },
     }),
     {
       'windows-x86_64': {
-        url: 'https://github.com/joe223/AriaType/releases/download/v1.0.5/new.nsis.zip',
+        url: 'https://github.com/okafrancois/voiceflow/releases/download/v1.0.5/new.nsis.zip',
         signature: 'new',
       },
     },

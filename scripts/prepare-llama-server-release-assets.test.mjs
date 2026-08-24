@@ -19,7 +19,7 @@ import {
 } from './prepare-llama-server-release-assets.mjs';
 
 function createFixture() {
-  const root = mkdtempSync(join(tmpdir(), 'ariatype-llama-assets-'));
+  const root = mkdtempSync(join(tmpdir(), 'voiceflow-llama-assets-'));
   const assetsDir = resolve(root, 'assets');
   mkdirSync(assetsDir, { recursive: true });
   mkdirSync(resolve(root, 'apps/desktop/src-tauri'), { recursive: true });
@@ -27,7 +27,7 @@ function createFixture() {
 }
 
 function createTarArchive({ assetsDir, archiveName, binaryName, content, dependencies = {} }) {
-  const stageDir = mkdtempSync(join(tmpdir(), 'ariatype-llama-archive-'));
+  const stageDir = mkdtempSync(join(tmpdir(), 'voiceflow-llama-archive-'));
   const binaryPath = resolve(stageDir, 'llama-build/bin', binaryName);
   mkdirSync(dirname(binaryPath), { recursive: true });
   writeFileSync(binaryPath, content);
@@ -41,7 +41,7 @@ function createTarArchive({ assetsDir, archiveName, binaryName, content, depende
 }
 
 function createZipArchive({ assetsDir, archiveName, binaryName, content, dependencies = {} }) {
-  const stageDir = mkdtempSync(join(tmpdir(), 'ariatype-llama-archive-'));
+  const stageDir = mkdtempSync(join(tmpdir(), 'voiceflow-llama-archive-'));
   const binaryPath = resolve(stageDir, 'llama-build/bin', binaryName);
   mkdirSync(dirname(binaryPath), { recursive: true });
   writeFileSync(binaryPath, content);

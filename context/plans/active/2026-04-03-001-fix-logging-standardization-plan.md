@@ -300,7 +300,7 @@ Note: Some `context` usage may be appropriate for nested operation context — e
 
 ## Documentation / Operational Notes
 
-- After changes, verify with: `cargo clippy --all-features -- -D warnings` and `pnpm --filter @ariatype/desktop typecheck`
+- After changes, verify with: `cargo clippy --all-features -- -D warnings` and `pnpm --filter @voiceflow/desktop typecheck`
 - No runtime config changes required — logging is always-on per spec
 
 ## Sources & References

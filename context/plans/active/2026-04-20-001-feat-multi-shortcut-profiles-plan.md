@@ -374,8 +374,8 @@ Reference `context/feat/multi-shortcut/1.0.0/prd/erd.md` ADR sections:
 - Integration: SettingsContext renders profiles list
 
 **Verification:**
-- `pnpm --filter @ariatype/desktop build`
-- `pnpm --filter @ariatype/shared typecheck`
+- `pnpm --filter @voiceflow/desktop build`
+- `pnpm --filter @voiceflow/shared typecheck`
 - Manual: Frontend loads → profiles visible
 
 ---
@@ -441,8 +441,8 @@ cargo fmt -- --check
 ### Frontend
 
 ```bash
-pnpm --filter @ariatype/desktop build
-pnpm --filter @ariatype/shared typecheck
+pnpm --filter @voiceflow/desktop build
+pnpm --filter @voiceflow/shared typecheck
 ```
 
 ### Manual

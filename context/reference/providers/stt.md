@@ -1,262 +1,118 @@
-# STT Provider API Documentation
+# Shipped cloud STT providers
 
-This document describes the available Speech-to-Text (STT) cloud providers, their purposes, and official documentation.
+This reference describes the cloud speech-to-text providers that Voice Flow can dispatch today. The provider IDs and field definitions come from `apps/desktop/src-tauri/src/provider_schema.rs`.
 
----
+## Provider list
 
-## Overview
+| Provider ID | Display name | Protocol | Runtime |
+|-------------|--------------|----------|---------|
+| `volcengine-streaming` | Volcengine Streaming | Volcengine binary WebSocket | `VolcengineStreamingClient` |
+| `aliyun-stream` | Aliyun Realtime | DashScope Realtime JSON WebSocket | `AliyunStreamClient` |
+| `elevenlabs` | ElevenLabs | Scribe v2 Realtime JSON WebSocket | `ElevenLabsStreamingClient` |
 
-AriaType supports multiple cloud STT providers to transcribe audio into text. Each provider has different characteristics in terms of latency, accuracy, cost, and language support.
+No other cloud STT provider ID is supported. OpenAI Whisper, OpenAI Realtime, Deepgram, Volcengine Flash, and custom batch endpoints are not exposed by the backend.
 
----
+## Shared recording contract
 
-## Provider Summary
+All three providers implement the same recording lifecycle:
 
-| Provider | Type | Latency | Best For | Languages |
-|----------|------|---------|----------|-----------|
-| Volcengine Streaming | WebSocket Real-time | Low (~200ms) | Live dictation, real-time transcription | 60+ languages |
-| Volcengine Flash | HTTP Batch | Medium | Short recordings, batch processing | 60+ languages |
-| OpenAI Whisper | HTTP Batch | Medium | High accuracy transcription | 50+ languages |
-| OpenAI Realtime | WebSocket Real-time | Low | Real-time with GPT-4o capabilities | Multiple |
-| Deepgram | WebSocket Real-time | Very Low (~300ms) | Fast streaming, cost-effective | 30+ languages |
-| Custom Endpoint | HTTP/WebSocket | Varies | Self-hosted or custom STT services | Varies |
+1. The backend creates a `StreamingSttClient` from the saved provider ID.
+2. `connect()` completes the WebSocket handshake and provider setup.
+3. The recording pipeline forwards 16 kHz mono PCM chunks through the provider audio channel.
+4. `finish()` closes the audio channel, sends the provider's final packet, and waits for a final transcript.
+5. `close()` releases the WebSocket connection.
 
----
+The connection check uses the saved active configuration. It connects and closes without sending user audio.
 
 ## Volcengine Streaming
 
-### Description
-Real-time streaming STT via WebSocket. Provides partial results during speech, ideal for live dictation scenarios.
+### Contract
 
-### Purpose
-- Real-time voice input
-- Live transcription with immediate feedback
-- Continuous speech recognition
+| Field | Value |
+|-------|-------|
+| Provider ID | `volcengine-streaming` |
+| Endpoint | `wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_nostream` |
+| Resource ID default | `volc.bigasr.sauc.duration` |
+| App ID header | `X-Api-App-Key` |
+| Access token header | `X-Api-Access-Key` |
+| Resource header | `X-Api-Resource-Id` |
+| Connection header | `X-Api-Connect-Id` |
+| Audio | PCM, 16 kHz, 16-bit, mono |
+| Recommended chunk | 1,600 samples, about 100 ms |
 
-### API Endpoint
-```
-wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_nostream
-```
+Voice Flow uses only `bigmodel_nostream`. Official `bigmodel` and `bigmodel_async` URLs are rejected before the connection attempt because the product prioritizes transcription accuracy over lower latency. A custom non-Volcengine host remains possible for a test server or an explicit compatible proxy.
 
-### Configuration Required
-- **App ID**: Application identifier from Volcengine Console
-- **Access Token**: Authentication token (may expire, needs refresh)
-- **Resource ID** (optional): Default `volc.bigasr.sauc.duration`
+The initial binary request enables inverse text normalization and punctuation, disables disfluency removal, and sends `result_type: "full"`. This keeps repeated or hesitant speech available to the Polish stage while retaining provider number and punctuation normalization.
 
-### Official Documentation
-- [Volcengine Speech-to-Text Console](https://console.volcengine.com/sami)
-- [API Documentation](https://www.volcengine.com/context/6561/79817)
-- [Streaming Protocol](https://www.volcengine.com/context/6561/79818)
+Official references:
 
-### Key Features
-- Partial results during speech
-- Language auto-detection
-- Punctuation and formatting
-- Low latency (~200ms chunk processing)
+- [Volcengine speech recognition documentation](https://www.volcengine.com/docs/6561/162929?lang=en)
+- [Voice Flow decision record for `bigmodel_nostream`](../../architecture/decisions/002-nostream-volcengine.md)
 
-### STT Output Principle: Raw & Accurate
+## Aliyun Realtime
 
-> **STT should output raw, unprocessed transcription.** The Polish engine handles formatting (ITN, punctuation, deduplication). STT's job is accurate phonetic transcription, not polished text.
+### Contract
 
-**Volcengine configuration:**
-```json
-{
-  "enable_itn": true,     // Spoken digits → "1978" — Polish engine handles formatting
-  "enable_punc": true,   // Sentence punctuation — Polish engine handles formatting
-  "enable_ddc": false    // Disfluency/deduplication — OFF: preserve raw output
-}
-```
+| Field | Value |
+|-------|-------|
+| Provider ID | `aliyun-stream` |
+| Default endpoint | `wss://dashscope.aliyuncs.com/api-ws/v1/realtime` |
+| Default model | `qwen3-asr-flash-realtime` |
+| Authentication | `Authorization: Bearer <api-key>` |
+| Compatibility header | `OpenAI-Beta: realtime=v1` |
+| Audio | Base64 PCM, 16 kHz, 16-bit, mono |
+| Recommended chunk | 1,600 samples, about 100 ms |
 
----
+The model is appended as the `model` query parameter. Voice Flow sends `session.update` with text-only output, PCM input, the selected language, and `turn_detection: null`. It then sends `input_audio_buffer.append` events. `finish()` sends `input_audio_buffer.commit`, followed by `session.finish`, and waits for `session.finished`.
 
-## Volcengine Flash
+Alibaba now recommends workspace-specific domains. The default legacy DashScope domain remains supported by Alibaba. Users who have a workspace-specific endpoint can enter its base URL in the provider settings. Voice Flow adds the configured model query parameter.
 
-### Description
-HTTP-based batch STT for short audio files. Lower cost than streaming, suitable for offline processing.
+Official references:
 
-### Purpose
-- Short audio transcription (< 60 seconds)
-- Batch processing of recordings
-- Cost-sensitive scenarios
+- [Qwen-ASR-Realtime interaction flow](https://www.alibabacloud.com/help/en/model-studio/qwen-asr-realtime-interaction-process)
+- [Qwen-ASR-Realtime client events](https://www.alibabacloud.com/help/en/model-studio/qwen-asr-realtime-client-events)
 
-### API Endpoint
-```
-https://openspeech.bytedance.com/api/v3/auc/bigmodel/recognize/flash
-```
+## ElevenLabs
 
-### Configuration Required
-- **App ID**: Application identifier
-- **Access Token**: Authentication token
-- **Resource ID** (optional): Model identifier
+### Contract
 
-### Official Documentation
-- [Volcengine Flash API](https://www.volcengine.com/context/6561/79819)
+| Field | Value |
+|-------|-------|
+| Provider ID | `elevenlabs` |
+| Endpoint | `wss://api.elevenlabs.io/v1/speech-to-text/realtime` |
+| Default model | `scribe_v2_realtime` |
+| Authentication | `xi-api-key: <api-key>` |
+| Audio format query | `audio_format=pcm_16000` |
+| Audio | Base64 PCM, 16 kHz, 16-bit, mono |
+| Recommended chunk | 16,000 samples, about 1 second |
 
-### Key Features
-- Lower cost than streaming
-- No real-time results
-- Suitable for batch processing
-- Good for short recordings
+The client adds `language_code` when a language is selected and always adds `model_id`. Audio travels in `input_audio_chunk` messages. `finish()` sends an empty audio chunk with `commit: true` and waits for `committed_transcript`.
 
----
+For the first audio chunk, Voice Flow combines the glossary, work domain, subdomain, and initial prompt into ElevenLabs `previous_text`. Later chunks do not repeat that context.
 
-## OpenAI Whisper
+Official references:
 
-### Description
-OpenAI's Whisper model via batch API. High accuracy transcription with support for 50+ languages.
+- [ElevenLabs Realtime STT API](https://elevenlabs.io/docs/api-reference/speech-to-text/v-1-speech-to-text-realtime)
+- [ElevenLabs transcripts and commit strategies](https://elevenlabs.io/docs/eleven-api/guides/how-to/speech-to-text/realtime/transcripts-and-commit-strategies)
 
-### Purpose
-- High-accuracy transcription
-- Multi-language support
-- Scenarios where latency is not critical
+## Deterministic contract tests
 
-### API Endpoint
-```
-https://api.openai.com/v1/audio/transcriptions
+These tests run against local WebSocket servers. They need no vendor credentials or internet connection.
+
+```bash
+cd apps/desktop/src-tauri
+cargo test --test volcengine_streaming_mock_test
+cargo test --test cloud_stt_provider_contract_test
+cargo test --test cloud_stt_streaming_lifecycle_test
 ```
 
-### Configuration Required
-- **API Key**: OpenAI API key from platform.openai.com
-- **Model** (optional): Default `whisper-1`
+They cover handshake headers, URL parameters, initial session messages, audio framing, final packets, response parsing, callbacks, and unsupported provider dispatch.
 
-### Official Documentation
-- [OpenAI Audio API](https://platform.openai.com/context/api-reference/audio)
-- [Whisper Model](https://platform.openai.com/context/models/whisper)
+Live auth-rejection checks are ignored by default because they depend on vendor availability and network access:
 
-### Key Features
-- High accuracy
-- 50+ language support
-- Translation capability (to English)
-- Price: $0.006/minute
-
----
-
-## OpenAI Realtime
-
-### Description
-OpenAI's Realtime API with GPT-4o for low-latency speech-to-text with advanced capabilities.
-
-### Purpose
-- Real-time transcription with AI capabilities
-- Voice-to-voice applications
-- Advanced audio understanding
-
-### API Endpoint
-```
-wss://api.openai.com/v1/realtime
+```bash
+cd apps/desktop/src-tauri
+cargo test --test cloud_stt_streaming_lifecycle_test -- --ignored --nocapture
 ```
 
-### Configuration Required
-- **API Key**: OpenAI API key with Realtime API access
-- **Model**: `gpt-4o-realtime-preview-2026-12-17`
-
-### Official Documentation
-- [OpenAI Realtime API](https://platform.openai.com/context/api-reference/realtime)
-- [Realtime API Guide](https://platform.openai.com/context/guides/realtime)
-
-### Key Features
-- Very low latency
-- GPT-4o powered understanding
-- Function calling support
-- Audio output capability
-
----
-
-## Deepgram
-
-### Description
-Deepgram's streaming STT via WebSocket. Fast, accurate, and cost-effective for real-time transcription.
-
-### Purpose
-- Fast streaming transcription
-- Cost-effective real-time STT
-- High-volume applications
-
-### API Endpoint
-```
-wss://api.deepgram.com/v1/listen
-```
-
-### Configuration Required
-- **API Key**: Deepgram API key from console.deepgram.com
-- **Model** (optional): Default `nova-2`
-- **Language** (optional): Language code (e.g., `en-US`, `zh-CN`)
-
-### Official Documentation
-- [Deepgram API Reference](https://developers.deepgram.com/api-reference/)
-- [Streaming STT](https://developers.deepgram.com/documentation/features/streaming/)
-- [Console](https://console.deepgram.com/)
-
-### Key Features
-- Very fast (~300ms latency)
-- Nova-2 model for high accuracy
-- Interim results
-- Smart formatting and punctuation
-- Cost-effective pricing
-
----
-
-## Custom Endpoint
-
-### Description
-OpenAI-compatible custom STT endpoint for self-hosted or third-party STT services.
-
-### Purpose
-- Self-hosted STT services
-- Third-party STT providers with OpenAI-compatible API
-- Custom STT implementations
-
-### Configuration Required
-- **API Key**: Authentication key for your service
-- **Base URL**: Your STT API endpoint
-- **Model** (optional): Model identifier
-
-### Use Cases
-- Self-hosted Whisper models
-- Azure Speech Services
-- Google Cloud Speech-to-Text
-- Custom STT implementations
-
-### Example Configuration
-```json
-{
-  "provider_type": "custom",
-  "api_key": "your-api-key",
-  "base_url": "https://your-stt-service.com/v1/audio/transcriptions",
-  "model": "whisper-large-v3"
-}
-```
-
----
-
-## Provider Selection Guide
-
-### Choose Volcengine Streaming when:
-- You need real-time transcription for live dictation
-- Low latency is critical
-- You're primarily targeting Chinese users
-
-### Choose Volcengine Flash when:
-- You have short recordings (< 60 seconds)
-- Cost is a primary concern
-- Real-time results are not needed
-
-### Choose OpenAI Whisper when:
-- Accuracy is the top priority
-- You need multi-language support
-- Latency is acceptable
-
-### Choose OpenAI Realtime when:
-- You need advanced AI capabilities
-- Voice-to-voice interaction is required
-- Budget allows for premium service
-
-### Choose Deepgram when:
-- You need fast, cost-effective streaming STT
-- High volume with good accuracy
-- English-language focus
-
-### Choose Custom Endpoint when:
-- You have self-hosted STT infrastructure
-- You need a provider not directly supported
-- You want full control over STT pipeline
+An ignored test reaching an auth error proves only that the vendor accepted the URL and request shape far enough to reject the credentials. It does not prove account access, transcription quality, billing status, or successful audio recognition.

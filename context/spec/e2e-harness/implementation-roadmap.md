@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-This document provides the complete implementation roadmap for E2E testing and Harness Engineering in the AriaType Tauri application.
+This document provides the complete implementation roadmap for E2E testing and Harness Engineering in the Voice Flow Tauri application.
 
 ### Key Decisions
 

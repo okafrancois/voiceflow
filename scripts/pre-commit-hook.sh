@@ -49,7 +49,7 @@ fi
 
 # ── 3. Unit tests ─────────────────────────────────────────────
 info "Running unit tests (vitest)..."
-if ! pnpm --filter @ariatype/desktop test; then
+if ! pnpm --filter @voiceflow/desktop test; then
     error "Unit tests failed."
     EXIT_CODE=1
 fi
@@ -59,7 +59,7 @@ if [ "${SKIP_E2E:-}" = "1" ]; then
     warn "SKIP_E2E=1 — skipping e2e tests."
 else
     info "Running e2e tests..."
-    if ! pnpm --filter @ariatype/desktop test:e2e; then
+    if ! pnpm --filter @voiceflow/desktop test:e2e; then
         error "E2E tests failed."
         EXIT_CODE=1
     fi

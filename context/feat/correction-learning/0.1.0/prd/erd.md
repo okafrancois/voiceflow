@@ -9,22 +9,22 @@
 
 ## Overview
 
-Correction Learning passively learns user correction behavior after AriaType
-delivers text. When the user edits delivered text in the target app, AriaType
+Correction Learning passively learns user correction behavior after Voice Flow
+delivers text. When the user edits delivered text in the target app, Voice Flow
 observes a small before/after text delta and stores a local correction mapping:
 
 ```
 wrong text -> corrected text
 ```
 
-The learned mapping is then available to all AriaType variants that run on the
+The learned mapping is then available to all Voice Flow variants that run on the
 same machine, including development, in-house, and production builds.
 
 ## Problem Statement
 
 STT and polish output can still contain product names, domain terms, or personal
 wording that the user knows how to correct. Today those edits disappear after
-the target application accepts the text, so AriaType cannot improve from the
+the target application accepts the text, so Voice Flow cannot improve from the
 user's repeated corrections.
 
 ## Goals
@@ -64,7 +64,7 @@ user's repeated corrections.
 | Surface | User Meaning |
 |---------|--------------|
 | Target editor | User corrects delivered text naturally where they work |
-| Shared correction file | AriaType remembers compact correction pairs locally |
+| Shared correction file | Voice Flow remembers compact correction pairs locally |
 | Pill tooltip | User receives a small confirmation that the correction was learned |
 
 ## Architecture
@@ -86,7 +86,7 @@ user's repeated corrections.
 Correction data is stored outside the bundle-specific app data directory:
 
 ```
-<user data dir>/AriaType/correction-learning/corrections.json
+<user data dir>/Voice Flow/correction-learning/corrections.json
 ```
 
 This path is intentionally shared across dev, in-house, and production builds.
@@ -170,26 +170,26 @@ interface AppSettings {
 
 ### Learn a correction pair
 
-Given AriaType delivered `Please right the report`
+Given Voice Flow delivered `Please right the report`
 When the focused editor later contains `Please write the report`
 Then the shared correction file stores `right -> write`
 And the pill window receives a correction learned event.
 
 ### Ignore non-correction edits
 
-Given AriaType delivered `hello`
+Given Voice Flow delivered `hello`
 When the focused editor later contains `hello world`
 Then no correction mapping is stored.
 
 ### Learn a compact whole-output replacement
 
-Given AriaType delivered `sue tea`
+Given Voice Flow delivered `sue tea`
 When the user deletes that output and retypes `sootie`
 Then the shared correction file stores `sue tea -> sootie`.
 
 ### Ignore deletion without replacement
 
-Given AriaType delivered `sue tea`
+Given Voice Flow delivered `sue tea`
 When the focused editor later contains no replacement text
 Then no correction mapping is stored.
 
@@ -198,14 +198,14 @@ Then no correction mapping is stored.
 Given the shared correction file contains `right -> write`
 And the mapping frequency is at least 2
 When future STT output contains `Please right the report`
-Then AriaType sends `Please write the report` into polish and delivery.
+Then Voice Flow sends `Please write the report` into polish and delivery.
 
 ### Do not apply first observation
 
 Given the shared correction file contains `right -> write`
 And the mapping frequency is 1
 When future STT output contains `Please right the report`
-Then AriaType keeps the text unchanged.
+Then Voice Flow keeps the text unchanged.
 
 ### Clear local memory
 
@@ -215,9 +215,9 @@ Then the shared correction file is removed.
 
 ### Delete one learned dictionary term
 
-Given correction memory has stored `Air Tap -> AriaType` and `Dictate -> Dictation`
-When the user deletes `AriaType` from Dictionary
-Then correction memory no longer contains mappings corrected to `AriaType`
+Given correction memory has stored `Air Tap -> Voice Flow` and `Dictate -> Dictation`
+When the user deletes `Voice Flow` from Dictionary
+Then correction memory no longer contains mappings corrected to `Voice Flow`
 And the `Dictate -> Dictation` mapping remains.
 
 ## Verification

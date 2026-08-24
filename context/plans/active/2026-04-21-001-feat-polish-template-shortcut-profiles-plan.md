@@ -897,7 +897,7 @@ export const shortcutCommands = {
 
 **Step 4: Run TypeScript check**
 
-Run: `pnpm --filter @ariatype/desktop build`
+Run: `pnpm --filter @voiceflow/desktop build`
 
 Expected: No TypeScript errors
 
@@ -1128,7 +1128,7 @@ const handleDeleteCustom = async () => {
 
 **Step 4: Run frontend build**
 
-Run: `pnpm --filter @ariatype/desktop build`
+Run: `pnpm --filter @voiceflow/desktop build`
 
 Expected: Build succeeds
 
@@ -1263,8 +1263,8 @@ cargo fmt -- --check
 ### Frontend
 
 ```bash
-pnpm --filter @ariatype/desktop build
-pnpm --filter @ariatype/shared typecheck
+pnpm --filter @voiceflow/desktop build
+pnpm --filter @voiceflow/shared typecheck
 pnpm check:i18n
 ```
 

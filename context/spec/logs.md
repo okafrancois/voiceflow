@@ -1,6 +1,6 @@
 # Logging Specification
 
-Conventions, format, and coverage requirements for AriaType logging.
+Conventions, format, and coverage requirements for Voice Flow logging.
 
 ---
 
@@ -11,7 +11,7 @@ Conventions, format, and coverage requirements for AriaType logging.
 - `tracing` + `tracing-subscriber` + `tracing-appender`
 - Outputs: stderr (human-readable) + rolling hourly file (no ANSI)
 - Environment prefix: `[DEV]` or `[PROD]` added by format layer
-- File: `~/Library/Logs/ariatype/ariatype.log.YYYY-MM-DD-HH` (macOS)
+- File: `~/Library/Logs/voiceflow/voiceflow.log.YYYY-MM-DD-HH` (macOS)
 - Retention: 7 days, cleaned on startup
 - Default level: `info` (override via `RUST_LOG`)
 
@@ -47,7 +47,7 @@ Conventions, format, and coverage requirements for AriaType logging.
 - `ENV`: `[DEV]` or `[PROD]` — environment prefix (dev-only, not user-facing)
 - `timestamp`: ISO 8601 format
 - `LEVEL`: `ERROR` / `WARN` / `INFO` / `DEBUG` / `TRACE`
-- `target`: module path (e.g., `ariatype_lib::stt_engine::sherpa_onnx::engine`)
+- `target`: module path (e.g., `voiceflow_lib::stt_engine::sherpa_onnx::engine`)
 - `message`: `event_name-description` pattern (snake_case, lowercase)
 - `fields`: structured key=value pairs
 
@@ -72,7 +72,7 @@ info!(task_id, duration_ms, text_len, "transcription_completed");
 error!(task_id, error = %e, "transcription_failed-model_not_found");
 
 // ❌ Wrong
-info!("starting ariatype application");
+info!("starting voiceflow application");
 error!("transcription failed: {}", e);
 info!("[{}] model loaded", prefix);
 ```
