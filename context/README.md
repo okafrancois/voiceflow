@@ -119,6 +119,7 @@ Versioned feature specs with verification status. Each lives under `feat/<name>/
 | [Complete Long Dictation](./feat/long-recording-transcription/0.1.0/prd/erd.md) | 0.1.0 | Completed |
 | [Voice Flow Brand Cleanup](./feat/voice-flow-brand-cleanup/0.1.0/prd/erd.md) | 0.1.0 | Completed |
 | [Privacy Retention Controls](./feat/privacy-retention/0.1.0/prd/erd.md) | 0.1.0 | Completed |
+| [Paste Last Transcription](./feat/paste-last-transcription/0.1.0/prd/erd.md) | 0.1.0 | Completed |
 
 ### Draft (Deferred)
 

@@ -20,6 +20,19 @@ User releases hotkey
   → Session text and audio retained according to their independent local policies
 ```
 
+## Last-transcription recovery flow
+
+```text
+User chooses Paste Last Transcription in the system tray
+  → Tray dispatches the backend history action without focusing the main window
+  → History selects the newest successful row with non-blank final text
+  → text_injector inserts that final text into the focused target
+  → History records inserted_keyboard, inserted_clipboard, or failed
+```
+
+The action reads only retained history. When text retention leaves no successful
+result, it returns an error and does not keep a separate transcript cache.
+
 ## Local retention flow
 
 The Rust backend owns both retention policies. The frontend only reads their current values, updates them through typed IPC, and renders the backend’s storage counts.

@@ -353,6 +353,7 @@ pub fn run() {
             history::get_history_audio,
             history::copy_history_entry,
             history::reinsert_history_entry,
+            history::paste_last_transcription,
             commands::platform_quality::run_setup_diagnostics,
             commands::platform_quality::run_setup_latency_test,
             commands::platform_quality::apply_setup_preset,

@@ -68,6 +68,12 @@ pub struct HistoryStore {
     conn: parking_lot::Mutex<Connection>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LatestTranscriptionText {
+    pub id: String,
+    pub final_text: String,
+}
+
 #[derive(Debug, Clone)]
 struct DashboardEntry {
     created_at: i64,
@@ -411,6 +417,40 @@ impl HistoryStore {
             .map_err(|e| format!("failed to collect history: {e}"))?;
 
         Ok(entries)
+    }
+
+    pub fn get_latest_successful_transcription(
+        &self,
+    ) -> Result<Option<LatestTranscriptionText>, String> {
+        let conn = self.conn.lock();
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, final_text FROM transcription_history \
+                 WHERE status = 'success' ORDER BY created_at DESC, rowid DESC",
+            )
+            .map_err(|error| {
+                format!("failed to prepare latest successful transcription query: {error}")
+            })?;
+        let mut rows = stmt
+            .query([])
+            .map_err(|error| format!("failed to query latest successful transcription: {error}"))?;
+
+        while let Some(row) = rows
+            .next()
+            .map_err(|error| format!("failed to read latest successful transcription: {error}"))?
+        {
+            let id = row.get(0).map_err(|error| {
+                format!("failed to read latest successful transcription id: {error}")
+            })?;
+            let final_text: String = row.get(1).map_err(|error| {
+                format!("failed to read latest successful transcription text: {error}")
+            })?;
+            if !final_text.trim().is_empty() {
+                return Ok(Some(LatestTranscriptionText { id, final_text }));
+            }
+        }
+
+        Ok(None)
     }
 
     pub fn delete_entry(&self, id: &str) -> Result<(), String> {
@@ -1358,6 +1398,57 @@ mod tests {
             ],
         )
         .unwrap();
+    }
+
+    #[test]
+    fn latest_successful_transcription_skips_newer_failed_and_blank_entries() {
+        let store = test_store();
+        insert_entry(&store, TestEntry::new("older", 1_000, "older result"));
+        insert_entry(
+            &store,
+            TestEntry::new("latest-usable", 2_000, "latest result"),
+        );
+        insert_entry(&store, TestEntry::new("blank", 3_000, "   \n"));
+        insert_entry(&store, TestEntry::new("failed", 4_000, "failed result"));
+        store
+            .mark_error("failed", "provider rejected audio")
+            .unwrap();
+
+        let latest = store
+            .get_latest_successful_transcription()
+            .unwrap()
+            .expect("a usable successful transcription should be selected");
+
+        assert_eq!(latest.id, "latest-usable");
+        assert_eq!(latest.final_text, "latest result");
+    }
+
+    #[test]
+    fn latest_successful_transcription_uses_insertion_order_to_break_timestamp_ties() {
+        let store = test_store();
+        insert_entry(&store, TestEntry::new("first", 1_000, "first result"));
+        insert_entry(&store, TestEntry::new("second", 1_000, "second result"));
+
+        let latest = store
+            .get_latest_successful_transcription()
+            .unwrap()
+            .expect("a successful transcription should be selected");
+
+        assert_eq!(latest.id, "second");
+        assert_eq!(latest.final_text, "second result");
+    }
+
+    #[test]
+    fn latest_successful_transcription_returns_none_when_history_has_no_usable_text() {
+        let store = test_store();
+        insert_entry(&store, TestEntry::new("blank", 1_000, "\t"));
+        insert_entry(&store, TestEntry::new("failed", 2_000, "failed result"));
+        store.mark_error("failed", "model unavailable").unwrap();
+
+        assert!(store
+            .get_latest_successful_transcription()
+            .unwrap()
+            .is_none());
     }
 
     #[test]

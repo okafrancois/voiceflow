@@ -38,6 +38,7 @@ A plan is only completed when all implementation units are closed, verification 
 
 | Plan | Type | Date |
 |------|------|------|
+| [Paste Last Transcription](./completed/2026-08-25-001-feat-paste-last-transcription-plan.md) | feat | 2026-08-25 |
 | [Voice Flow Product Opportunities B1-B5 and P1-P13](./completed/2026-08-24-001-feat-product-opportunities-plan.md) | feat | 2026-08-24 |
 | [Cloud Provider Contract Alignment](./completed/2026-08-24-003-fix-provider-contract-alignment-plan.md) | fix | 2026-08-24 |
 | [Complete Local Whisper Transcription for Long Recordings](./completed/2026-08-23-002-fix-long-whisper-transcription-plan.md) | fix | 2026-08-23 |

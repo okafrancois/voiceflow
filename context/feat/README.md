@@ -42,6 +42,7 @@ Feature specs are versioned delivery contracts. Each spec at `context/feat/[name
 | Complete Long Dictation | 0.1.0 | Completed | [erd.md](./long-recording-transcription/0.1.0/prd/erd.md) |
 | Voice Flow Brand Cleanup | 0.1.0 | Completed | [erd.md](./voice-flow-brand-cleanup/0.1.0/prd/erd.md) |
 | Privacy Retention Controls | 0.1.0 | Completed | [erd.md](./privacy-retention/0.1.0/prd/erd.md) |
+| Paste Last Transcription | 0.1.0 | Completed | [erd.md](./paste-last-transcription/0.1.0/prd/erd.md) |
 
 ## Spec Format
 

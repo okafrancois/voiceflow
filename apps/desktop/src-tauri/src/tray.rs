@@ -2,7 +2,7 @@
 //!
 //! Provides a persistent tray icon in the system status bar with:
 //! - Click to show/hide main settings window
-//! - Context menu with: Show Settings, Toggle Recording, Quit
+//! - Context menu with: Show Settings, Toggle Recording, Paste Last Transcription, Quit
 //! - Visual indicator for recording state (icon changes)
 
 use tauri::{
@@ -11,12 +11,32 @@ use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     AppHandle, Manager,
 };
-use tracing::{error, info, instrument};
+use tracing::{error, info, instrument, warn};
 
 /// Tray menu item IDs
 pub const MENU_ID_SHOW_SETTINGS: &str = "show-settings";
 pub const MENU_ID_TOGGLE_RECORDING: &str = "toggle-recording";
+pub const MENU_ID_PASTE_LAST_TRANSCRIPTION: &str = "paste-last-transcription";
 pub const MENU_ID_QUIT: &str = "quit";
+pub const MENU_LABEL_PASTE_LAST_TRANSCRIPTION: &str = "Paste Last Transcription";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TrayMenuAction {
+    ShowSettings,
+    ToggleRecording,
+    PasteLastTranscription,
+    Quit,
+}
+
+fn tray_menu_action_for_id(id: &str) -> Option<TrayMenuAction> {
+    match id {
+        MENU_ID_SHOW_SETTINGS => Some(TrayMenuAction::ShowSettings),
+        MENU_ID_TOGGLE_RECORDING => Some(TrayMenuAction::ToggleRecording),
+        MENU_ID_PASTE_LAST_TRANSCRIPTION => Some(TrayMenuAction::PasteLastTranscription),
+        MENU_ID_QUIT => Some(TrayMenuAction::Quit),
+        _ => None,
+    }
+}
 
 /// Create and setup the system tray icon with menu.
 ///
@@ -43,11 +63,28 @@ pub fn create_tray(app: &AppHandle) -> tauri::Result<()> {
         None::<&str>,
     )?;
 
+    let paste_last_transcription = MenuItem::with_id(
+        app,
+        MENU_ID_PASTE_LAST_TRANSCRIPTION,
+        MENU_LABEL_PASTE_LAST_TRANSCRIPTION,
+        true,
+        None::<&str>,
+    )?;
+
     let quit = MenuItem::with_id(app, MENU_ID_QUIT, "Quit", true, None::<&str>)?;
 
     let separator = PredefinedMenuItem::separator(app)?;
 
-    let menu = Menu::with_items(app, &[&show_settings, &toggle_recording, &separator, &quit])?;
+    let menu = Menu::with_items(
+        app,
+        &[
+            &show_settings,
+            &toggle_recording,
+            &paste_last_transcription,
+            &separator,
+            &quit,
+        ],
+    )?;
 
     let builder = TrayIconBuilder::with_id("voiceflow-tray")
         .icon(tray_icon)
@@ -99,18 +136,21 @@ fn handle_menu_event(app: &AppHandle, event: tauri::menu::MenuEvent) {
     let id = event.id().as_ref();
     info!(menu_item = id, "tray_menu_clicked");
 
-    match id {
-        MENU_ID_SHOW_SETTINGS => {
+    match tray_menu_action_for_id(id) {
+        Some(TrayMenuAction::ShowSettings) => {
             show_main_window(app);
         }
-        MENU_ID_TOGGLE_RECORDING => {
+        Some(TrayMenuAction::ToggleRecording) => {
             toggle_recording(app);
         }
-        MENU_ID_QUIT => {
+        Some(TrayMenuAction::PasteLastTranscription) => {
+            paste_last_transcription(app);
+        }
+        Some(TrayMenuAction::Quit) => {
             info!("quit_requested-tray_menu");
             app.exit(0);
         }
-        _ => {
+        None => {
             info!(menu_item = id, "tray_menu_unknown");
         }
     }
@@ -196,6 +236,21 @@ fn toggle_recording(app: &AppHandle) {
     }
 }
 
+fn paste_last_transcription(app: &AppHandle) {
+    let state = match app.try_state::<crate::state::app_state::AppState>() {
+        Some(state) => state,
+        None => {
+            error!("app_state_not_found");
+            return;
+        }
+    };
+
+    match crate::history::paste_last_transcription_from_state(&state) {
+        Ok(status) => info!(status, "last_transcription_pasted-tray"),
+        Err(error) => warn!(error = %error, "last_transcription_paste_failed-tray"),
+    }
+}
+
 /// Update tray icon based on recording state.
 ///
 /// Call this when recording state changes to show a visual indicator.
@@ -238,4 +293,29 @@ pub fn update_tray_menu_recording_text(app: &AppHandle, is_recording: bool) -> t
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        tray_menu_action_for_id, TrayMenuAction, MENU_ID_PASTE_LAST_TRANSCRIPTION,
+        MENU_LABEL_PASTE_LAST_TRANSCRIPTION,
+    };
+
+    #[test]
+    fn paste_last_transcription_menu_contract_has_label_and_dispatch_action() {
+        assert_eq!(
+            MENU_LABEL_PASTE_LAST_TRANSCRIPTION,
+            "Paste Last Transcription"
+        );
+        assert_eq!(
+            tray_menu_action_for_id(MENU_ID_PASTE_LAST_TRANSCRIPTION),
+            Some(TrayMenuAction::PasteLastTranscription)
+        );
+    }
+
+    #[test]
+    fn unknown_tray_menu_id_has_no_action() {
+        assert_eq!(tray_menu_action_for_id("unknown"), None);
+    }
 }

@@ -609,6 +609,47 @@ pub fn reinsert_history_entry(
     }
 }
 
+fn paste_last_transcription_with<F>(store: &HistoryStore, insert: F) -> Result<String, String>
+where
+    F: FnOnce(&str) -> Result<crate::text_injector::InjectionMethod, String>,
+{
+    let latest = store
+        .get_latest_successful_transcription()?
+        .ok_or_else(|| "No successful transcription is available".to_string())?;
+
+    match insert(&latest.final_text) {
+        Ok(method) => {
+            let status = match method {
+                crate::text_injector::InjectionMethod::Keyboard => "inserted_keyboard",
+                crate::text_injector::InjectionMethod::Clipboard => "inserted_clipboard",
+            };
+            store.update_delivery_status(&latest.id, status)?;
+            Ok(status.to_string())
+        }
+        Err(error) => {
+            if let Err(update_error) = store.update_delivery_status(&latest.id, "failed") {
+                tracing::warn!(
+                    error = %update_error,
+                    entry_id = %latest.id,
+                    "history_delivery_status_update_failed"
+                );
+            }
+            Err(error)
+        }
+    }
+}
+
+pub fn paste_last_transcription_from_state(state: &AppState) -> Result<String, String> {
+    let store = state.history_store.lock();
+    paste_last_transcription_with(&store, crate::text_injector::insert_text)
+}
+
+#[tauri::command]
+#[tracing::instrument(skip(state), ret, err)]
+pub fn paste_last_transcription(state: State<'_, AppState>) -> Result<String, String> {
+    paste_last_transcription_from_state(&state)
+}
+
 async fn process_media_file(
     state: &AppState,
     request: &FileTranscriptionRequest,
@@ -1189,12 +1230,113 @@ fn should_skip_failed_history_for_duration(
 #[cfg(test)]
 mod tests {
     use super::{
-        prune_terminal_file_jobs, resolve_workbench_template_prompt,
+        paste_last_transcription_with, prune_terminal_file_jobs, resolve_workbench_template_prompt,
         should_skip_failed_history_for_duration, FileJobRecord, FileJobState,
         MAX_TERMINAL_FILE_JOBS,
     };
+    use crate::history::{HistoryStore, NewTranscriptionEntry};
     use crate::services::transcription_workbench::FileTranscriptionRequest;
+    use crate::text_injector::InjectionMethod;
+    use std::cell::Cell;
     use std::path::PathBuf;
+
+    fn successful_history_entry(text: &str) -> NewTranscriptionEntry {
+        NewTranscriptionEntry {
+            raw_text: format!("raw {text}"),
+            final_text: text.to_string(),
+            stt_engine: "whisper".to_string(),
+            stt_model: None,
+            language: None,
+            audio_duration_ms: None,
+            stt_duration_ms: None,
+            polish_duration_ms: None,
+            total_duration_ms: None,
+            polish_applied: false,
+            polish_engine: None,
+            is_cloud: false,
+            audio_path: None,
+            status: "success".to_string(),
+            error: None,
+            source_kind: "recording".to_string(),
+            source_path: None,
+            translation_target: None,
+            timed_segments: Vec::new(),
+            delivery_status: "not_delivered".to_string(),
+        }
+    }
+
+    #[test]
+    fn paste_last_transcription_inserts_final_text_and_records_keyboard_delivery() {
+        let store = HistoryStore::new_in_memory().unwrap();
+        let entry_id = store
+            .insert(successful_history_entry("polished final text"))
+            .unwrap();
+        let mut inserted_text = String::new();
+
+        let status = paste_last_transcription_with(&store, |text| {
+            inserted_text = text.to_string();
+            Ok(InjectionMethod::Keyboard)
+        })
+        .unwrap();
+
+        assert_eq!(inserted_text, "polished final text");
+        assert_eq!(status, "inserted_keyboard");
+        assert_eq!(
+            store.get_entry(&entry_id).unwrap().unwrap().delivery_status,
+            "inserted_keyboard"
+        );
+    }
+
+    #[test]
+    fn paste_last_transcription_records_clipboard_delivery() {
+        let store = HistoryStore::new_in_memory().unwrap();
+        let entry_id = store
+            .insert(successful_history_entry("multiline\nfinal text"))
+            .unwrap();
+
+        let status =
+            paste_last_transcription_with(&store, |_| Ok(InjectionMethod::Clipboard)).unwrap();
+
+        assert_eq!(status, "inserted_clipboard");
+        assert_eq!(
+            store.get_entry(&entry_id).unwrap().unwrap().delivery_status,
+            "inserted_clipboard"
+        );
+    }
+
+    #[test]
+    fn paste_last_transcription_records_failure_and_returns_injector_error() {
+        let store = HistoryStore::new_in_memory().unwrap();
+        let entry_id = store
+            .insert(successful_history_entry("recover me"))
+            .unwrap();
+
+        let error = paste_last_transcription_with(&store, |_| {
+            Err("focused target rejected insertion".to_string())
+        })
+        .unwrap_err();
+
+        assert_eq!(error, "focused target rejected insertion");
+        assert_eq!(
+            store.get_entry(&entry_id).unwrap().unwrap().delivery_status,
+            "failed"
+        );
+    }
+
+    #[test]
+    fn paste_last_transcription_reports_empty_history_without_calling_injector() {
+        let store = HistoryStore::new_in_memory().unwrap();
+        let injector_called = Cell::new(false);
+
+        let error = paste_last_transcription_with(&store, |_| {
+            injector_called.set(true);
+            Ok(InjectionMethod::Keyboard)
+        })
+        .unwrap_err();
+
+        assert_eq!(error, "No successful transcription is available");
+        assert!(!injector_called.get());
+    }
 
     #[test]
     fn failed_history_duration_gate_skips_only_user_recording_failures() {
