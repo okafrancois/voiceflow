@@ -2,6 +2,12 @@
 
 All notable changes to the desktop application will be documented in this file.
 
+## v1.1.2 (2026-08-25)
+
+### Features
+
+- Paste latest transcription from the tray (fc2ab9f)
+
 ## v1.1.1 (2026-08-24)
 
 ### Bug Fixes
