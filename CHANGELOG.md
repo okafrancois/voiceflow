@@ -2,6 +2,12 @@
 
 All notable changes to the desktop application will be documented in this file.
 
+## v1.1.3 (2026-09-04)
+
+### Features
+
+- Preserve original dictation target (8bdc63a)
+
 ## v1.1.2 (2026-08-25)
 
 ### Features
