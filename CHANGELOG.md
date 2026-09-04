@@ -2,6 +2,12 @@
 
 All notable changes to the desktop application will be documented in this file.
 
+## v1.1.4 (2026-09-04)
+
+### Features
+
+- Unify dictation polish settings (e879c34)
+
 ## v1.1.3 (2026-09-04)
 
 ### Features
