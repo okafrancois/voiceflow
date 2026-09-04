@@ -978,6 +978,7 @@ fn migrate_context_workflows(json: &mut serde_json::Value) -> bool {
         json["application_rules"] = serde_json::json!([]);
         migrated = true;
     }
+    migrated |= migrate_riff_into_dictate(json);
     if json.get("voice_snippets").is_none() {
         json["voice_snippets"] = serde_json::json!([]);
         migrated = true;
@@ -995,6 +996,71 @@ fn migrate_context_workflows(json: &mut serde_json::Value) -> bool {
     if migrated {
         tracing::info!("context_workflows_migrated");
     }
+    migrated
+}
+
+fn migrate_riff_into_dictate(json: &mut serde_json::Value) -> bool {
+    let mut migrated = false;
+    let mut dictate_template = None;
+
+    if let Some(profiles) = json
+        .get_mut("workflow_profiles")
+        .and_then(serde_json::Value::as_array_mut)
+    {
+        let riff_template = profiles
+            .iter()
+            .find(|profile| profile.get("id").and_then(serde_json::Value::as_str) == Some("riff"))
+            .and_then(|profile| profile.get("polish_template_id"))
+            .filter(|template| !template.is_null())
+            .cloned();
+
+        if let Some(dictate) = profiles.iter_mut().find(|profile| {
+            profile.get("id").and_then(serde_json::Value::as_str) == Some("dictate")
+        }) {
+            let template = dictate
+                .get("polish_template_id")
+                .filter(|template| !template.is_null())
+                .cloned()
+                .or(riff_template);
+            if dictate.get("polish_template_id") != template.as_ref() {
+                dictate["polish_template_id"] = template.clone().unwrap_or(serde_json::Value::Null);
+                migrated = true;
+            }
+            dictate_template = template;
+        }
+
+        let previous_len = profiles.len();
+        profiles.retain(|profile| {
+            profile.get("id").and_then(serde_json::Value::as_str) != Some("riff")
+        });
+        migrated |= profiles.len() != previous_len;
+    }
+
+    if let Some(rules) = json
+        .get_mut("application_rules")
+        .and_then(serde_json::Value::as_array_mut)
+    {
+        for rule in rules {
+            if rule.get("profile_id").and_then(serde_json::Value::as_str) == Some("riff") {
+                rule["profile_id"] = serde_json::Value::String("dictate".to_string());
+                migrated = true;
+            }
+        }
+    }
+
+    if let Some(record) = json
+        .get_mut("shortcut_profiles")
+        .and_then(|profiles| profiles.get_mut("dictate"))
+        .and_then(|dictate| dictate.get_mut("action"))
+        .and_then(|action| action.get_mut("Record"))
+    {
+        let template = dictate_template.unwrap_or(serde_json::Value::Null);
+        if record.get("polish_template_id") != Some(&template) {
+            record["polish_template_id"] = template;
+            migrated = true;
+        }
+    }
+
     migrated
 }
 

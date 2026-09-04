@@ -384,7 +384,7 @@
   "hotkey.selectTemplate": "Выберите шаблон",
   "hotkey.riffTemplateRequired": "Профиль Riff требует шаблон обработки",
   "hotkey.profiles.dictate": "Dictate",
-  "hotkey.profiles.dictateDesc": "Быстрый голос в текст без обработки",
+  "hotkey.profiles.dictateDesc": "Преобразование речи в текст с дополнительной обработкой",
   "hotkey.profiles.riff": "Riff",
   "hotkey.profiles.riffDesc": "Свободная речь с AI-обработкой",
   "hotkey.profiles.custom": "Пользовательский",

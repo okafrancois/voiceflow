@@ -9,6 +9,8 @@ depends_on: context/plans/active/2026-04-16-002-refactor-shortcut-service-bounda
 
 # Multi-Shortcut Profiles Implementation Plan
 
+> The built-in Dictate/Riff split in this historical plan is superseded by [Dictate polish template](../completed/2026-09-04-002-feat-dictate-polish-template-plan.md).
+
 ## Overview
 
 Implement support for multiple keyboard shortcuts, each bound to a distinct action. Profiles store in settings, dispatch via enum match, and override resolution happens in `PreparedRecordingStart`.

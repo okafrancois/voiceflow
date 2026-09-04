@@ -195,7 +195,7 @@
   "hotkey.selectTemplate": "选择模板",
   "hotkey.riffTemplateRequired": "Riff 配置需要润色模板",
   "hotkey.profiles.dictate": "Dictate",
-  "hotkey.profiles.dictateDesc": "快速语音转文字，无需润色",
+  "hotkey.profiles.dictateDesc": "语音转文字，可选择润色",
   "hotkey.profiles.riff": "Riff",
   "hotkey.profiles.riffDesc": "随意口述，AI 润色表达",
   "hotkey.profiles.custom": "自定义",

@@ -332,8 +332,13 @@ fn fallback_timeout(text: &str) -> Duration {
     .min(LOCAL_POLISH_FALLBACK_MAX_TIMEOUT)
 }
 
-fn build_local_system_prompt(_system_context: &SystemContext, no_think_directive: bool) -> String {
+fn build_local_system_prompt(system_context: &SystemContext, no_think_directive: bool) -> String {
     let mut system_prompt = LOCAL_POLISH_CORE_PROMPT.to_string();
+    let user_rules = system_context.effective_prompt();
+    if !user_rules.trim().is_empty() {
+        system_prompt.push_str("\n\nUSER RULES:\n");
+        system_prompt.push_str(user_rules.trim());
+    }
     if no_think_directive {
         system_prompt.push('\n');
         system_prompt.push_str(NO_THINK_DIRECTIVE);
@@ -492,19 +497,18 @@ mod tests {
     }
 
     #[test]
-    fn local_prompt_uses_concise_core_constraints() {
-        let context = SystemContext::new("Long template rules should not be copied.")
+    fn local_prompt_combines_core_constraints_with_selected_template() {
+        let context = SystemContext::new("Format spoken enumerations as readable lists.")
             .with_window_context("Visible window text should not be copied.");
         let prompt = build_local_system_prompt(&context, true);
 
-        assert!(prompt.len() <= 220);
         assert!(prompt.contains("Fix clear STT mistakes"));
         assert!(prompt.contains("Preserve meaning"));
         assert!(prompt.contains("Do not answer"));
-        assert!(!prompt.contains("Long template rules"));
-        assert!(!prompt.contains("Visible window text"));
-        assert!(!prompt.contains("USER RULES"));
-        assert!(!prompt.contains("REFERENCE CONTEXT"));
+        assert!(prompt.contains("USER RULES"));
+        assert!(prompt.contains("Format spoken enumerations as readable lists."));
+        assert!(prompt.contains("REFERENCE CONTEXT"));
+        assert!(prompt.contains("Visible window text should not be copied."));
         assert!(prompt.contains(NO_THINK_DIRECTIVE));
     }
 
@@ -512,7 +516,7 @@ mod tests {
     fn local_prompt_omits_no_think_directive_when_not_requested() {
         let prompt = build_local_system_prompt(&SystemContext::new("Fix typos."), false);
 
-        assert!(prompt.len() <= 200);
+        assert!(prompt.contains("Fix typos."));
         assert!(!prompt.contains(NO_THINK_DIRECTIVE));
     }
 

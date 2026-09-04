@@ -197,7 +197,7 @@
   "hotkey.selectTemplate": "Select template",
   "hotkey.riffTemplateRequired": "Riff profile requires a polish template",
   "hotkey.profiles.dictate": "Dictate",
-  "hotkey.profiles.dictateDesc": "Quick voice-to-text without polish",
+  "hotkey.profiles.dictateDesc": "Voice-to-text with optional polish",
   "hotkey.profiles.riff": "Riff",
   "hotkey.profiles.riffDesc": "Free-form voice with AI refinement",
   "hotkey.profiles.custom": "Custom",

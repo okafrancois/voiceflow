@@ -172,9 +172,8 @@ pub fn get_shortcut_profiles(state: State<'_, AppState>) -> Result<ShortcutProfi
 /// Update a specific profile by key.
 ///
 /// Validates:
-/// - dictate: template_id must remain None
-/// - riff: template_id cannot be None
-/// - custom: no constraints
+/// - dictate: template_id can be None or any template
+/// - custom: template_id can be None or any template
 /// - hotkey uniqueness across all profiles
 #[tauri::command]
 pub fn update_shortcut_profile(
@@ -245,7 +244,7 @@ pub fn create_custom_profile(
 
 /// Delete custom profile.
 ///
-/// Cannot delete dictate or riff (system profiles).
+/// Cannot delete Dictate, the built-in profile.
 #[tauri::command]
 pub fn delete_custom_profile(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
     let settings = state.settings.lock().clone();
@@ -273,20 +272,44 @@ pub fn delete_custom_profile(app: AppHandle, state: State<'_, AppState>) -> Resu
 
 fn validate_profile_constraints(key: &str, profile: &ShortcutProfile) -> Result<(), String> {
     match &profile.action {
-        crate::shortcut::ShortcutAction::Record { polish_template_id } => match key {
-            "dictate" => {
-                if polish_template_id.is_some() {
-                    return Err("cannot_update_dictate_template".to_string());
-                }
-            }
-            "riff" => {
-                if polish_template_id.is_none() {
-                    return Err("riff_template_cannot_be_null".to_string());
-                }
-            }
-            "custom" => {}
+        crate::shortcut::ShortcutAction::Record { .. } => match key {
+            "dictate" | "custom" => {}
             _ => return Err(format!("unknown_profile_key: {}", key)),
         },
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::shortcut::{ShortcutAction, ShortcutTriggerMode};
+
+    fn profile_with_template(polish_template_id: Option<&str>) -> ShortcutProfile {
+        ShortcutProfile {
+            hotkey: "Cmd+Slash".to_string(),
+            trigger_mode: ShortcutTriggerMode::Hold,
+            action: ShortcutAction::Record {
+                polish_template_id: polish_template_id.map(str::to_string),
+            },
+        }
+    }
+
+    #[test]
+    fn dictate_accepts_no_polish_or_any_template() {
+        assert!(validate_profile_constraints("dictate", &profile_with_template(None)).is_ok());
+        assert!(
+            validate_profile_constraints("dictate", &profile_with_template(Some("document")))
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn riff_is_no_longer_an_updatable_builtin_profile() {
+        assert_eq!(
+            validate_profile_constraints("riff", &profile_with_template(Some("filler")))
+                .unwrap_err(),
+            "unknown_profile_key: riff"
+        );
+    }
 }

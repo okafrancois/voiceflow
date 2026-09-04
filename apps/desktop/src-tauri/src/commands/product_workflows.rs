@@ -586,7 +586,8 @@ mod tests {
         let settings = AppSettings::default();
         let snapshot = WorkflowSettingsSnapshot::from(&settings);
 
-        assert_eq!(snapshot.profiles.len(), 2);
+        assert_eq!(snapshot.profiles.len(), 1);
+        assert_eq!(snapshot.profiles[0].id, "dictate");
         assert!(snapshot.application_rules.is_empty());
         assert!(snapshot.snippets.is_empty());
         assert!(!snapshot.context_capture.clipboard);

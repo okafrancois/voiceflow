@@ -384,7 +384,7 @@
   "hotkey.selectTemplate": "Seleziona modello",
   "hotkey.riffTemplateRequired": "Il profilo Riff richiede un modello di rifinitura",
   "hotkey.profiles.dictate": "Dictate",
-  "hotkey.profiles.dictateDesc": "Voce rapida in testo senza rifinitura",
+  "hotkey.profiles.dictateDesc": "Da voce a testo con rifinitura facoltativa",
   "hotkey.profiles.riff": "Riff",
   "hotkey.profiles.riffDesc": "Voce libera con rifinitura AI",
   "hotkey.profiles.custom": "Personalizzato",

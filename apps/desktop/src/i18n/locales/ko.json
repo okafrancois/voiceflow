@@ -384,7 +384,7 @@
   "hotkey.selectTemplate": "템플릿 선택",
   "hotkey.riffTemplateRequired": "Riff 프로필은 다듬기 템플릿이 필요합니다",
   "hotkey.profiles.dictate": "Dictate",
-  "hotkey.profiles.dictateDesc": "다듬기 없는 빠른 음성-텍스트",
+  "hotkey.profiles.dictateDesc": "선택적 다듬기를 지원하는 음성-텍스트",
   "hotkey.profiles.riff": "Riff",
   "hotkey.profiles.riffDesc": "자유 발화 AI 다듬기",
   "hotkey.profiles.custom": "사용자 지정",

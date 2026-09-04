@@ -384,7 +384,7 @@
   "hotkey.selectTemplate": "テンプレートを選択",
   "hotkey.riffTemplateRequired": "Riff プロファイルには整形テンプレートが必要です",
   "hotkey.profiles.dictate": "Dictate",
-  "hotkey.profiles.dictateDesc": "整形なしの高速音声テキスト変換",
+  "hotkey.profiles.dictateDesc": "任意の文章整形を使える音声テキスト変換",
   "hotkey.profiles.riff": "Riff",
   "hotkey.profiles.riffDesc": "自由な発話をAIで洗練",
   "hotkey.profiles.custom": "カスタム",

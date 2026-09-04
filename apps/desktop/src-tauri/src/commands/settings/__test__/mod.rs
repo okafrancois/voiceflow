@@ -240,10 +240,11 @@ fn context_workflow_migration_preserves_legacy_profile_assignments() {
     });
 
     assert!(migrate_context_workflows_for_test(&mut json));
-    assert_eq!(json["workflow_profiles"].as_array().unwrap().len(), 3);
+    assert_eq!(json["workflow_profiles"].as_array().unwrap().len(), 2);
     assert_eq!(json["workflow_profiles"][0]["hotkey"], "Cmd+D");
-    assert_eq!(json["workflow_profiles"][2]["hotkey"], "Cmd+C");
-    assert_eq!(json["workflow_profiles"][2]["polish_template_id"], "formal");
+    assert_eq!(json["workflow_profiles"][0]["polish_template_id"], "filler");
+    assert_eq!(json["workflow_profiles"][1]["hotkey"], "Cmd+C");
+    assert_eq!(json["workflow_profiles"][1]["polish_template_id"], "formal");
     assert_eq!(json["context_capture"]["clipboard"], false);
     assert_eq!(json["context_capture"]["ocr_fallback"], false);
     assert_eq!(json["window_context_enabled"], false);
@@ -253,13 +254,74 @@ fn context_workflow_migration_preserves_legacy_profile_assignments() {
 fn workflow_settings_default_to_structured_context_without_sensitive_fallbacks() {
     let settings: AppSettings = serde_json::from_value(json!({})).unwrap();
 
-    assert_eq!(settings.workflow_profiles.len(), 2);
+    assert_eq!(settings.workflow_profiles.len(), 1);
     assert!(settings.workflow_profiles[0].protected);
     assert!(settings.context_capture.application_metadata);
     assert!(settings.context_capture.selected_text);
     assert!(!settings.context_capture.clipboard);
     assert!(!settings.context_capture.ocr_fallback);
     assert!(!settings.window_context_enabled);
+}
+
+#[test]
+fn context_workflow_migration_removes_existing_riff_and_retargets_rules() {
+    let mut json = json!({
+        "shortcut_profiles": {
+            "dictate": {
+                "hotkey": "Cmd+D",
+                "trigger_mode": "hold",
+                "action": { "Record": { "polish_template_id": null } }
+            },
+            "riff": {
+                "hotkey": "Cmd+R",
+                "trigger_mode": "toggle",
+                "action": { "Record": { "polish_template_id": "agent" } }
+            }
+        },
+        "workflow_profiles": [
+            {
+                "id": "dictate",
+                "name": "Dictate",
+                "hotkey": "Cmd+D",
+                "trigger_mode": "hold",
+                "language": null,
+                "polish_template_id": null,
+                "translation_target": null,
+                "output_action": "insert",
+                "code_aware": false,
+                "protected": true
+            },
+            {
+                "id": "riff",
+                "name": "Riff",
+                "hotkey": "Cmd+R",
+                "trigger_mode": "toggle",
+                "language": null,
+                "polish_template_id": "agent",
+                "translation_target": null,
+                "output_action": "insert",
+                "code_aware": false,
+                "protected": false
+            }
+        ],
+        "application_rules": [{
+            "id": "editor",
+            "application_id": "com.example.Editor",
+            "title_contains": null,
+            "profile_id": "riff",
+            "enabled": true
+        }]
+    });
+
+    assert!(migrate_context_workflows_for_test(&mut json));
+    assert_eq!(json["workflow_profiles"].as_array().unwrap().len(), 1);
+    assert_eq!(json["workflow_profiles"][0]["id"], "dictate");
+    assert_eq!(json["workflow_profiles"][0]["polish_template_id"], "agent");
+    assert_eq!(json["application_rules"][0]["profile_id"], "dictate");
+    assert_eq!(
+        json["shortcut_profiles"]["dictate"]["action"]["Record"]["polish_template_id"],
+        "agent"
+    );
 }
 
 #[test]

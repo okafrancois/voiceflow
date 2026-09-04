@@ -177,7 +177,7 @@
   "hotkey.selectTemplate": "Vorlage wählen",
   "hotkey.riffTemplateRequired": "Riff-Profil benötigt Polier-Vorlage",
   "hotkey.profiles.dictate": "Dictate",
-  "hotkey.profiles.dictateDesc": "Schnelle Sprache-zu-Text ohne Polieren",
+  "hotkey.profiles.dictateDesc": "Sprache-zu-Text mit optionaler Textoptimierung",
   "hotkey.profiles.riff": "Riff",
   "hotkey.profiles.riffDesc": "Freie Sprache mit AI-Veredelung",
   "hotkey.profiles.custom": "Benutzerdefiniert",

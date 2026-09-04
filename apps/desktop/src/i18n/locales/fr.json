@@ -177,7 +177,7 @@
   "hotkey.selectTemplate": "Sélectionner modèle",
   "hotkey.riffTemplateRequired": "Le profil Riff nécessite un modèle de polissage",
   "hotkey.profiles.dictate": "Dictate",
-  "hotkey.profiles.dictateDesc": "Voix rapide vers texte sans polissage",
+  "hotkey.profiles.dictateDesc": "Dictée avec polissage facultatif",
   "hotkey.profiles.riff": "Riff",
   "hotkey.profiles.riffDesc": "Voix libre avec raffinement AI",
   "hotkey.profiles.custom": "Personnalisé",

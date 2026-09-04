@@ -384,7 +384,7 @@
   "hotkey.selectTemplate": "Selecione modelo",
   "hotkey.riffTemplateRequired": "Perfil Riff requer modelo de polimento",
   "hotkey.profiles.dictate": "Dictate",
-  "hotkey.profiles.dictateDesc": "Voz rápida para texto sem polimento",
+  "hotkey.profiles.dictateDesc": "Voz para texto com polimento opcional",
   "hotkey.profiles.riff": "Riff",
   "hotkey.profiles.riffDesc": "Voz livre com refinamento AI",
   "hotkey.profiles.custom": "Personalizado",

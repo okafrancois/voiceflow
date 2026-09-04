@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { useTranslation } from "react-i18next";
 import { analytics } from "@/lib/analytics";
@@ -18,8 +17,7 @@ import {
   type PolishTemplate,
   type CustomPolishTemplate,
 } from "@/lib/tauri";
-import { Plus, Trash, WarningCircle } from "@phosphor-icons/react";
-import { showErrorToast } from "@/lib/toast";
+import { WarningCircle } from "@phosphor-icons/react";
 
 const RECORDING_MODES = [
   { value: "hold", label: "Hold" },
@@ -98,6 +96,7 @@ function ProfileSection({
         <div className="space-y-2">
           <Label>{t("hotkey.template", "Polish Template")}</Label>
           <Select
+            aria-label={t("hotkey.template", "Polish Template")}
             value={templateId || ""}
             onChange={(e) =>
               onUpdate(
@@ -108,7 +107,6 @@ function ProfileSection({
             }
             options={templateOptions}
             placeholder={t("hotkey.selectTemplate", "Select template")}
-            disabled={!polishAvailable}
           />
           {!polishAvailable && (
             <p className="text-xs text-amber-500 flex items-center gap-1">
@@ -153,60 +151,18 @@ export function HotkeySettings({ variant = "page" }: HotkeySettingsProps = {}) {
 
   const handleUpdateDictate = async (
     hotkey: string,
-    _: string | null,
+    templateId: string | null,
     triggerMode: ShortcutTriggerMode,
   ) => {
-    analytics.track(AnalyticsEvents.SETTING_CHANGED, { setting: "dictate_hotkey", value: hotkey });
+    analytics.track(AnalyticsEvents.SETTING_CHANGED, {
+      setting: "dictate_profile",
+      value: `${hotkey}:${templateId ?? "none"}`,
+    });
     await hotkeyCommands.updateProfile("dictate", {
       hotkey,
       trigger_mode: triggerMode,
-      action: { Record: { polish_template_id: null } },
-    });
-  };
-
-  const handleUpdateRiff = async (
-    hotkey: string,
-    templateId: string | null,
-    triggerMode: ShortcutTriggerMode,
-  ) => {
-    if (!templateId) {
-      showErrorToast(t("hotkey.riffTemplateRequired", "Riff profile requires a polish template"));
-      return;
-    }
-    analytics.track(AnalyticsEvents.SETTING_CHANGED, { setting: "riff_profile", value: `${hotkey}:${templateId}` });
-    await hotkeyCommands.updateProfile("riff", {
-      hotkey,
-      trigger_mode: triggerMode,
       action: { Record: { polish_template_id: templateId } },
     });
-  };
-
-  const handleUpdateCustom = async (
-    hotkey: string,
-    templateId: string | null,
-    triggerMode: ShortcutTriggerMode,
-  ) => {
-    analytics.track(AnalyticsEvents.SETTING_CHANGED, { setting: "custom_profile", value: `${hotkey}:${templateId ?? "none"}` });
-    await hotkeyCommands.updateProfile("custom", {
-      hotkey,
-      trigger_mode: triggerMode,
-      action: { Record: { polish_template_id: templateId } },
-    });
-  };
-
-  const handleCreateCustom = async () => {
-    const firstTemplateId = templates[0]?.id ?? "filler";
-    analytics.track(AnalyticsEvents.SETTING_CHANGED, { setting: "custom_profile_created" });
-    await hotkeyCommands.createCustom({
-      hotkey: "",
-      trigger_mode: "toggle",
-      action: { Record: { polish_template_id: firstTemplateId } },
-    });
-  };
-
-  const handleDeleteCustom = async () => {
-    analytics.track(AnalyticsEvents.SETTING_CHANGED, { setting: "custom_profile_deleted" });
-    await hotkeyCommands.deleteCustom();
   };
 
   return (
@@ -220,15 +176,15 @@ export function HotkeySettings({ variant = "page" }: HotkeySettingsProps = {}) {
       <Card>
         <CardHeader>
           <CardTitle>{t("hotkey.profiles.dictate", "Dictate")}</CardTitle>
-          <CardDescription>{t("hotkey.profiles.dictateDesc", "Quick voice-to-text without polish")}</CardDescription>
+          <CardDescription>{t("hotkey.profiles.dictateDesc", "Voice-to-text with optional polish")}</CardDescription>
         </CardHeader>
         <CardContent>
           <ProfileSection
             profileKey="dictate"
             profile={profiles?.dictate}
             templates={templates}
-            canChangeTemplate={false}
-            allowNullTemplate={false}
+            canChangeTemplate={true}
+            allowNullTemplate={true}
             polishAvailable={polishAvailable}
             onUpdate={handleUpdateDictate}
             testId="profile-dictate"
@@ -236,74 +192,6 @@ export function HotkeySettings({ variant = "page" }: HotkeySettingsProps = {}) {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>{t("hotkey.profiles.riff", "Riff")}</CardTitle>
-          <CardDescription>{t("hotkey.profiles.riffDesc", "Free-form voice with AI refinement")}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ProfileSection
-            profileKey="riff"
-            profile={profiles?.riff}
-            templates={templates}
-            canChangeTemplate={true}
-            allowNullTemplate={false}
-            polishAvailable={polishAvailable}
-            onUpdate={handleUpdateRiff}
-            testId="profile-riff"
-          />
-        </CardContent>
-      </Card>
-
-      {profiles?.custom ? (
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0">
-            <div>
-              <CardTitle>{t("hotkey.profiles.custom", "Custom")}</CardTitle>
-              <CardDescription>{t("hotkey.profiles.customDesc", "Your custom profile")}</CardDescription>
-            </div>
-            <Button variant="ghost" size="icon" onClick={handleDeleteCustom} data-testid="delete-custom-profile">
-              <Trash className="h-4 w-4" />
-            </Button>
-          </CardHeader>
-          <CardContent>
-            <ProfileSection
-              profileKey="custom"
-              profile={profiles.custom}
-              templates={templates}
-              canChangeTemplate={true}
-              allowNullTemplate={true}
-              polishAvailable={polishAvailable}
-              onUpdate={handleUpdateCustom}
-              testId="profile-custom"
-            />
-          </CardContent>
-        </Card>
-      ) : (
-        <Card>
-          <CardHeader>
-            <CardTitle>{t("hotkey.profiles.custom", "Custom")}</CardTitle>
-            <CardDescription>{t("hotkey.profiles.customDesc", "Your custom profile")}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button
-              variant="outline"
-              onClick={handleCreateCustom}
-              disabled={!polishAvailable}
-              data-testid="create-custom-profile"
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              {t("hotkey.profiles.createCustom", "Create Custom Profile")}
-            </Button>
-            {!polishAvailable && (
-              <p className="text-xs text-amber-500 flex items-center gap-1 mt-2">
-                <WarningCircle className="h-3 w-3" />
-                {t("polish.unavailableHint")}
-              </p>
-            )}
-          </CardContent>
-        </Card>
-      )}
     </SettingsPageLayout>
   );
 }

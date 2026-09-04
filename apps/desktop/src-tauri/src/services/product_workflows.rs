@@ -224,32 +224,18 @@ impl WorkflowProfile {
 }
 
 pub fn default_workflow_profiles() -> Vec<WorkflowProfile> {
-    vec![
-        WorkflowProfile {
-            id: "dictate".to_string(),
-            name: "Dictate".to_string(),
-            hotkey: crate::shortcut::default_dictate_hotkey().to_string(),
-            trigger_mode: WorkflowTriggerMode::Hold,
-            language: None,
-            polish_template_id: None,
-            translation_target: None,
-            output_action: OutputAction::Insert,
-            code_aware: false,
-            protected: true,
-        },
-        WorkflowProfile {
-            id: "riff".to_string(),
-            name: "Riff".to_string(),
-            hotkey: crate::shortcut::default_riff_hotkey().to_string(),
-            trigger_mode: WorkflowTriggerMode::Toggle,
-            language: None,
-            polish_template_id: Some("filler".to_string()),
-            translation_target: None,
-            output_action: OutputAction::Insert,
-            code_aware: false,
-            protected: false,
-        },
-    ]
+    vec![WorkflowProfile {
+        id: "dictate".to_string(),
+        name: "Dictate".to_string(),
+        hotkey: crate::shortcut::default_dictate_hotkey().to_string(),
+        trigger_mode: WorkflowTriggerMode::Hold,
+        language: None,
+        polish_template_id: None,
+        translation_target: None,
+        output_action: OutputAction::Insert,
+        code_aware: false,
+        protected: true,
+    }]
 }
 
 pub fn migrate_legacy_profiles(
@@ -258,10 +244,8 @@ pub fn migrate_legacy_profiles(
     let mut profiles = default_workflow_profiles();
     profiles[0].hotkey = legacy.dictate.hotkey.clone();
     profiles[0].trigger_mode = legacy.dictate.trigger_mode;
-    profiles[0].polish_template_id = shortcut_template_id(&legacy.dictate);
-    profiles[1].hotkey = legacy.riff.hotkey.clone();
-    profiles[1].trigger_mode = legacy.riff.trigger_mode;
-    profiles[1].polish_template_id = shortcut_template_id(&legacy.riff);
+    profiles[0].polish_template_id =
+        shortcut_template_id(&legacy.dictate).or_else(|| shortcut_template_id(&legacy.riff));
 
     if let Some(custom) = legacy.custom.as_ref() {
         profiles.push(WorkflowProfile {
@@ -1094,7 +1078,7 @@ mod tests {
     }
 
     #[test]
-    fn legacy_fixed_profiles_migrate_without_changing_shortcuts() {
+    fn legacy_riff_template_migrates_into_dictate_and_custom_is_preserved() {
         let legacy = crate::shortcut::ShortcutProfilesMap {
             dictate: crate::shortcut::ShortcutProfile {
                 hotkey: "Cmd+D".to_string(),
@@ -1121,15 +1105,19 @@ mod tests {
 
         let migrated = migrate_legacy_profiles(&legacy);
 
-        assert_eq!(migrated.len(), 3);
+        assert_eq!(migrated.len(), 2);
         assert_eq!(migrated[0].hotkey, "Cmd+D");
-        assert_eq!(migrated[1].hotkey, "Cmd+R");
-        assert_eq!(migrated[2].hotkey, "Cmd+C");
-        assert_eq!(migrated[2].trigger_mode, WorkflowTriggerMode::DoubleTap);
-        assert_eq!(migrated[2].polish_template_id.as_deref(), Some("formal"));
+        assert_eq!(migrated[0].polish_template_id.as_deref(), Some("filler"));
+        assert_eq!(migrated[1].hotkey, "Cmd+C");
+        assert_eq!(migrated[1].trigger_mode, WorkflowTriggerMode::DoubleTap);
+        assert_eq!(migrated[1].polish_template_id.as_deref(), Some("formal"));
+        assert!(migrated.iter().all(|profile| profile.id != "riff"));
 
         let projected = project_legacy_profiles(&legacy, &migrated);
-        assert_eq!(projected, legacy);
+        assert_eq!(
+            shortcut_template_id(&projected.dictate).as_deref(),
+            Some("filler")
+        );
     }
 
     #[test]

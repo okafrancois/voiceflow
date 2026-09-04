@@ -1,5 +1,7 @@
 # Multi-Shortcut Feature Specification
 
+> Superseded for built-in profiles by [Dictate polish template](../../../dictate-polish-template/1.0.0/prd/erd.md). The fixed Dictate/Riff split remains documented here only as the legacy settings contract.
+
 ## Feature Name
 
 Multi-Shortcut Profiles
