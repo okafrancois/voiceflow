@@ -1,5 +1,7 @@
 use crate::polish_engine::streaming::{collect_openai_streaming_response, PolishRuntimeTimings};
-use crate::polish_engine::traits::{PolishEngineType, PolishRequest, PolishResult, SystemContext};
+use crate::polish_engine::traits::{
+    source_language_instruction, PolishEngineType, PolishRequest, PolishResult, SystemContext,
+};
 use crate::utils::{downloaded_file_is_complete, AppPaths};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -133,6 +135,7 @@ pub(crate) async fn polish_via_local_http(
         &client,
         &http_config,
         &request.system_context,
+        &request.language,
         &request.text,
         timeout,
         preview_callback.as_ref(),
@@ -164,12 +167,14 @@ async fn call_local_openai_api(
     client: &Client,
     config: &LocalOpenAiConfig,
     system_context: &SystemContext,
+    language: &str,
     user_message: &str,
     timeout: Duration,
     preview_callback: Option<&crate::polish_engine::PolishPreviewCallback>,
 ) -> Result<crate::polish_engine::streaming::StreamingPolishResponse, String> {
     let url = local_api_url(&config.base_url);
-    let system_prompt = build_local_system_prompt(system_context, config.no_think_directive);
+    let system_prompt =
+        build_local_system_prompt(system_context, language, config.no_think_directive);
     let body = RequestBody {
         model: config.model.clone(),
         max_tokens: LOCAL_POLISH_MAX_OUTPUT_TOKENS,
@@ -332,8 +337,14 @@ fn fallback_timeout(text: &str) -> Duration {
     .min(LOCAL_POLISH_FALLBACK_MAX_TIMEOUT)
 }
 
-fn build_local_system_prompt(system_context: &SystemContext, no_think_directive: bool) -> String {
+fn build_local_system_prompt(
+    system_context: &SystemContext,
+    language: &str,
+    no_think_directive: bool,
+) -> String {
     let mut system_prompt = LOCAL_POLISH_CORE_PROMPT.to_string();
+    system_prompt.push_str("\n\n");
+    system_prompt.push_str(&source_language_instruction(language));
     let user_rules = system_context.effective_prompt();
     if !user_rules.trim().is_empty() {
         system_prompt.push_str("\n\nUSER RULES:\n");
@@ -500,7 +511,7 @@ mod tests {
     fn local_prompt_combines_core_constraints_with_selected_template() {
         let context = SystemContext::new("Format spoken enumerations as readable lists.")
             .with_window_context("Visible window text should not be copied.");
-        let prompt = build_local_system_prompt(&context, true);
+        let prompt = build_local_system_prompt(&context, "auto", true);
 
         assert!(prompt.contains("Fix clear STT mistakes"));
         assert!(prompt.contains("Preserve meaning"));
@@ -509,14 +520,17 @@ mod tests {
         assert!(prompt.contains("Format spoken enumerations as readable lists."));
         assert!(prompt.contains("REFERENCE CONTEXT"));
         assert!(prompt.contains("Visible window text should not be copied."));
+        assert!(prompt.contains("Detect the language from the user transcript"));
+        assert!(prompt.contains("never translate"));
         assert!(prompt.contains(NO_THINK_DIRECTIVE));
     }
 
     #[test]
     fn local_prompt_omits_no_think_directive_when_not_requested() {
-        let prompt = build_local_system_prompt(&SystemContext::new("Fix typos."), false);
+        let prompt = build_local_system_prompt(&SystemContext::new("Fix typos."), "fr-FR", false);
 
         assert!(prompt.contains("Fix typos."));
+        assert!(prompt.contains("fr-FR"));
         assert!(!prompt.contains(NO_THINK_DIRECTIVE));
     }
 
@@ -536,8 +550,11 @@ mod tests {
     #[tokio::test]
     async fn sends_openai_compatible_local_request_without_auth_by_default() {
         let mock_server = MockServer::start().await;
-        let expected_system_prompt =
-            build_local_system_prompt(&SystemContext::new("System instruction here"), true);
+        let expected_system_prompt = build_local_system_prompt(
+            &SystemContext::new("System instruction here"),
+            "fr-FR",
+            true,
+        );
         let expected_body = serde_json::json!({
             "model": "qwen3.5-0.8b",
             "max_tokens": LOCAL_POLISH_MAX_OUTPUT_TOKENS,
@@ -589,6 +606,7 @@ mod tests {
             &client,
             &test_config(mock_server.uri()),
             &SystemContext::new("System instruction here"),
+            "fr-FR",
             "User text here",
             Duration::from_secs(2),
             None,
@@ -634,6 +652,7 @@ mod tests {
             &client,
             &config,
             &SystemContext::new("System instruction here"),
+            "auto",
             "User text here",
             Duration::from_secs(2),
             None,
@@ -687,6 +706,7 @@ mod tests {
             &client,
             &test_config(mock_server.uri()),
             &SystemContext::new("System instruction here"),
+            "auto",
             "User text here",
             Duration::from_secs(2),
             Some(&callback),

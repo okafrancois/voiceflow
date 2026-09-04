@@ -92,20 +92,10 @@ export async function seedDefaultShortcutProfiles(
     trigger_mode: "hold",
     action: { Record: { polish_template_id: null } },
   };
-  const riffProfile: ShortcutProfilePayload = {
-    hotkey: "Opt+Slash",
-    trigger_mode: "toggle",
-    action: { Record: { polish_template_id: "filler" } },
-  };
-
   await invokeTauri(page, "delete_custom_profile").catch(() => undefined);
   await invokeTauri(page, "update_shortcut_profile", {
     key: "dictate",
     profile: dictateProfile,
-  });
-  await invokeTauri(page, "update_shortcut_profile", {
-    key: "riff",
-    profile: riffProfile,
   });
 }
 

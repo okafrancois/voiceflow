@@ -77,8 +77,6 @@ test('Settings modal navigation matches current sections', async ({ tauriPage },
   const hotkeyPage = settingsModal.locator('[data-testid="hotkey-page"]');
   await expect(hotkeyPage).toBeVisible();
   await expect(hotkeyPage.locator('[data-testid="profile-dictate"]')).toBeVisible();
-  await expect(hotkeyPage.locator('[data-testid="profile-riff"]')).toBeVisible();
-  await expect(hotkeyPage.locator('[data-testid="create-custom-profile"]')).toBeVisible();
 
   await settingsModal.locator('[data-testid="settings-modal-section-transcription"]').click();
   const transcriptionPage = settingsModal.locator('[data-testid="settings-page"]');

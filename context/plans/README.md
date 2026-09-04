@@ -39,6 +39,7 @@ A plan is only completed when all implementation units are closed, verification 
 
 | Plan | Type | Date |
 |------|------|------|
+| [Polish Output Safety](./completed/2026-09-04-003-fix-polish-output-safety-plan.md) | fix | 2026-09-04 |
 | [Paste Last Transcription](./completed/2026-08-25-001-feat-paste-last-transcription-plan.md) | feat | 2026-08-25 |
 | [Dictate Polish Template](./completed/2026-09-04-002-feat-dictate-polish-template-plan.md) | feat | 2026-09-04 |
 | [Voice Flow Product Opportunities B1-B5 and P1-P13](./completed/2026-08-24-001-feat-product-opportunities-plan.md) | feat | 2026-08-24 |

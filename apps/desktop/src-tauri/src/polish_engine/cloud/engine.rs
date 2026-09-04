@@ -2,7 +2,8 @@ use crate::polish_engine::streaming::{
     collect_openai_streaming_response, PolishRuntimeTimings, StreamingPolishResponse,
 };
 use crate::polish_engine::traits::{
-    PolishEngine, PolishEngineType, PolishRequest, PolishResult, SystemContext,
+    source_language_instruction, PolishEngine, PolishEngineType, PolishRequest, PolishResult,
+    SystemContext,
 };
 use async_trait::async_trait;
 use reqwest::Client;
@@ -202,10 +203,10 @@ impl CloudPolishEngine {
         }
     }
 
-    pub(crate) fn build_system_prompt(system_context: &SystemContext) -> String {
+    pub(crate) fn build_system_prompt(system_context: &SystemContext, language: &str) -> String {
         let user_rules = system_context.system_prompt.as_str();
         let reference_context = system_context.reference_context_section();
-        match (user_rules.is_empty(), reference_context) {
+        let prompt = match (user_rules.is_empty(), reference_context) {
             (true, None) => CORE_POLISH_CONSTRAINT.to_string(),
             (true, Some(reference_context)) => {
                 format!("{}\n\n{}", CORE_POLISH_CONSTRAINT, reference_context)
@@ -217,7 +218,9 @@ impl CloudPolishEngine {
                 )
             }
             (false, None) => format!("{}\n\nUSER RULES:\n{}", CORE_POLISH_CONSTRAINT, user_rules),
-        }
+        };
+
+        format!("{}\n\n{}", prompt, source_language_instruction(language))
     }
 
     async fn check_anthropic_api(&self, timeout: Duration) -> Result<(), String> {
@@ -598,7 +601,7 @@ impl PolishEngine for CloudPolishEngine {
         let input_text = request.text.clone();
         let input_chars = input_text.len();
 
-        let system_prompt = Self::build_system_prompt(&request.system_context);
+        let system_prompt = Self::build_system_prompt(&request.system_context, &request.language);
         let timeout = Self::request_timeout(&system_prompt, &input_text);
         let preview_callback = request.preview_callback.clone();
 
@@ -698,7 +701,7 @@ mod tests {
     fn test_build_system_prompt_places_reference_context_after_user_rules() {
         let context = SystemContext::new("Remove filler words.")
             .with_window_context("Candidate visible terms: Voice Flow");
-        let prompt = CloudPolishEngine::build_system_prompt(&context);
+        let prompt = CloudPolishEngine::build_system_prompt(&context, "auto");
 
         let user_rules_index = prompt.find("USER RULES:").unwrap();
         let task_index = prompt.find("Remove filler words.").unwrap();
@@ -707,12 +710,14 @@ mod tests {
         assert!(user_rules_index < task_index);
         assert!(task_index < reference_index);
         assert!(prompt.contains("not user rules"));
+        assert!(prompt.contains("Detect the language from the user transcript"));
         assert!(!prompt.contains("TASK RULES"));
     }
 
     #[test]
     fn test_core_constraint_makes_correction_and_plain_text_global() {
-        let prompt = CloudPolishEngine::build_system_prompt(&SystemContext::new("Make concise."));
+        let prompt =
+            CloudPolishEngine::build_system_prompt(&SystemContext::new("Make concise."), "fr-FR");
 
         let core_index = prompt.find("CORE DUTIES").unwrap();
         let user_rules_index = prompt.find("USER RULES").unwrap();
@@ -722,6 +727,7 @@ mod tests {
         assert!(prompt.contains("Do not ask the user to provide text"));
         assert!(prompt.contains("Output ordinary plain text only"));
         assert!(prompt.contains("Do not use Markdown syntax"));
+        assert!(prompt.contains("fr-FR"));
     }
 
     #[test]

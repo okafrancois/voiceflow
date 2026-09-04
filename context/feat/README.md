@@ -34,6 +34,7 @@ Feature specs are versioned delivery contracts. Each spec at `context/feat/[name
 
 | Feature | Version | Status | Spec |
 |---------|---------|--------|------|
+| Polish Output Safety | 0.1.0 | Completed | [erd.md](./polish-output-safety/0.1.0/prd/erd.md) |
 | Reliable Windows Delivery | 0.1.0 | Completed | [erd.md](./windows-text-injection/0.1.0/prd/erd.md) |
 | Context Workflows | 0.1.0 | Completed | [erd.md](./context-workflows/0.1.0/prd/erd.md) |
 | Transcription Workbench | 0.1.0 | Completed | [erd.md](./file-history-translation/0.1.0/prd/erd.md) |

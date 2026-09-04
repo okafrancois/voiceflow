@@ -13,6 +13,7 @@ A plan belongs in this directory only when all of the following are true:
 
 ## Completed Plans
 
+- [Polish Output Safety](./2026-09-04-003-fix-polish-output-safety-plan.md) - fix - 2026-09-04
 - [Voice Flow Product Opportunities B1-B5 and P1-P13](./2026-08-24-001-feat-product-opportunities-plan.md) - feature - 2026-08-24
 - [Voice Flow Brand Cleanup](./2026-08-24-002-feat-voice-flow-brand-cleanup-plan.md) - feature - 2026-08-24
 - [Complete Local Whisper Transcription for Long Recordings](./2026-08-23-002-fix-long-whisper-transcription-plan.md) - fix - 2026-08-23

@@ -2,6 +2,12 @@
 
 All notable changes to the desktop application will be documented in this file.
 
+## v1.1.5 (2026-09-04)
+
+### Bug Fixes
+
+- Preserve the dictation language and reject destructive Polish output
+
 ## v1.1.4 (2026-09-04)
 
 ### Features

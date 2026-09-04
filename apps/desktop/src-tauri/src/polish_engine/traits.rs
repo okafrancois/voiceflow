@@ -145,6 +145,18 @@ pub struct PolishRequest {
     pub preview_callback: Option<PolishPreviewCallback>,
 }
 
+pub(crate) fn source_language_instruction(language: &str) -> String {
+    let language = language.trim();
+    if language.is_empty() || language.eq_ignore_ascii_case("auto") {
+        return "SOURCE LANGUAGE: Detect the language from the user transcript, not from these English instructions. Unless USER RULES explicitly request a target-language translation, return the result in exactly that same language and never translate it. French input must remain French, English input must remain English, and mixed technical terms must remain mixed."
+            .to_string();
+    }
+
+    format!(
+        "SOURCE LANGUAGE: The configured transcript language is {language}. Unless USER RULES explicitly request a target-language translation, return the result in {language} and never translate it to another language."
+    )
+}
+
 impl fmt::Debug for PolishRequest {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("PolishRequest")

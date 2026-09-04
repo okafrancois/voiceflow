@@ -6,12 +6,14 @@ use voiceflow_lib::polish_engine::{
 use wiremock::matchers::{body_partial_json, header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
+const ENGLISH_SOURCE_LANGUAGE_RULE: &str = "SOURCE LANGUAGE: The configured transcript language is en. Unless USER RULES explicitly request a target-language translation, return the result in en and never translate it to another language.";
+
 #[tokio::test]
 async fn test_anthropic_polish_request_format() {
     let mock_server = MockServer::start().await;
     let expected_system_prompt = format!(
-        "{}\n\nUSER RULES:\n{}",
-        CORE_POLISH_CONSTRAINT, "System instruction here"
+        "{}\n\nUSER RULES:\n{}\n\n{}",
+        CORE_POLISH_CONSTRAINT, "System instruction here", ENGLISH_SOURCE_LANGUAGE_RULE
     );
 
     // We expect an Anthropic-compatible JSON body
@@ -74,8 +76,8 @@ async fn test_anthropic_polish_request_format() {
 async fn test_openai_polish_request_format() {
     let mock_server = MockServer::start().await;
     let expected_system_prompt = format!(
-        "{}\n\nUSER RULES:\n{}",
-        CORE_POLISH_CONSTRAINT, "System instruction here"
+        "{}\n\nUSER RULES:\n{}\n\n{}",
+        CORE_POLISH_CONSTRAINT, "System instruction here", ENGLISH_SOURCE_LANGUAGE_RULE
     );
 
     // We expect an OpenAI-compatible JSON body
@@ -176,8 +178,8 @@ async fn test_unsupported_polish_provider_is_rejected_before_http_request() {
 async fn test_openai_polish_streams_preview_chunks() {
     let mock_server = MockServer::start().await;
     let expected_system_prompt = format!(
-        "{}\n\nUSER RULES:\n{}",
-        CORE_POLISH_CONSTRAINT, "System instruction here"
+        "{}\n\nUSER RULES:\n{}\n\n{}",
+        CORE_POLISH_CONSTRAINT, "System instruction here", ENGLISH_SOURCE_LANGUAGE_RULE
     );
     let expected_body = serde_json::json!({
         "model": "gpt-4o-mini",

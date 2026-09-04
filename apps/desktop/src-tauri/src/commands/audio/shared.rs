@@ -490,35 +490,19 @@ impl ProcessingEventTarget<'_> {
             Self::Retry { .. } => None,
             Self::None => None,
         };
-        let (direct_typing_enabled, original_target_enabled) = match self {
+        let original_target_enabled = match self {
             Self::Recording(app) => {
                 let state = app.state::<AppState>();
-                let original_target_enabled = state.session_uses_original_target(task_id);
-                let settings = state.settings.lock();
-                let profile_allows_insertion = app
-                    .try_state::<crate::services::product_workflows::WorkflowRuntime>()
-                    .and_then(|runtime| runtime.profile_for_task(task_id))
-                    .is_none_or(|profile| {
-                        profile.output_action
-                            == crate::services::product_workflows::OutputAction::Insert
-                    });
-                (
-                    settings.polish_stream_direct_typing_enabled && profile_allows_insertion,
-                    original_target_enabled,
-                )
+                state.session_uses_original_target(task_id)
             }
-            Self::Retry { .. } | Self::None => (false, false),
+            Self::Retry { .. } | Self::None => false,
         };
         let typed_visible_chars = Arc::new(ParkingMutex::new(0_usize));
         let direct_stream_inserted = Arc::new(AtomicBool::new(false));
         let callback_inserted = Arc::clone(&direct_stream_inserted);
 
         let callback = Arc::new(move |update: crate::polish_engine::PolishPreviewUpdate| {
-            if should_type_direct_stream_delta(
-                direct_typing_enabled,
-                update.is_final,
-                original_target_enabled,
-            ) {
+            if should_type_direct_stream_delta(false, update.is_final, original_target_enabled) {
                 maybe_insert_direct_stream_delta(
                     &app,
                     task_id,

@@ -112,6 +112,7 @@ Versioned feature specs with verification status. Each lives under `feat/<name>/
 
 | Feature | Version | Status |
 |---------|---------|--------|
+| [Polish Output Safety](./feat/polish-output-safety/0.1.0/prd/erd.md) | 0.1.0 | Completed |
 | [Reliable Windows Delivery](./feat/windows-text-injection/0.1.0/prd/erd.md) | 0.1.0 | Completed |
 | [Context Workflows](./feat/context-workflows/0.1.0/prd/erd.md) | 0.1.0 | Completed |
 | [Transcription Workbench](./feat/file-history-translation/0.1.0/prd/erd.md) | 0.1.0 | Completed |

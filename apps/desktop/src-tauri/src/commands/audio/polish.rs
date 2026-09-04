@@ -14,6 +14,8 @@ struct LocalPolishContext {
     language: String,
     model_id: String,
     log_context: &'static str,
+    template_id: Option<String>,
+    allow_language_change: bool,
 }
 
 struct PolishAcceptContext {
@@ -21,6 +23,8 @@ struct PolishAcceptContext {
     polish_queue_ms: u64,
     log_context: &'static str,
     direct_stream_inserted: bool,
+    template_id: Option<String>,
+    allow_language_change: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -199,6 +203,97 @@ fn should_reject_question_answer_polish(input: &str, output: &str) -> bool {
     is_question_like_text(input) && !has_question_mark(output) && is_answer_like_text(output)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DetectedTextLanguage {
+    French,
+    English,
+}
+
+fn language_score(text: &str, words: &[&str]) -> usize {
+    text.split(|character: char| !character.is_alphabetic())
+        .filter(|token| !token.is_empty())
+        .map(str::to_lowercase)
+        .filter(|token| words.contains(&token.as_str()))
+        .count()
+}
+
+fn detect_supported_language(text: &str) -> Option<DetectedTextLanguage> {
+    const FRENCH_WORDS: &[&str] = &[
+        "alors", "après", "avec", "avant", "bien", "ça", "ce", "cette", "dans", "de", "des", "du",
+        "elle", "elles", "en", "est", "et", "faire", "il", "ils", "je", "la", "le", "les", "mais",
+        "mon", "nous", "pas", "plus", "pour", "quand", "que", "qui", "quoi", "sont", "très", "tu",
+        "un", "une", "vous", "vérifie",
+    ];
+    const ENGLISH_WORDS: &[&str] = &[
+        "add", "and", "are", "as", "be", "can", "check", "create", "do", "does", "error", "fix",
+        "for", "from", "has", "have", "in", "input", "is", "not", "of", "on", "output", "please",
+        "should", "task", "that", "the", "then", "they", "this", "to", "we", "will", "with",
+        "would", "you", "your",
+    ];
+
+    let french = language_score(text, FRENCH_WORDS);
+    let english = language_score(text, ENGLISH_WORDS);
+    if french >= 3 && french >= english.saturating_add(2) {
+        Some(DetectedTextLanguage::French)
+    } else if english >= 3 && english >= french.saturating_add(2) {
+        Some(DetectedTextLanguage::English)
+    } else {
+        None
+    }
+}
+
+fn meaningful_char_count(text: &str) -> usize {
+    text.chars()
+        .filter(|character| !character.is_whitespace())
+        .count()
+}
+
+fn polish_rejection_reason_with_policy(
+    input: &str,
+    output: &str,
+    template_id: Option<&str>,
+    allow_language_change: bool,
+) -> Option<&'static str> {
+    if should_reject_question_answer_polish(input, output) {
+        return Some("polish answered dictated question");
+    }
+
+    if !allow_language_change {
+        let input_language = detect_supported_language(input);
+        let output_language = detect_supported_language(output);
+        if input_language.is_some()
+            && output_language.is_some()
+            && input_language != output_language
+        {
+            return Some("polish changed transcript language");
+        }
+    }
+
+    let input_chars = meaningful_char_count(input);
+    if input_chars >= 120 {
+        let output_chars = meaningful_char_count(output);
+        let minimum_ratio = if template_id == Some("concise") {
+            0.30
+        } else {
+            0.55
+        };
+        if (output_chars as f64) < (input_chars as f64 * minimum_ratio) {
+            return Some("polish removed too much transcript content");
+        }
+    }
+
+    None
+}
+
+#[cfg(test)]
+fn polish_rejection_reason(
+    input: &str,
+    output: &str,
+    template_id: Option<&str>,
+) -> Option<&'static str> {
+    polish_rejection_reason_with_policy(input, output, template_id, false)
+}
+
 fn classify_polish_failure_reason(error: &str) -> &'static str {
     let lower = error.to_lowercase();
 
@@ -258,40 +353,31 @@ fn accept_polish_result(
         polish_queue_ms,
         log_context,
         direct_stream_inserted,
+        template_id,
+        allow_language_change,
     } = context;
     let result_text = result.text.as_str();
-    if direct_stream_inserted {
-        if should_reject_question_answer_polish(&accumulated_text, result_text) {
-            warn!(
-                task_id,
-                context = log_context,
-                input_chars = accumulated_text.len(),
-                output_chars = result_text.len(),
-                "polish_policy_rejection_skipped-direct_stream_inserted"
-            );
-        }
-        return PolishProcessingResult::from_polish_result(
-            result,
-            polish_wall_ms,
-            polish_queue_ms,
-            true,
-        );
-    }
-
-    if should_reject_question_answer_polish(&accumulated_text, result_text) {
+    if let Some(failure_reason) = polish_rejection_reason_with_policy(
+        &accumulated_text,
+        result_text,
+        template_id.as_deref(),
+        allow_language_change,
+    ) {
         event_target.emit_polish_policy_tooltip(task_id);
         warn!(
             task_id,
             context = log_context,
             input_chars = accumulated_text.len(),
             output_chars = result_text.len(),
-            "polish_rejected_answered_question-using_raw"
+            failure_reason,
+            direct_stream_inserted,
+            "polish_rejected_unsafe_output-using_raw"
         );
         PolishProcessingResult::using_original(
             accumulated_text,
             polish_wall_ms,
             polish_queue_ms,
-            "polish answered dictated question",
+            failure_reason,
         )
     } else {
         PolishProcessingResult::from_polish_result(result, polish_wall_ms, polish_queue_ms, false)
@@ -312,6 +398,8 @@ async fn run_local_polish(
         language,
         model_id,
         log_context,
+        template_id,
+        allow_language_change,
     } = context;
 
     if model_id.is_empty() {
@@ -409,6 +497,8 @@ async fn run_local_polish(
                                     .as_ref()
                                     .map(|handle| handle.direct_stream_inserted())
                                     .unwrap_or(false),
+                                template_id,
+                                allow_language_change,
                             },
                         )
                     }
@@ -528,6 +618,9 @@ pub(super) async fn maybe_polish_transcription_text_for_profile(
 ) -> PolishProcessingResult {
     let polish_decision_started = Instant::now();
     let workflow_instruction = profile.and_then(workflow_profile_instruction);
+    let allow_language_change = profile
+        .and_then(|profile| profile.translation_target.as_deref())
+        .is_some_and(|target| !target.trim().is_empty());
     match (resolved_polish_template_id, workflow_instruction) {
         (None, None) => {
             info!(task_id, "polish_skipped-no_template");
@@ -667,6 +760,8 @@ pub(super) async fn maybe_polish_transcription_text_for_profile(
                                             .as_ref()
                                             .map(|handle| handle.direct_stream_inserted())
                                             .unwrap_or(false),
+                                        template_id: template_id.clone(),
+                                        allow_language_change,
                                     },
                                 )
                             }
@@ -727,6 +822,8 @@ pub(super) async fn maybe_polish_transcription_text_for_profile(
                     language,
                     model_id: polish_model_id,
                     log_context: "local",
+                    template_id,
+                    allow_language_change,
                 },
                 polish_decision_started,
             )
@@ -766,8 +863,9 @@ fn workflow_profile_instruction(
 #[cfg(test)]
 mod tests {
     use super::{
-        classify_polish_failure_reason, local_polish_timeout, should_reject_question_answer_polish,
-        workflow_profile_instruction, LOCAL_POLISH_BASE_TIMEOUT, LOCAL_POLISH_MAX_TIMEOUT,
+        classify_polish_failure_reason, local_polish_timeout, polish_rejection_reason,
+        should_reject_question_answer_polish, workflow_profile_instruction,
+        LOCAL_POLISH_BASE_TIMEOUT, LOCAL_POLISH_MAX_TIMEOUT,
     };
 
     #[test]
@@ -794,6 +892,70 @@ mod tests {
         let output = "我觉得这个功能现在已经完整了。";
 
         assert!(!should_reject_question_answer_polish(input, output));
+    }
+
+    #[test]
+    fn rejects_production_regression_that_changed_french_to_english() {
+        let input = "Alors je suis en train de faire un test et j'aimerais que tu fasses trois choses pour moi. Premièrement, vérifie le tracking. Deuxièmement, vérifie la sécurité. Ensuite, regarde les nouvelles fonctionnalités que nous devons implémenter.";
+        let output = "Task:\n\n- Fix login bug\n- Add error handling";
+
+        assert_eq!(
+            polish_rejection_reason(input, output, Some("agent")),
+            Some("polish changed transcript language")
+        );
+    }
+
+    #[test]
+    fn rejects_production_regression_that_removed_most_content() {
+        let input = "Je veux vérifier trois points distincts dans l'application. Le premier concerne le suivi des événements et les données envoyées. Le deuxième concerne les règles de sécurité. Le troisième concerne les nouvelles fonctionnalités à planifier pour la prochaine version.";
+        let output = "Vérifier les points de l'application.";
+
+        assert_eq!(
+            polish_rejection_reason(input, output, Some("document")),
+            Some("polish removed too much transcript content")
+        );
+    }
+
+    #[test]
+    fn accepts_french_cleanup_that_preserves_substance() {
+        let input = "Alors euh je veux vérifier le tracking, puis je veux vérifier la sécurité, et ensuite je veux regarder les nouvelles fonctionnalités que nous devons implémenter dans la prochaine version.";
+        let output = "Je veux vérifier le tracking et la sécurité, puis examiner les nouvelles fonctionnalités à implémenter dans la prochaine version.";
+
+        assert_eq!(polish_rejection_reason(input, output, Some("filler")), None);
+    }
+
+    #[test]
+    fn concise_template_may_shorten_without_discarding_everything() {
+        let input = "Je pense que nous devrions probablement commencer par vérifier les événements de suivi, puis examiner les règles de sécurité, avant de décider quelles nouvelles fonctionnalités seront ajoutées à la prochaine version de l'application.";
+        let output =
+            "Vérifions le suivi et la sécurité avant de choisir les prochaines fonctionnalités.";
+
+        assert_eq!(
+            polish_rejection_reason(input, output, Some("concise")),
+            None
+        );
+    }
+
+    #[test]
+    fn rejects_english_input_rewritten_in_french() {
+        let input = "Please review the tracking events, check the security rules, and list the product features that should be implemented in the next release.";
+        let output = "Vérifie les événements de suivi, les règles de sécurité et les prochaines fonctionnalités du produit.";
+
+        assert_eq!(
+            polish_rejection_reason(input, output, Some("filler")),
+            Some("polish changed transcript language")
+        );
+    }
+
+    #[test]
+    fn accepts_language_change_for_an_explicit_translation_workflow() {
+        let input = "Please review the tracking events, check the security rules, and list the product features that should be implemented in the next release.";
+        let output = "Vérifie les événements de suivi, les règles de sécurité et les prochaines fonctionnalités du produit.";
+
+        assert_eq!(
+            super::polish_rejection_reason_with_policy(input, output, Some("filler"), true),
+            None
+        );
     }
 
     #[test]
