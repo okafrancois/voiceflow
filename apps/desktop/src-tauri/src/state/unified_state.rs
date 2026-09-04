@@ -17,6 +17,8 @@ pub struct SessionState {
     pub chunk_count: usize,
     pub cancel_hotkey: Option<String>,
     pub cancel_trigger_mode: Option<ShortcutTriggerMode>,
+    /// Immutable snapshot used to prevent direct streaming into a later focus target.
+    pub original_target_enabled: bool,
     /// Structured OCR context captured from the focused window at recording start.
     pub window_context: Option<WindowContextBundle>,
 }
@@ -275,6 +277,7 @@ impl AppState {
     }
 
     pub fn start_session(&self, task_id: u64, profile: Option<&ShortcutProfile>) {
+        let original_target_enabled = self.settings.lock().original_target_enabled;
         let mut session = self.session_state.lock();
         *session = Some(SessionState {
             task_id,
@@ -282,8 +285,16 @@ impl AppState {
             chunk_count: 0,
             cancel_hotkey: profile.map(|item| item.hotkey.clone()),
             cancel_trigger_mode: profile.map(|item| item.trigger_mode),
+            original_target_enabled,
             window_context: None,
         });
+    }
+
+    pub fn session_uses_original_target(&self, task_id: u64) -> bool {
+        self.session_state
+            .lock()
+            .as_ref()
+            .is_some_and(|session| session.task_id == task_id && session.original_target_enabled)
     }
 
     pub fn current_cancel_profile(&self) -> Option<(String, ShortcutTriggerMode)> {

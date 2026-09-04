@@ -346,6 +346,7 @@ fn finalize_processed_media(
             let status = match method {
                 crate::text_injector::InjectionMethod::Keyboard => "inserted_keyboard",
                 crate::text_injector::InjectionMethod::Clipboard => "inserted_clipboard",
+                crate::text_injector::InjectionMethod::Accessibility => "inserted_accessibility",
             };
             ("insert", status.to_string())
         }
@@ -589,6 +590,7 @@ pub fn reinsert_history_entry(
             let status = match method {
                 crate::text_injector::InjectionMethod::Keyboard => "inserted_keyboard",
                 crate::text_injector::InjectionMethod::Clipboard => "inserted_clipboard",
+                crate::text_injector::InjectionMethod::Accessibility => "inserted_accessibility",
             };
             state
                 .history_store
@@ -622,6 +624,7 @@ where
             let status = match method {
                 crate::text_injector::InjectionMethod::Keyboard => "inserted_keyboard",
                 crate::text_injector::InjectionMethod::Clipboard => "inserted_clipboard",
+                crate::text_injector::InjectionMethod::Accessibility => "inserted_accessibility",
             };
             store.update_delivery_status(&latest.id, status)?;
             Ok(status.to_string())

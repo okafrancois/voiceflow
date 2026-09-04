@@ -16,7 +16,7 @@ This document describes the high-level architecture of Voice Flow, a Tauri v2 de
 | **Audio Pipeline** | `audio/recorder.rs`, `audio/resampler.rs`, `audio/processor.rs`, `audio/stream_processor.rs`, `audio/beep.rs`, `audio/level_meter.rs` | Capture, process, and manage audio data |
 | **STT Engine** | `stt_engine/sherpa_onnx/`, `stt_engine/cloud/`, `stt_engine/models.rs`, `stt_engine/traits.rs`, `stt_engine/unified_manager.rs` | Convert speech to text using local (sherpa-onnx) or cloud models |
 | **Polish Engine** | `polish_engine/lfm.rs`, `polish_engine/qwen.rs`, `polish_engine/anthropic.rs`, `polish_engine/openai.rs` | Refine transcribed text for accuracy and formatting |
-| **Text Injection** | `text_injector/macos.rs`, `text_injector/windows.rs` | Insert text at cursor position across platforms |
+| **Text Injection** | `text_injector/macos.rs`, `text_injector/windows.rs` | Insert text at current focus, or into a captured macOS Accessibility target |
 | **Ghost** | `ghost/action/`, `ghost/language/` | Unified Ghost concept: Action (macOS computer-use via MCP), Language (habit learning for personalization) |
 | **Settings** | `commands/settings/`, `state/unified_state.rs` | Persist and manage user preferences and hotkeys |
 | **History** | `history/` | Store and retrieve transcription sessions |
@@ -75,7 +75,7 @@ apps/desktop/src-tauri/src/
 | `stt_engine/traits.rs` | Unified SttEngine trait definition (send_chunk + finish) |
 | `stt_engine/unified_manager.rs` | Engine lifecycle management |
 | `polish_engine/unified_manager.rs` | Polish engine lifecycle |
-| `text_injector/macos.rs` | macOS text injection (keyboard simulation + clipboard) |
+| `text_injector/macos.rs` | macOS text injection (keyboard, clipboard, and captured Accessibility target) |
 | `src/lib/tauri.ts` | Frontend IPC boundary, all invoke calls go through here |
 
 ## Detailed Architecture

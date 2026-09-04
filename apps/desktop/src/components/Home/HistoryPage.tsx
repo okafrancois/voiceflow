@@ -48,6 +48,7 @@ function deliveryStatusLabel(status: string, t: (key: string) => string): string
     case "pending_insertion": return t("history.delivery.pending");
     case "inserted_keyboard": return t("history.delivery.insertedKeyboard");
     case "inserted_clipboard": return t("history.delivery.insertedClipboard");
+    case "inserted_accessibility": return t("history.delivery.insertedAccessibility");
     case "inserted_stream": return t("history.delivery.insertedStream");
     case "copied": return t("history.delivery.copied");
     case "copy_failed": return t("history.delivery.copyFailed");

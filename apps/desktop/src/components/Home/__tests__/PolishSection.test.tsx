@@ -97,6 +97,8 @@ const testSettings: AppSettings = {
   polish_custom_templates: [],
   polish_model: "qwen3.5-0.8b",
   polish_stream_direct_typing_enabled: false,
+  original_target_enabled: false,
+  original_target_mode: "foreground",
   polish_system_prompt: "",
   recording_mode: "hold",
   shortcut_profiles: {

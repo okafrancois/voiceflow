@@ -32,6 +32,7 @@ import {
   settingsCommands,
   type RetentionPolicy,
   type RetentionStatus,
+  type OriginalTargetMode,
 } from "@/lib/tauri";
 import { logger } from "@/lib/logger";
 import { analytics } from "@/lib/analytics";
@@ -320,6 +321,23 @@ export function GeneralSettings({
   const handleWindowContextChange = async (checked: boolean) => {
     analytics.track(AnalyticsEvents.SETTING_CHANGED, { setting: "window_context_enabled", value: String(checked) });
     await updateSetting("window_context_enabled", checked);
+  };
+
+  const handleOriginalTargetEnabledChange = async (checked: boolean) => {
+    analytics.track(AnalyticsEvents.SETTING_CHANGED, {
+      setting: "original_target_enabled",
+      value: String(checked),
+    });
+    await updateSetting("original_target_enabled", checked);
+  };
+
+  const handleOriginalTargetModeChange = async (value: string) => {
+    const mode: OriginalTargetMode = value === "background" ? "background" : "foreground";
+    analytics.track(AnalyticsEvents.SETTING_CHANGED, {
+      setting: "original_target_mode",
+      value: mode,
+    });
+    await updateSetting("original_target_mode", mode);
   };
 
   const handleCorrectionMemoryChange = async (checked: boolean) => {
@@ -821,6 +839,60 @@ export function GeneralSettings({
               </div>
             </CardContent>
           </Card>
+
+          {isMacOS && (
+            <Card>
+              <CardHeader>
+                <CardTitle>{t("general.transcription.originalTarget.title")}</CardTitle>
+                <CardDescription>
+                  {t("general.transcription.originalTarget.description")}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-5">
+                <div className="flex items-center justify-between space-x-4">
+                  <div>
+                    <Label htmlFor="original-target-toggle">
+                      {t("general.transcription.originalTarget.enable")}
+                    </Label>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      {t("general.transcription.originalTarget.enableDesc")}
+                    </p>
+                  </div>
+                  <Switch
+                    id="original-target-toggle"
+                    checked={settings.original_target_enabled ?? false}
+                    onCheckedChange={handleOriginalTargetEnabledChange}
+                  />
+                </div>
+
+                {settings.original_target_enabled && (
+                  <div className="space-y-2">
+                    <Label>{t("general.transcription.originalTarget.mode")}</Label>
+                    <Select
+                      aria-label={t("general.transcription.originalTarget.mode")}
+                      value={settings.original_target_mode ?? "foreground"}
+                      onChange={(event) => handleOriginalTargetModeChange(event.target.value)}
+                      options={[
+                        {
+                          value: "foreground",
+                          label: t("general.transcription.originalTarget.foreground"),
+                        },
+                        {
+                          value: "background",
+                          label: t("general.transcription.originalTarget.background"),
+                        },
+                      ]}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      {settings.original_target_mode === "background"
+                        ? t("general.transcription.originalTarget.backgroundDesc")
+                        : t("general.transcription.originalTarget.foregroundDesc")}
+                    </p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           <Card>
             <CardHeader>

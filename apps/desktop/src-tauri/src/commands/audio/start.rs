@@ -7,7 +7,7 @@ use crate::services::recording_lifecycle::{prepare_recording_start, RecordingSta
 use crate::shortcut::{ShortcutProfile, ShortcutTriggerMode};
 use crate::state::app_state::AppState;
 
-use super::capture::start_unified_recording;
+use super::capture::{start_unified_recording, OriginalTargetSession};
 
 const RECORDING_CONFIRM_TOOLTIP: &str = "Esc: cancel · Enter: confirm";
 const RECORDING_CONFIRM_TOOLTIP_DURATION_MS: u64 = 3_200;
@@ -72,13 +72,19 @@ pub(crate) fn start_recording_sync_internal(
     }
 
     tracing::info!("start_recording_sync_reading_settings");
-    let context_settings = state.settings.lock().context_capture.clone();
-    let application_context = if context_settings.application_metadata {
+    let (context_settings, original_target_enabled) = {
+        let settings = state.settings.lock();
+        (
+            settings.context_capture.clone(),
+            settings.original_target_enabled,
+        )
+    };
+    let captured_application = if context_settings.application_metadata || original_target_enabled {
         crate::sensors::focused_context::capture_application_context()
-            .filtered_by(&context_settings)
     } else {
         crate::services::product_workflows::CapturedContext::default()
     };
+    let application_context = captured_application.filtered_by(&context_settings);
     let effective_workflow_profile = {
         let settings = state.settings.lock();
         crate::services::product_workflows::resolve_recording_profile(
@@ -94,6 +100,20 @@ pub(crate) fn start_recording_sync_internal(
         .map(crate::services::product_workflows::WorkflowProfile::shortcut_profile);
     let effective_profile = effective_shortcut_profile.as_ref().or(profile);
     let mut prepared = prepare_recording_start(&state, effective_profile);
+    let original_target = if prepared.original_target_enabled {
+        captured_application
+            .application_id
+            .clone()
+            .map(|application_id| {
+                crate::text_injector::CapturedTextTarget::capture(
+                    application_id,
+                    prepared.original_target_mode
+                        == crate::commands::settings::OriginalTargetMode::Background,
+                )
+            })
+    } else {
+        None
+    };
     if let Some(language) = effective_workflow_profile
         .as_ref()
         .and_then(|profile| profile.language.as_ref())
@@ -128,6 +148,11 @@ pub(crate) fn start_recording_sync_internal(
         prepared.cloud_stt_config,
         prepared.language,
         prepared.resolved_polish_template_id,
+        OriginalTargetSession {
+            enabled: prepared.original_target_enabled,
+            mode: prepared.original_target_mode,
+            target: original_target,
+        },
     ) {
         crate::commands::window::update_pill_visibility(app);
         return Err(err);

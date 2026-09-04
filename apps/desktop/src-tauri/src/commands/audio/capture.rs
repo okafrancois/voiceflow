@@ -36,6 +36,12 @@ pub(super) enum WorkflowDeliveryPlan {
     Copy,
 }
 
+pub(super) struct OriginalTargetSession {
+    pub enabled: bool,
+    pub mode: crate::commands::settings::OriginalTargetMode,
+    pub target: Option<crate::text_injector::CapturedTextTarget>,
+}
+
 struct WorkflowTaskCleanup {
     app: AppHandle,
     task_id: u64,
@@ -201,6 +207,7 @@ pub(super) fn start_unified_recording(
     config: CloudSttConfig,
     language: String,
     resolved_polish_template_id: Option<String>,
+    original_target: OriginalTargetSession,
 ) -> Result<(), String> {
     let state = app
         .try_state::<AppState>()
@@ -569,7 +576,15 @@ pub(super) fn start_unified_recording(
             info!(task_id, "transcription_skipped_no_audio_chunks");
             let action = finalize_silent_recording(None);
             let _ = state_inner.finish_session(task_id);
-            apply_finalize_result(&app_clone, task_id, action).await;
+            apply_finalize_result(
+                &app_clone,
+                task_id,
+                action,
+                original_target.enabled,
+                original_target.mode,
+                original_target.target.as_ref(),
+            )
+            .await;
         } else {
             emit_recording_state(&app_clone, RecordingStatus::Transcribing, task_id);
             state_inner.is_transcribing.store(true, Ordering::SeqCst);
@@ -827,7 +842,15 @@ pub(super) fn start_unified_recording(
                         finalize_empty_transcription(&state, audio_path)
                     };
                     let _ = state.finish_session(task_id);
-                    apply_finalize_result(&app_clone, task_id, action).await;
+                    apply_finalize_result(
+                        &app_clone,
+                        task_id,
+                        action,
+                        original_target.enabled,
+                        original_target.mode,
+                        original_target.target.as_ref(),
+                    )
+                    .await;
                 }
                 Err(e) => {
                     let state = app_clone.state::<AppState>();
@@ -846,7 +869,15 @@ pub(super) fn start_unified_recording(
 
                     let action = finalize_failed_transcription(&state, audio_path, &e);
                     let _ = state.finish_session(task_id);
-                    apply_finalize_result(&app_clone, task_id, action).await;
+                    apply_finalize_result(
+                        &app_clone,
+                        task_id,
+                        action,
+                        original_target.enabled,
+                        original_target.mode,
+                        original_target.target.as_ref(),
+                    )
+                    .await;
                 }
             }
         }

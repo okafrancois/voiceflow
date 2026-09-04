@@ -9,6 +9,8 @@ pub struct PreparedRecordingStart {
     pub cloud_stt_config: CloudSttConfig,
     pub language: String,
     pub resolved_polish_template_id: Option<String>,
+    pub original_target_enabled: bool,
+    pub original_target_mode: crate::commands::settings::OriginalTargetMode,
 }
 
 pub struct PreparedRecordingStop {
@@ -62,13 +64,21 @@ pub fn prepare_recording_start(
     state: &AppState,
     profile: Option<&ShortcutProfile>,
 ) -> PreparedRecordingStart {
-    let (cloud_stt_enabled, cloud_stt_config, language) = {
+    let (
+        cloud_stt_enabled,
+        cloud_stt_config,
+        language,
+        original_target_enabled,
+        original_target_mode,
+    ) = {
         let settings = state.settings.lock();
         (
             #[allow(deprecated)]
             settings.is_volcengine_streaming_active(),
             settings.get_active_cloud_stt_config(),
             settings.stt_engine_language.clone(),
+            settings.original_target_enabled,
+            settings.original_target_mode,
         )
     };
 
@@ -92,6 +102,8 @@ pub fn prepare_recording_start(
         cloud_stt_config,
         language,
         resolved_polish_template_id,
+        original_target_enabled,
+        original_target_mode,
     }
 }
 
@@ -212,6 +224,32 @@ mod tests {
             active_session.cancel_trigger_mode,
             Some(ShortcutTriggerMode::Hold)
         );
+    }
+
+    #[test]
+    fn prepare_recording_start_snapshots_original_target_settings() {
+        let state = AppState::new();
+        {
+            let mut settings = state.settings.lock();
+            settings.original_target_enabled = true;
+            settings.original_target_mode =
+                crate::commands::settings::OriginalTargetMode::Background;
+        }
+
+        let prepared = prepare_recording_start(&state, None);
+        {
+            let mut settings = state.settings.lock();
+            settings.original_target_enabled = false;
+            settings.original_target_mode =
+                crate::commands::settings::OriginalTargetMode::Foreground;
+        }
+
+        assert!(prepared.original_target_enabled);
+        assert_eq!(
+            prepared.original_target_mode,
+            crate::commands::settings::OriginalTargetMode::Background
+        );
+        assert!(state.session_uses_original_target(prepared.task_id));
     }
 
     #[test]

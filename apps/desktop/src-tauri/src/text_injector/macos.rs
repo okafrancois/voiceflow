@@ -13,8 +13,21 @@ pub struct MacosInjector;
 
 type DispatchQueue = *const c_void;
 type DispatchTime = u64;
+type AXUIElementRef = *const c_void;
+type AXValueRef = *const c_void;
+type CFStringRef = *const c_void;
+type CFTypeRef = *const c_void;
 const DISPATCH_TIME_NOW: DispatchTime = 0;
 const NSEC_PER_MSEC: u64 = 1_000_000;
+const AX_ERROR_SUCCESS: i32 = 0;
+const AX_VALUE_CF_RANGE_TYPE: i32 = 4;
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct CFRange {
+    location: isize,
+    length: isize,
+}
 
 extern "C" {
     static _dispatch_main_q: u8;
@@ -30,6 +43,170 @@ extern "C" {
         context: *mut c_void,
         work: unsafe extern "C" fn(*mut c_void),
     );
+}
+
+#[link(name = "ApplicationServices", kind = "framework")]
+extern "C" {
+    fn AXUIElementCreateSystemWide() -> AXUIElementRef;
+    fn AXUIElementCopyAttributeValue(
+        element: AXUIElementRef,
+        attribute: CFStringRef,
+        value: *mut CFTypeRef,
+    ) -> i32;
+    fn AXUIElementSetAttributeValue(
+        element: AXUIElementRef,
+        attribute: CFStringRef,
+        value: CFTypeRef,
+    ) -> i32;
+    fn AXUIElementIsAttributeSettable(
+        element: AXUIElementRef,
+        attribute: CFStringRef,
+        settable: *mut u8,
+    ) -> i32;
+    fn AXValueCreate(the_type: i32, value_ptr: *const c_void) -> AXValueRef;
+    fn AXValueGetValue(value: AXValueRef, the_type: i32, value_ptr: *mut c_void) -> u8;
+}
+
+#[link(name = "CoreFoundation", kind = "framework")]
+extern "C" {
+    fn CFRelease(value: CFTypeRef);
+}
+
+pub(super) struct AccessibilityTarget {
+    element: AXUIElementRef,
+    selected_range: Option<CFRange>,
+}
+
+unsafe impl Send for AccessibilityTarget {}
+unsafe impl Sync for AccessibilityTarget {}
+
+impl AccessibilityTarget {
+    pub(super) fn capture() -> Option<Self> {
+        unsafe {
+            let system = AXUIElementCreateSystemWide();
+            if system.is_null() {
+                return None;
+            }
+            let element = copy_ax_attribute(system, "AXFocusedUIElement");
+            CFRelease(system as CFTypeRef);
+            let element = element? as AXUIElementRef;
+
+            if !ax_attribute_settable(element, "AXSelectedText") {
+                CFRelease(element as CFTypeRef);
+                return None;
+            }
+
+            let selected_range = ax_attribute_settable(element, "AXSelectedTextRange")
+                .then(|| copy_ax_range(element, "AXSelectedTextRange"))
+                .flatten();
+            Some(Self {
+                element,
+                selected_range,
+            })
+        }
+    }
+
+    pub(super) fn insert(&self, text: &str) -> Result<(), String> {
+        unsafe {
+            if let Some(range) = self.selected_range {
+                set_ax_range(self.element, "AXSelectedTextRange", range)?;
+            }
+            set_ax_string(self.element, "AXSelectedText", text)
+        }
+    }
+}
+
+impl Drop for AccessibilityTarget {
+    fn drop(&mut self) {
+        unsafe { CFRelease(self.element as CFTypeRef) };
+    }
+}
+
+unsafe fn copy_ax_attribute(element: AXUIElementRef, attribute: &str) -> Option<CFTypeRef> {
+    let attribute_name = NSString::alloc(nil).init_str(attribute);
+    let mut value: CFTypeRef = std::ptr::null();
+    let error = AXUIElementCopyAttributeValue(element, attribute_name as CFStringRef, &mut value);
+    let _: () = msg_send![attribute_name, release];
+    (error == AX_ERROR_SUCCESS && !value.is_null()).then_some(value)
+}
+
+unsafe fn ax_attribute_settable(element: AXUIElementRef, attribute: &str) -> bool {
+    let attribute_name = NSString::alloc(nil).init_str(attribute);
+    let mut settable = 0u8;
+    let error =
+        AXUIElementIsAttributeSettable(element, attribute_name as CFStringRef, &mut settable);
+    let _: () = msg_send![attribute_name, release];
+    error == AX_ERROR_SUCCESS && settable != 0
+}
+
+unsafe fn copy_ax_range(element: AXUIElementRef, attribute: &str) -> Option<CFRange> {
+    let value = copy_ax_attribute(element, attribute)?;
+    let mut range = CFRange {
+        location: 0,
+        length: 0,
+    };
+    let success = AXValueGetValue(
+        value as AXValueRef,
+        AX_VALUE_CF_RANGE_TYPE,
+        &mut range as *mut CFRange as *mut c_void,
+    ) != 0;
+    CFRelease(value);
+    success.then_some(range)
+}
+
+unsafe fn set_ax_range(
+    element: AXUIElementRef,
+    attribute: &str,
+    range: CFRange,
+) -> Result<(), String> {
+    if !ax_attribute_settable(element, attribute) {
+        return Err(format!(
+            "Original field attribute is not writable: {attribute}"
+        ));
+    }
+    let range_value = AXValueCreate(
+        AX_VALUE_CF_RANGE_TYPE,
+        &range as *const CFRange as *const c_void,
+    );
+    if range_value.is_null() {
+        return Err("Could not encode the original field selection".to_string());
+    }
+    let result = set_ax_attribute(element, attribute, range_value as CFTypeRef);
+    CFRelease(range_value as CFTypeRef);
+    result
+}
+
+unsafe fn set_ax_string(
+    element: AXUIElementRef,
+    attribute: &str,
+    text: &str,
+) -> Result<(), String> {
+    if !ax_attribute_settable(element, attribute) {
+        return Err(format!(
+            "Original field attribute is not writable: {attribute}"
+        ));
+    }
+    let value = NSString::alloc(nil).init_str(text);
+    let result = set_ax_attribute(element, attribute, value as CFTypeRef);
+    let _: () = msg_send![value, release];
+    result
+}
+
+unsafe fn set_ax_attribute(
+    element: AXUIElementRef,
+    attribute: &str,
+    value: CFTypeRef,
+) -> Result<(), String> {
+    let attribute_name = NSString::alloc(nil).init_str(attribute);
+    let error = AXUIElementSetAttributeValue(element, attribute_name as CFStringRef, value);
+    let _: () = msg_send![attribute_name, release];
+    if error == AX_ERROR_SUCCESS {
+        Ok(())
+    } else {
+        Err(format!(
+            "Original field rejected accessibility insertion ({attribute}, error {error})"
+        ))
+    }
 }
 
 unsafe fn schedule_on_main<F: FnOnce() + Send + 'static>(delay_ms: u64, f: F) {

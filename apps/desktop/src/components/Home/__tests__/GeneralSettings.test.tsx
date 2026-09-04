@@ -110,6 +110,8 @@ const testSettings: AppSettings = {
   polish_custom_templates: [],
   polish_model: "",
   polish_stream_direct_typing_enabled: false,
+  original_target_enabled: true,
+  original_target_mode: "foreground",
   polish_system_prompt: "",
   recording_mode: "hold",
   shortcut_profiles: {
@@ -148,6 +150,39 @@ const testSettings: AppSettings = {
   vad_enabled: false,
   window_context_enabled: false,
 };
+
+describe("GeneralSettings original dictation target", () => {
+  beforeEach(() => {
+    getAudioDevicesMock.mockResolvedValue(["default"]);
+    getPlatformMock.mockResolvedValue("macos");
+    getIdentifierMock.mockResolvedValue("com.voiceflow.voicetotext");
+    getRetentionStatusMock.mockResolvedValue({ text_entries: 0, audio_files: 0, audio_bytes: 0 });
+    updateSettingMock.mockReset();
+  });
+
+  it("shows both macOS delivery modes and persists the selected mode", async () => {
+    render(<GeneralSettings initialTab="transcription" />);
+
+    expect(await screen.findByText("general.transcription.originalTarget.title")).toBeInTheDocument();
+    expect(screen.getByText("general.transcription.originalTarget.foregroundDesc")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText("general.transcription.originalTarget.mode"));
+    fireEvent.click(screen.getByText("general.transcription.originalTarget.background"));
+
+    await waitFor(() => {
+      expect(updateSettingMock).toHaveBeenCalledWith("original_target_mode", "background");
+    });
+  });
+
+  it("hides original-target controls outside macOS", async () => {
+    getPlatformMock.mockResolvedValue("windows");
+
+    render(<GeneralSettings initialTab="transcription" />);
+
+    await waitFor(() => expect(getPlatformMock).toHaveBeenCalled());
+    expect(screen.queryByText("general.transcription.originalTarget.title")).not.toBeInTheDocument();
+  });
+});
 
 describe("GeneralSettings correction memory directory entry", () => {
   beforeEach(() => {

@@ -5,6 +5,7 @@
 ```
 User holds hotkey
   → GlobalShortcut registered (tray.rs → commands/)
+  → Backend snapshots original-target settings and the macOS target when enabled
   → Recording starts (audio/recorder.rs)
   → SttEngine created (local or cloud — recorder doesn't care)
   → Audio captured at device sample rate
@@ -16,7 +17,11 @@ User releases hotkey
   → Consumer task: AWAIT engine.finish() — returns final transcription
   → Transcription result received
   → If polish enabled: text polished (local LLM or cloud API)
-  → Final text injected at cursor (text_injector/)
+  → Final text delivery:
+      target disabled → inject at current cursor
+      foreground mode → activate and verify original app → inject at its cursor
+      background mode → write to captured Accessibility field without activation
+      targeted failure → do not use current focus; retain text and record failure
   → Session text and audio retained according to their independent local policies
 ```
 
@@ -114,7 +119,7 @@ Idle
 Error States:
   RecordingFailed     — mic access denied, device error
   TranscriptionFailed — engine error, invalid audio
-  InjectionFailed    — clipboard error, focus error
+  InjectionFailed    — clipboard, activation, focus, or Accessibility target error
 ```
 
 ## IPC Communication

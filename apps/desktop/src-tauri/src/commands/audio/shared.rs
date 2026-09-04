@@ -102,7 +102,14 @@ pub struct RecordingState {
     pub output_path: Option<String>,
 }
 
-pub(crate) async fn apply_finalize_result(app: &AppHandle, task_id: u64, result: FinalizeResult) {
+pub(crate) async fn apply_finalize_result(
+    app: &AppHandle,
+    task_id: u64,
+    result: FinalizeResult,
+    original_target_enabled: bool,
+    original_target_mode: crate::commands::settings::OriginalTargetMode,
+    original_target: Option<&crate::text_injector::CapturedTextTarget>,
+) {
     match result {
         FinalizeResult::DeliverText {
             text,
@@ -116,7 +123,18 @@ pub(crate) async fn apply_finalize_result(app: &AppHandle, task_id: u64, result:
                 task_id,
                 "recording",
                 history_entry_id.as_deref(),
-                crate::text_injector::insert_text,
+                |text| {
+                    deliver_recording_text(
+                        original_target_enabled,
+                        original_target_mode,
+                        original_target,
+                        text,
+                    )
+                },
+            );
+            let inserted_with_accessibility = matches!(
+                &insertion,
+                Ok((_, crate::text_injector::InjectionMethod::Accessibility))
             );
             update_history_delivery_status(
                 app,
@@ -154,7 +172,7 @@ pub(crate) async fn apply_finalize_result(app: &AppHandle, task_id: u64, result:
                 let settings = state.settings.lock();
                 settings.correction_memory_enabled
             };
-            if correction_memory_enabled {
+            if correction_memory_enabled && !inserted_with_accessibility {
                 crate::correction_learning::observe_post_delivery_edit(app.clone(), text);
             }
         }
@@ -207,6 +225,79 @@ pub(crate) async fn apply_finalize_result(app: &AppHandle, task_id: u64, result:
                 runtime.clear_active_task(task_id);
             }
             emit_recording_error_then_idle(app, task_id).await;
+        }
+    }
+}
+
+fn deliver_recording_text(
+    original_target_enabled: bool,
+    mode: crate::commands::settings::OriginalTargetMode,
+    target: Option<&crate::text_injector::CapturedTextTarget>,
+    text: &str,
+) -> Result<crate::text_injector::InjectionMethod, String> {
+    let application_id = target.map(crate::text_injector::CapturedTextTarget::application_id);
+    deliver_recording_text_with(
+        original_target_enabled,
+        mode,
+        application_id,
+        text,
+        activate_original_application,
+        crate::text_injector::insert_text,
+        |text| {
+            target
+                .ok_or_else(|| "Original editable field was not captured".to_string())?
+                .insert_background(text)
+        },
+    )
+}
+
+fn activate_original_application(application_id: &str) -> Result<(), String> {
+    crate::sensors::focused_context::activate_application(application_id)?;
+    const ATTEMPTS: usize = 12;
+    for _ in 0..ATTEMPTS {
+        if crate::sensors::focused_context::capture_application_context()
+            .application_id
+            .as_deref()
+            == Some(application_id)
+        {
+            return Ok(());
+        }
+        std::thread::sleep(std::time::Duration::from_millis(25));
+    }
+    Err(format!(
+        "Original application did not become active: {application_id}"
+    ))
+}
+
+fn deliver_recording_text_with<Activate, InsertCurrent, InsertBackground>(
+    original_target_enabled: bool,
+    mode: crate::commands::settings::OriginalTargetMode,
+    original_application_id: Option<&str>,
+    text: &str,
+    activate_original_application: Activate,
+    insert_into_current_focus: InsertCurrent,
+    insert_into_background_target: InsertBackground,
+) -> Result<crate::text_injector::InjectionMethod, String>
+where
+    Activate: FnOnce(&str) -> Result<(), String>,
+    InsertCurrent: FnOnce(&str) -> Result<crate::text_injector::InjectionMethod, String>,
+    InsertBackground: FnOnce(&str) -> Result<crate::text_injector::InjectionMethod, String>,
+{
+    if !original_target_enabled {
+        return insert_into_current_focus(text);
+    }
+
+    let application_id = original_application_id
+        .filter(|application_id| !application_id.trim().is_empty())
+        .ok_or_else(|| "Original application was not captured".to_string())?;
+
+    match mode {
+        crate::commands::settings::OriginalTargetMode::Foreground => {
+            activate_original_application(application_id)?;
+            insert_into_current_focus(text)
+        }
+        crate::commands::settings::OriginalTargetMode::Background => {
+            insert_into_background_target(text)
         }
     }
 }
@@ -311,6 +402,7 @@ fn injection_delivery_status(
     match result {
         Ok((_, crate::text_injector::InjectionMethod::Keyboard)) => "inserted_keyboard",
         Ok((_, crate::text_injector::InjectionMethod::Clipboard)) => "inserted_clipboard",
+        Ok((_, crate::text_injector::InjectionMethod::Accessibility)) => "inserted_accessibility",
         Err(_) => "failed",
     }
 }
@@ -398,9 +490,10 @@ impl ProcessingEventTarget<'_> {
             Self::Retry { .. } => None,
             Self::None => None,
         };
-        let direct_typing_enabled = match self {
+        let (direct_typing_enabled, original_target_enabled) = match self {
             Self::Recording(app) => {
                 let state = app.state::<AppState>();
+                let original_target_enabled = state.session_uses_original_target(task_id);
                 let settings = state.settings.lock();
                 let profile_allows_insertion = app
                     .try_state::<crate::services::product_workflows::WorkflowRuntime>()
@@ -409,16 +502,23 @@ impl ProcessingEventTarget<'_> {
                         profile.output_action
                             == crate::services::product_workflows::OutputAction::Insert
                     });
-                settings.polish_stream_direct_typing_enabled && profile_allows_insertion
+                (
+                    settings.polish_stream_direct_typing_enabled && profile_allows_insertion,
+                    original_target_enabled,
+                )
             }
-            Self::Retry { .. } | Self::None => false,
+            Self::Retry { .. } | Self::None => (false, false),
         };
         let typed_visible_chars = Arc::new(ParkingMutex::new(0_usize));
         let direct_stream_inserted = Arc::new(AtomicBool::new(false));
         let callback_inserted = Arc::clone(&direct_stream_inserted);
 
         let callback = Arc::new(move |update: crate::polish_engine::PolishPreviewUpdate| {
-            if should_type_direct_stream_delta(direct_typing_enabled, update.is_final) {
+            if should_type_direct_stream_delta(
+                direct_typing_enabled,
+                update.is_final,
+                original_target_enabled,
+            ) {
                 maybe_insert_direct_stream_delta(
                     &app,
                     task_id,
@@ -498,8 +598,12 @@ fn maybe_insert_direct_stream_delta(
     }
 }
 
-fn should_type_direct_stream_delta(direct_typing_enabled: bool, is_final_update: bool) -> bool {
-    direct_typing_enabled && !is_final_update
+fn should_type_direct_stream_delta(
+    direct_typing_enabled: bool,
+    is_final_update: bool,
+    original_target_enabled: bool,
+) -> bool {
+    direct_typing_enabled && !is_final_update && !original_target_enabled
 }
 
 fn next_direct_stream_delta(
@@ -651,11 +755,11 @@ mod tests {
     use std::sync::Arc;
 
     use super::{
-        injection_delivery_status, insert_text_with_metrics, next_direct_stream_delta,
-        polish_error_tooltip_message, polish_preview_tooltip_message, should_observe_post_delivery,
-        should_type_direct_stream_delta, LOCAL_POLISH_TIMEOUT_TOOLTIP_MESSAGE,
-        POLISH_ERROR_TOOLTIP_MESSAGE, POLISH_PREVIEW_MAX_CHARS,
-        POLISH_PREVIEW_PENDING_TOOLTIP_MESSAGE,
+        deliver_recording_text_with, injection_delivery_status, insert_text_with_metrics,
+        next_direct_stream_delta, polish_error_tooltip_message, polish_preview_tooltip_message,
+        should_observe_post_delivery, should_type_direct_stream_delta,
+        LOCAL_POLISH_TIMEOUT_TOOLTIP_MESSAGE, POLISH_ERROR_TOOLTIP_MESSAGE,
+        POLISH_PREVIEW_MAX_CHARS, POLISH_PREVIEW_PENDING_TOOLTIP_MESSAGE,
     };
 
     #[test]
@@ -725,6 +829,13 @@ mod tests {
             "inserted_clipboard"
         );
         assert_eq!(
+            injection_delivery_status(&Ok((
+                1,
+                crate::text_injector::InjectionMethod::Accessibility,
+            ))),
+            "inserted_accessibility"
+        );
+        assert_eq!(
             injection_delivery_status(&Err("target rejected input".to_string())),
             "failed"
         );
@@ -748,9 +859,93 @@ mod tests {
 
     #[test]
     fn direct_stream_typing_requires_explicit_non_final_update() {
-        assert!(should_type_direct_stream_delta(true, false));
-        assert!(!should_type_direct_stream_delta(false, false));
-        assert!(!should_type_direct_stream_delta(true, true));
+        assert!(should_type_direct_stream_delta(true, false, false));
+        assert!(!should_type_direct_stream_delta(false, false, false));
+        assert!(!should_type_direct_stream_delta(true, true, false));
+        assert!(!should_type_direct_stream_delta(true, false, true));
+    }
+
+    #[test]
+    fn disabled_original_target_uses_current_focus_only() {
+        let result = deliver_recording_text_with(
+            false,
+            crate::commands::settings::OriginalTargetMode::Foreground,
+            Some("com.example.Editor"),
+            "hello",
+            |_| panic!("disabled delivery must not activate an application"),
+            |_| Ok(crate::text_injector::InjectionMethod::Keyboard),
+            |_| panic!("disabled delivery must not use accessibility"),
+        )
+        .unwrap();
+
+        assert_eq!(result, crate::text_injector::InjectionMethod::Keyboard);
+    }
+
+    #[test]
+    fn foreground_original_target_activates_before_current_focus_injection() {
+        let calls = Arc::new(parking_lot::Mutex::new(Vec::new()));
+        let activation_calls = Arc::clone(&calls);
+        let insertion_calls = Arc::clone(&calls);
+
+        let result = deliver_recording_text_with(
+            true,
+            crate::commands::settings::OriginalTargetMode::Foreground,
+            Some("com.example.Editor"),
+            "hello",
+            move |application_id| {
+                activation_calls
+                    .lock()
+                    .push(format!("activate:{application_id}"));
+                Ok(())
+            },
+            move |_| {
+                insertion_calls.lock().push("insert".to_string());
+                Ok(crate::text_injector::InjectionMethod::Clipboard)
+            },
+            |_| panic!("foreground delivery must not use accessibility"),
+        )
+        .unwrap();
+
+        assert_eq!(result, crate::text_injector::InjectionMethod::Clipboard);
+        assert_eq!(
+            calls.lock().as_slice(),
+            ["activate:com.example.Editor", "insert"]
+        );
+    }
+
+    #[test]
+    fn background_original_target_never_activates_or_uses_current_focus() {
+        let result = deliver_recording_text_with(
+            true,
+            crate::commands::settings::OriginalTargetMode::Background,
+            Some("com.example.Editor"),
+            "hello",
+            |_| panic!("background delivery must not activate an application"),
+            |_| panic!("background delivery must not inject into current focus"),
+            |text| {
+                assert_eq!(text, "hello");
+                Ok(crate::text_injector::InjectionMethod::Accessibility)
+            },
+        )
+        .unwrap();
+
+        assert_eq!(result, crate::text_injector::InjectionMethod::Accessibility);
+    }
+
+    #[test]
+    fn targeted_delivery_rejects_a_missing_original_application() {
+        let error = deliver_recording_text_with(
+            true,
+            crate::commands::settings::OriginalTargetMode::Background,
+            None,
+            "hello",
+            |_| panic!("missing target must not activate an application"),
+            |_| panic!("missing target must not inject into current focus"),
+            |_| panic!("missing target must not invoke accessibility"),
+        )
+        .unwrap_err();
+
+        assert_eq!(error, "Original application was not captured");
     }
 
     #[test]

@@ -4,7 +4,7 @@ use super::{
     normalize_pill_background_color, normalize_pill_background_opacity,
     polish_runtime_action_for_setting_update, validate_cloud_polish_config_for_check,
     validate_cloud_stt_config_for_check, AppSettings, CloudProviderConfig, CloudSttConfig,
-    LocalPolishRuntimeSettingAction,
+    LocalPolishRuntimeSettingAction, OriginalTargetMode,
 };
 use crate::history::RetentionPolicy;
 use serde_json::json;
@@ -301,6 +301,26 @@ fn direct_stream_typing_defaults_disabled() {
     let settings: AppSettings = serde_json::from_value(json!({})).unwrap();
 
     assert!(!settings.polish_stream_direct_typing_enabled);
+}
+
+#[test]
+fn original_target_delivery_defaults_disabled_with_foreground_preference() {
+    let settings: AppSettings = serde_json::from_value(json!({})).unwrap();
+
+    assert!(!settings.original_target_enabled);
+    assert_eq!(
+        settings.original_target_mode,
+        OriginalTargetMode::Foreground
+    );
+}
+
+#[test]
+fn original_target_mode_rejects_unknown_values() {
+    let result = serde_json::from_value::<AppSettings>(json!({
+        "original_target_mode": "teleport"
+    }));
+
+    assert!(result.is_err());
 }
 
 #[test]

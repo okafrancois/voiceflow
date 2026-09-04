@@ -41,3 +41,4 @@ Every ADR is a separate file: `NNN-kebab-case-title.md`
 | [ADR-003](./003-dual-layer-text-injection.md) | Dual-Layer Text Injection | 2025-10 | Accepted |
 | [ADR-004](./004-engine-trait-separation.md) | Unified SttEngine Trait | 2025-10 | Accepted |
 | [ADR-005](./005-ghost-mcp-integration.md) | Ghost OS MCP Integration for Computer Use | 2025-04 | Proposed |
+| [ADR-006](./006-original-target-delivery.md) | Original Target Delivery | 2026-09-04 | Accepted |

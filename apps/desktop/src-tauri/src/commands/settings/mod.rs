@@ -110,6 +110,14 @@ struct LegacyCloudSttConfig {
     pub language: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum OriginalTargetMode {
+    #[default]
+    Foreground,
+    Background,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AppSettings {
@@ -159,6 +167,10 @@ pub struct AppSettings {
     pub cloud_polish_configs: HashMap<String, CloudProviderConfig>,
     pub local_polish_runtime: LocalPolishRuntimeSettings,
     pub polish_stream_direct_typing_enabled: bool,
+    /// Deliver completed recordings to the editable target captured at start.
+    pub original_target_enabled: bool,
+    /// Prefer foreground compatibility or best-effort background Accessibility delivery.
+    pub original_target_mode: OriginalTargetMode,
     pub vad_enabled: bool,
     #[serde(default = "default_stay_in_tray")]
     pub stay_in_tray: bool,
@@ -473,6 +485,8 @@ impl Default for AppSettings {
             cloud_polish_configs: HashMap::new(),
             local_polish_runtime: LocalPolishRuntimeSettings::default(),
             polish_stream_direct_typing_enabled: false,
+            original_target_enabled: false,
+            original_target_mode: OriginalTargetMode::Foreground,
             vad_enabled: false,
             stay_in_tray: default_stay_in_tray(),
             polish_custom_templates: Vec::new(),
@@ -1388,6 +1402,16 @@ pub fn update_settings(
                 if let Some(v) = value.as_bool() {
                     settings.polish_stream_direct_typing_enabled = v;
                 }
+            }
+            "original_target_enabled" => {
+                let enabled = serde_json::from_value::<bool>(value.clone())
+                    .map_err(|error| format!("Invalid original target enablement: {error}"))?;
+                settings.original_target_enabled = enabled;
+            }
+            "original_target_mode" => {
+                let mode = serde_json::from_value::<OriginalTargetMode>(value.clone())
+                    .map_err(|error| format!("Invalid original target mode: {error}"))?;
+                settings.original_target_mode = mode;
             }
             "window_context_enabled" => {
                 if let Some(v) = value.as_bool() {

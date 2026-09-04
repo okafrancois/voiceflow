@@ -186,6 +186,7 @@ export interface ShortcutProfilesMap {
 }
 
 export type WorkflowOutputAction = "insert" | "preview" | "copy";
+export type OriginalTargetMode = "foreground" | "background";
 export type ContextSource = "accessibility" | "clipboard" | "window_metadata" | "ocr";
 export type VoiceActionKind = "shorten" | "translate" | "reply" | "list" | "custom";
 export type QuickControlKind =
@@ -319,6 +320,8 @@ export interface AppSettings {
   cloud_polish_configs: Record<string, CloudProviderConfig>;
   local_polish_runtime: LocalPolishRuntimeSettings;
   polish_stream_direct_typing_enabled: boolean;
+  original_target_enabled: boolean;
+  original_target_mode: OriginalTargetMode;
   vad_enabled: boolean;
   stay_in_tray: boolean;
   polish_custom_templates: CustomPolishTemplate[];
