@@ -2,6 +2,13 @@
 
 All notable changes to the desktop application will be documented in this file.
 
+## v1.2.1 (2026-09-05)
+
+### Fixes
+
+- Restore a smooth daily activity curve with a subtle area fill
+- Preserve period selection, exact daily values and the accessible data table
+
 ## v1.2.0 (2026-09-05)
 
 ### Features

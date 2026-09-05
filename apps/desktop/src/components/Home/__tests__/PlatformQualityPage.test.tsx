@@ -126,7 +126,7 @@ describe("PlatformQualityPage", () => {
   it("sends period, source, outcome, and application filters to the backend", async () => {
     renderPage();
     await waitFor(() => expect(getSummaryMock).toHaveBeenCalled());
-    expect(screen.getByTestId("application-injection-failures")).toHaveTextContent("com.example.editor");
+    await waitFor(() => expect(screen.getByTestId("application-injection-failures")).toHaveTextContent("com.example.editor"));
     expect(screen.getByTestId("application-injection-failures")).toHaveTextContent("2");
 
     fireEvent.change(screen.getByLabelText("platformQuality.filters.period"), { target: { value: "days_7" } });

@@ -66,3 +66,13 @@ it("shows a selected-period failure without stale statistics", async () => {
   expect(await screen.findByRole("alert")).toHaveTextContent("statistics unavailable");
   expect(screen.queryByText("210")).not.toBeInTheDocument();
 });
+
+it("exposes each daily value on a smooth activity chart", async () => {
+  getStatistics.mockResolvedValue({ ...sample, trend: [
+    { date: "2026-09-03", wordCount: 0, dictationCount: 0, audioDurationMs: 0, localDictationCount: 0, cloudDictationCount: 0 },
+    { date: "2026-09-04", wordCount: 210, dictationCount: 4, audioDurationMs: 120000, localDictationCount: 4, cloudDictationCount: 0 },
+  ] });
+  render(<StatisticsPage />);
+  expect(await screen.findByRole("img", { name: "usage.activity" })).toBeInTheDocument();
+  expect(screen.getByLabelText("2026-09-04: 210 usage.words")).toBeInTheDocument();
+});

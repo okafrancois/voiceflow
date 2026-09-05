@@ -39,6 +39,7 @@ A plan is only completed when all implementation units are closed, verification 
 
 | Plan | Type | Date |
 |------|------|------|
+| [Smooth daily activity curve](./completed/2026-09-05-005-fix-activity-curve-plan.md) | fix | 2026-09-05 |
 | [Opt-in Vibe coding context](./completed/2026-09-05-003-feat-vibe-coding-plan.md) | feat | 2026-09-05 |
 | [Dictation workspace](./completed/2026-09-05-003-feat-dictation-workspace-plan.md) | feat | 2026-09-05 |
 | [Workflow library interface](./completed/2026-09-05-003-feat-workflow-library-ui-plan.md) | feat | 2026-09-05 |

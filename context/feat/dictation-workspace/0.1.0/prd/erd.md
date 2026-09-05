@@ -33,7 +33,12 @@ only, so a long history does not create thousands of empty bins. The response
 returns the exact millisecond range and `YYYY-MM-DD` local dates. Deleting or
 expiring history therefore reduces later aggregates.
 The retained-history chart labels this sparse representation as active dates;
-equal-width bars do not imply that adjacent points are consecutive days.
+equally spaced points do not imply that adjacent points are consecutive days.
+
+The daily activity visualization uses a smooth curve with a subtle area fill,
+not bars. The curve passes through the supplied values without overshooting
+below zero or above neighboring values. A single date displays a point.
+Exact values remain accessible through point labels and the daily table.
 
 ## Acceptance
 

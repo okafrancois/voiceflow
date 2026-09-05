@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { useUsageStatistics } from "@/hooks/useUsageStatistics";
 import type { StatisticsPeriod } from "@/lib/tauri";
 import { SettingsPageLayout } from "./SettingsPageLayout";
+import { ActivityCurve } from "./ActivityCurve";
 import { UsageSummary } from "./UsageSummary";
 
 export function StatisticsPage() {
@@ -28,13 +29,7 @@ export function StatisticsPage() {
         <CardContent>
           {statistics.dictationCount === 0 ? <p className="py-8 text-center text-sm text-muted-foreground">{t("usage.empty")}</p> : <>
             <div className="mb-2 text-xs tabular-nums text-muted-foreground">{number.format(maxWords)} {t("usage.words")}</div>
-            <div className="overflow-x-auto pb-2">
-              <div className="flex h-44 items-end gap-2" style={{ minWidth: Math.max(280, statistics.trend.length * 18) }} aria-hidden="true">
-                {statistics.trend.map(day => <div key={day.date} className="flex h-full min-w-2 flex-1 items-end" title={`${day.date}: ${number.format(day.wordCount)}`}>
-                  <div className="w-full rounded-t-lg bg-emerald-800/75 dark:bg-emerald-300/70" style={{ height: `${day.wordCount / maxWords * 100}%`, minHeight: day.wordCount ? 3 : 1 }} />
-                </div>)}
-              </div>
-            </div>
+            <ActivityCurve days={statistics.trend} title={t("usage.activity")} metric={t("usage.words")} locale={i18n?.language} />
             <div className="mt-2 flex justify-between gap-4 text-xs tabular-nums text-muted-foreground"><span>{statistics.trend[0]?.date}</span><span>{statistics.trend.at(-1)?.date}</span></div>
             <details className="mt-4 text-sm"><summary className="cursor-pointer text-muted-foreground">{t("usage.viewDaily")}</summary>
               <div className="mt-3 max-h-72 overflow-auto"><table className="w-full text-left text-xs"><thead><tr><th className="p-2">{t("usage.date")}</th><th>{t("usage.words")}</th><th>{t("usage.dictations")}</th></tr></thead><tbody>
