@@ -61,9 +61,8 @@ export function PlatformQualityPage() {
   const [qualityBusy, setQualityBusy] = useState(false);
   const [exportPath, setExportPath] = useState("");
   const presets: { value: SetupPreset; label: string }[] = [
-    { value: "private", label: t("platformQuality.presets.private") },
-    { value: "balanced", label: t("platformQuality.presets.balanced") },
-    { value: "maximum_accuracy", label: t("platformQuality.presets.maximum_accuracy") },
+    { value: "local_only", label: t("platformQuality.presets.localOnly") },
+    { value: "cloud_stt", label: t("platformQuality.presets.cloudStt") },
   ];
   const periodOptions = [
     { value: "all", label: t("platformQuality.period.all") },
@@ -262,7 +261,7 @@ export function PlatformQualityPage() {
               <Metric label={t("platformQuality.diagnostics.model")} value={diagnostics.recommended_model.model_name} />
               <Metric
                 label={t("platformQuality.diagnostics.recommendation")}
-                value={`${presetLabel(diagnostics.recommended_preset, t)} — ${diagnosticRecommendation(diagnostics, t)}`}
+                value={diagnosticRecommendation(diagnostics, t)}
               />
               <Metric label={t("platformQuality.latency.stt")} value={valueOrDash(diagnostics.latency?.stt_ms ?? null, " ms")} />
               <Metric label={t("platformQuality.latency.total")} value={valueOrDash(diagnostics.latency?.total_ms ?? null, " ms")} />
@@ -371,14 +370,6 @@ function FilterSelect({ id, label, value, onChange, options }: { id: string; lab
   return <div className="space-y-2"><Label htmlFor={id}>{label}</Label><select id={id} className="h-10 w-full rounded-2xl border border-input bg-background px-3 text-sm" value={value} onChange={(event) => onChange(event.target.value)}>{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div>;
 }
 
-function presetLabel(preset: SetupPreset, t: (key: string) => string) {
-  switch (preset) {
-    case "private": return t("platformQuality.presets.private");
-    case "balanced": return t("platformQuality.presets.balanced");
-    case "maximum_accuracy": return t("platformQuality.presets.maximum_accuracy");
-  }
-}
-
 function qualityKindLabel(kind: QualityEventKind, t: (key: string) => string) {
   switch (kind) {
     case "transcription_success": return t("platformQuality.kind.transcription_success");
@@ -392,10 +383,7 @@ function diagnosticRecommendation(
   report: DiagnosticReport,
   t: (key: string, options?: { model: string }) => string,
 ) {
-  const options = { model: report.recommended_model.model_name };
-  switch (report.recommended_preset) {
-    case "private": return t("platformQuality.diagnostics.privateReason", options);
-    case "balanced": return t("platformQuality.diagnostics.balancedReason", options);
-    case "maximum_accuracy": return t("platformQuality.diagnostics.maximumAccuracyReason", options);
-  }
+  return report.recommended_preset === null
+    ? t("platformQuality.diagnostics.microphoneRequired")
+    : t("platformQuality.diagnostics.localReason", { model: report.recommended_model.model_name });
 }

@@ -18,7 +18,6 @@ Feature specs are versioned delivery contracts. Each spec at `context/feat/[name
 
 | Feature | Version | Status | Spec |
 |---------|---------|--------|------|
-| Home Dashboard Redesign | 0.1.0 | Active | [erd.md](./home-dashboard/0.1.0/prd/erd.md) |
 | Website Homepage Redesign | 0.1.0 | Active | [erd.md](./website-homepage/0.1.0/prd/erd.md) |
 | Cloud Service Tab UI | 1.0.0 | Active | [erd.md](./cloud-service/1.0.0/prd/erd.md) |
 | Correction Learning | 0.1.0 | Active | [erd.md](./correction-learning/0.1.0/prd/erd.md) |
@@ -34,6 +33,9 @@ Feature specs are versioned delivery contracts. Each spec at `context/feat/[name
 
 | Feature | Version | Status | Spec |
 |---------|---------|--------|------|
+| Vibe coding | 0.1.0 | Completed | [erd.md](./vibe-coding/0.1.0/prd/erd.md) |
+| Local macOS development installation | 0.1.0 | Completed | [erd.md](./dev-local-install/0.1.0/prd/erd.md) |
+| Dictation-focused product simplification | 0.1.0 | Completed | [erd.md](./product-simplification/0.1.0/prd/erd.md) |
 | Polish Output Safety | 0.1.0 | Completed | [erd.md](./polish-output-safety/0.1.0/prd/erd.md) |
 | Reliable Windows Delivery | 0.1.0 | Completed | [erd.md](./windows-text-injection/0.1.0/prd/erd.md) |
 | Context Workflows | 0.1.0 | Completed | [erd.md](./context-workflows/0.1.0/prd/erd.md) |
@@ -65,3 +67,14 @@ Every feature spec MUST include:
 - If a spec doesn't exist, create it first, then implement against it
 - Each versioned increment is implemented, tested, and verified independently
 - Specs are the source of truth for feature intent and scope
+
+## Superseded features
+
+| Feature | Replacement |
+| --- | --- |
+| [Home Dashboard Redesign](./home-dashboard/0.1.0/prd/erd.md) | [Dictation readiness and recovery](./product-simplification/0.1.0/prd/erd.md) |
+
+## Completed workspace features
+
+- [Dictation workspace](./dictation-workspace/0.1.0/prd/erd.md) — 0.1.0, completed 2026-09-05.
+- [Workflow library interface](./workflow-library-ui/0.1.0/prd/erd.md) — 0.1.0, completed 2026-09-05.

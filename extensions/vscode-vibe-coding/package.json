@@ -1,0 +1,45 @@
+{
+  "name": "voice-flow-vibe-coding",
+  "displayName": "Voice Flow Vibe Coding",
+  "description": "Shares bounded active editor metadata with a local Voice Flow instance.",
+  "version": "0.1.0",
+  "publisher": "voiceflow-local",
+  "license": "AGPL-3.0-only",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Other"],
+  "main": "./extension.js",
+  "activationEvents": ["onStartupFinished"],
+  "contributes": {
+    "commands": [
+      {
+        "command": "voiceFlowVibe.enable",
+        "title": "Voice Flow: Enable Vibe Coding Context"
+      },
+      {
+        "command": "voiceFlowVibe.sendContext",
+        "title": "Voice Flow: Send Current Coding Context"
+      },
+      {
+        "command": "voiceFlowVibe.disable",
+        "title": "Voice Flow: Disable Vibe Coding Context"
+      }
+    ],
+    "configuration": {
+      "title": "Voice Flow Vibe Coding",
+      "properties": {
+        "voiceFlowVibe.cliPath": {
+          "type": "string",
+          "default": "",
+          "scope": "application",
+          "description": "Optional absolute path to the Voice Flow executable. Leave empty to use a standard macOS installation path or PATH lookup."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "package": "npx @vscode/vsce package"
+  }
+}

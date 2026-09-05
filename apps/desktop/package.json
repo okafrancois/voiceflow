@@ -1,6 +1,6 @@
 {
   "name": "@voiceflow/desktop",
-  "version": "1.1.5",
+  "version": "1.2.0",
   "license": "AGPL-3.0-only",
   "description": "Voice Flow Desktop Application",
   "type": "module",
@@ -10,6 +10,7 @@
     "clean": "rimraf dist && npm run clean:e2e-capability && npm run clean:rust",
     "dev": "vite",
     "build": "npm run clean && tsc && vite build",
+    "build:local-install-frontend": "tsc && vite build",
     "generate:inhouse-icons": "bash ../../scripts/generate-inhouse-icons.sh",
     "version:patch": "tauri-version patch --no-git --no-lock",
     "version:minor": "tauri-version minor --no-git --no-lock",
@@ -27,6 +28,7 @@
     "tauri": "tauri",
     "tauri:dev": "npm run clean:e2e-capability && tauri dev --config src-tauri/tauri.dev.conf.json",
     "tauri:dev:mac-permissions": "node ../../scripts/run-macos-permission-dev.mjs",
+    "tauri:build:mac:local-install": "node ../../scripts/run-macos-permission-dev.mjs --no-open",
     "build:all": "node ../../scripts/build-all-platforms.mjs",
     "build:all:unsigned": "node ../../scripts/build-all-platforms.mjs --unsigned",
     "tauri:build:mac": "node ../../scripts/prepare-tauri-runtime-resources.mjs --platform macos --require-runtime && node ../../scripts/sign-macos-binaries.mjs && node ../../scripts/run-tauri-build-with-updater-signing.mjs -- tauri build --config src-tauri/tauri.macos.conf.json --config src-tauri/tauri.updater.conf.json --config src-tauri/tauri.runtime.generated.conf.json",
@@ -66,7 +68,6 @@
     "react-dom": "^19.0.0",
     "react-i18next": "^16.5.4",
     "react-router-dom": "^7.1.1",
-    "recharts": "^3.8.1",
     "sonner": "^2.0.7",
     "tailwind-merge": "^2.6.0",
     "zustand": "^5.0.3"

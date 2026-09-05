@@ -1,11 +1,11 @@
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, HashSet};
 use std::path::Path;
 
-use chrono::{Duration, Local, TimeZone};
 use rusqlite::{params, Connection, Result as SqlResult};
+use unicode_segmentation::UnicodeSegmentation;
 
 use super::models::{
-    DailyUsage, DashboardStats, EngineUsage, HistoryFilter, NewTranscriptionEntry,
+    DailyStatistics, HistoryFilter, HistoryStatistics, NewTranscriptionEntry, StatisticsPeriod,
     TranscriptionEntry,
 };
 use super::RetentionPolicy;
@@ -72,17 +72,6 @@ pub struct HistoryStore {
 pub struct LatestTranscriptionText {
     pub id: String,
     pub final_text: String,
-}
-
-#[derive(Debug, Clone)]
-struct DashboardEntry {
-    created_at: i64,
-    final_text: String,
-    audio_duration_ms: Option<i64>,
-    stt_duration_ms: Option<i64>,
-    polish_applied: bool,
-    is_cloud: bool,
-    stt_engine: String,
 }
 
 /// Updates to apply to an entry after retry.
@@ -738,91 +727,145 @@ impl HistoryStore {
         Ok(count)
     }
 
-    pub fn get_dashboard_stats(&self) -> Result<DashboardStats, String> {
-        let entries = self.load_dashboard_entries(None)?;
-        Ok(Self::build_dashboard_stats(&entries))
+    pub fn get_history_statistics(
+        &self,
+        period: StatisticsPeriod,
+    ) -> Result<HistoryStatistics, String> {
+        self.get_history_statistics_at(period, chrono::Utc::now().timestamp_millis())
     }
 
-    pub fn get_daily_usage(&self, days: u32) -> Result<Vec<DailyUsage>, String> {
-        let cutoff = Local::now()
-            .date_naive()
-            .and_hms_opt(0, 0, 0)
-            .unwrap()
-            .and_local_timezone(Local)
-            .single()
-            .unwrap()
-            - Duration::days(i64::from(days.saturating_sub(1)));
-        let entries = self.load_dashboard_entries(Some(cutoff.timestamp_millis()))?;
-        Self::build_daily_usage(&entries, days)
-    }
+    fn get_history_statistics_at(
+        &self,
+        period: StatisticsPeriod,
+        now_ms: i64,
+    ) -> Result<HistoryStatistics, String> {
+        use chrono::{Duration, Local, TimeZone};
 
-    fn build_daily_usage(
-        entries: &[DashboardEntry],
-        range: u32,
-    ) -> Result<Vec<DailyUsage>, String> {
-        let mut grouped = BTreeMap::<chrono::NaiveDate, DailyUsage>::new();
-
-        for entry in entries {
-            let date = Self::local_date_from_timestamp(entry.created_at);
-            let point = grouped.entry(date).or_insert_with(|| DailyUsage {
-                date: date.format("%Y-%m-%d").to_string(),
-                count: 0,
-                audio_ms: 0,
-                output_units: 0,
-            });
-            point.count += 1;
-            point.audio_ms += entry.audio_duration_ms.unwrap_or(0);
-            point.output_units += Self::approximate_output_units(&entry.final_text);
-        }
-
-        let mut filled = Vec::with_capacity(range as usize);
-        let today = Local::now().date_naive();
-
-        for i in (0..range).rev() {
-            let date = today - Duration::days(i64::from(i));
-            if let Some(point) = grouped.remove(&date) {
-                filled.push(point);
-            } else {
-                filled.push(DailyUsage {
-                    date: date.format("%Y-%m-%d").to_string(),
-                    count: 0,
-                    audio_ms: 0,
-                    output_units: 0,
-                });
-            }
-        }
-
-        Ok(filled)
-    }
-
-    pub fn get_engine_usage(&self) -> Result<Vec<EngineUsage>, String> {
-        let entries = self.load_dashboard_entries(None)?;
-        let mut grouped = BTreeMap::<String, (i64, i64, i64)>::new();
-
-        for entry in entries {
-            let stats = grouped.entry(entry.stt_engine).or_insert((0, 0, 0));
-            stats.0 += 1;
-            if let Some(stt_ms) = entry.stt_duration_ms {
-                stats.1 += stt_ms;
-                stats.2 += 1;
-            }
-        }
-
-        let mut result = grouped
-            .into_iter()
-            .map(|(engine, (count, stt_sum, stt_count))| EngineUsage {
-                engine,
-                count,
-                avg_stt_ms: if stt_count > 0 {
-                    Some(stt_sum / stt_count)
-                } else {
-                    None
-                },
+        let now = Local.timestamp_millis_opt(now_ms).single().ok_or_else(|| {
+            format!("statistics end time is outside the supported range: {now_ms}")
+        })?;
+        let today = now.date_naive();
+        let range_start_date = match period {
+            StatisticsPeriod::SevenDays => Some(today - Duration::days(6)),
+            StatisticsPeriod::ThirtyDays => Some(today - Duration::days(29)),
+            StatisticsPeriod::All => None,
+        };
+        let requested_range_start_ms = range_start_date
+            .map(|date| {
+                date.and_hms_opt(0, 0, 0)
+                    .ok_or_else(|| format!("failed to build local statistics date: {date}"))?
+                    .and_local_timezone(Local)
+                    .earliest()
+                    .map(|date_time| date_time.timestamp_millis())
+                    .ok_or_else(|| format!("local statistics date has no valid midnight: {date}"))
             })
-            .collect::<Vec<_>>();
+            .transpose()?;
 
-        result.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.engine.cmp(&b.engine)));
-        Ok(result)
+        let mut trend = BTreeMap::<chrono::NaiveDate, DailyStatistics>::new();
+        if let Some(start) = range_start_date {
+            let mut date = start;
+            while date <= today {
+                trend.insert(date, Self::empty_daily_statistics(date));
+                date = date
+                    .succ_opt()
+                    .ok_or_else(|| "statistics date range exceeds supported dates".to_string())?;
+            }
+        }
+
+        let conn = self.conn.lock();
+        let mut statement = conn
+            .prepare(
+                "SELECT created_at, final_text, audio_duration_ms, is_cloud \
+                 FROM transcription_history \
+                 WHERE status = 'success' AND source_kind = 'recording' \
+                   AND created_at <= ?1 AND (?2 IS NULL OR created_at >= ?2) \
+                 ORDER BY created_at ASC, rowid ASC",
+            )
+            .map_err(|error| format!("failed to prepare history statistics query: {error}"))?;
+        let rows = statement
+            .query_map(params![now_ms, requested_range_start_ms], |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<i64>>(2)?,
+                    row.get::<_, i32>(3)? != 0,
+                ))
+            })
+            .map_err(|error| format!("failed to query history statistics: {error}"))?;
+
+        let mut statistics = HistoryStatistics {
+            period,
+            range_start_ms: requested_range_start_ms,
+            range_end_ms: now_ms,
+            word_count: 0,
+            dictation_count: 0,
+            audio_duration_ms: 0,
+            active_days: 0,
+            local_dictation_count: 0,
+            cloud_dictation_count: 0,
+            trend: Vec::new(),
+        };
+
+        for row in rows {
+            let (created_at, final_text, audio_duration_ms, is_cloud) =
+                row.map_err(|error| format!("failed to read history statistics row: {error}"))?;
+            let created_date = Local
+                .timestamp_millis_opt(created_at)
+                .single()
+                .ok_or_else(|| {
+                    format!("history entry time is outside the supported range: {created_at}")
+                })?
+                .date_naive();
+            let words = u64::try_from(final_text.unicode_words().count()).unwrap_or(u64::MAX);
+            let audio_ms = audio_duration_ms
+                .and_then(|duration| u64::try_from(duration).ok())
+                .unwrap_or(0);
+            let point = trend
+                .entry(created_date)
+                .or_insert_with(|| Self::empty_daily_statistics(created_date));
+
+            point.word_count = point.word_count.saturating_add(words);
+            point.dictation_count = point.dictation_count.saturating_add(1);
+            point.audio_duration_ms = point.audio_duration_ms.saturating_add(audio_ms);
+            statistics.word_count = statistics.word_count.saturating_add(words);
+            statistics.dictation_count = statistics.dictation_count.saturating_add(1);
+            statistics.audio_duration_ms = statistics.audio_duration_ms.saturating_add(audio_ms);
+            if is_cloud {
+                point.cloud_dictation_count = point.cloud_dictation_count.saturating_add(1);
+                statistics.cloud_dictation_count =
+                    statistics.cloud_dictation_count.saturating_add(1);
+            } else {
+                point.local_dictation_count = point.local_dictation_count.saturating_add(1);
+                statistics.local_dictation_count =
+                    statistics.local_dictation_count.saturating_add(1);
+            }
+            if statistics.range_start_ms.is_none() {
+                statistics.range_start_ms = Some(created_at);
+            }
+        }
+        drop(statement);
+        drop(conn);
+
+        statistics.active_days = u64::try_from(
+            trend
+                .values()
+                .filter(|point| point.dictation_count > 0)
+                .count(),
+        )
+        .unwrap_or(u64::MAX);
+        statistics.trend = trend.into_values().collect();
+        Ok(statistics)
+    }
+
+    fn empty_daily_statistics(date: chrono::NaiveDate) -> DailyStatistics {
+        DailyStatistics {
+            date: date.format("%Y-%m-%d").to_string(),
+            word_count: 0,
+            dictation_count: 0,
+            audio_duration_ms: 0,
+            local_dictation_count: 0,
+            cloud_dictation_count: 0,
+        }
     }
 
     pub fn register_audio_asset(&self, path: &str, created_at: i64) -> Result<(), String> {
@@ -1061,253 +1104,13 @@ impl HistoryStore {
             .map_err(|e| format!("failed to count retained audio: {e}"))?;
         Ok(u64::try_from(count).unwrap_or(0))
     }
-
-    fn load_dashboard_entries(&self, since_ms: Option<i64>) -> Result<Vec<DashboardEntry>, String> {
-        let conn = self.conn.lock();
-        match since_ms {
-            Some(cutoff_ms) => {
-                let mut stmt = conn
-                    .prepare(
-                        "SELECT created_at, final_text, audio_duration_ms, stt_duration_ms, \
-                         polish_applied, is_cloud, stt_engine FROM transcription_history \
-                         WHERE created_at >= ?1 ORDER BY created_at ASC",
-                    )
-                    .map_err(|e| format!("failed to prepare dashboard query: {e}"))?;
-                let rows = stmt
-                    .query_map(params![cutoff_ms], Self::map_dashboard_entry)
-                    .map_err(|e| format!("failed to query dashboard rows: {e}"))?;
-
-                let mut result = Vec::new();
-                for row in rows {
-                    result.push(row.map_err(|e| format!("failed to read dashboard row: {e}"))?);
-                }
-                Ok(result)
-            }
-            None => {
-                let mut stmt = conn
-                    .prepare(
-                        "SELECT created_at, final_text, audio_duration_ms, stt_duration_ms, \
-                         polish_applied, is_cloud, stt_engine FROM transcription_history \
-                         ORDER BY created_at ASC",
-                    )
-                    .map_err(|e| format!("failed to prepare dashboard query: {e}"))?;
-                let rows = stmt
-                    .query_map([], Self::map_dashboard_entry)
-                    .map_err(|e| format!("failed to query dashboard rows: {e}"))?;
-
-                let mut result = Vec::new();
-                for row in rows {
-                    result.push(row.map_err(|e| format!("failed to read dashboard row: {e}"))?);
-                }
-                Ok(result)
-            }
-        }
-    }
-
-    fn build_dashboard_stats(entries: &[DashboardEntry]) -> DashboardStats {
-        let today = Local::now().date_naive();
-        let last_7_cutoff = today - Duration::days(6);
-        let mut total_chars = 0_i64;
-        let mut total_output_units = 0_i64;
-        let mut total_audio_ms = 0_i64;
-        let mut audio_count = 0_i64;
-        let mut total_stt_ms = 0_i64;
-        let mut stt_count = 0_i64;
-        let mut today_count = 0_i64;
-        let mut local_count = 0_i64;
-        let mut cloud_count = 0_i64;
-        let mut polish_count = 0_i64;
-        let mut last_7_days_count = 0_i64;
-        let mut last_7_days_audio_ms = 0_i64;
-        let mut last_7_days_output_units = 0_i64;
-        let mut active_dates = BTreeSet::new();
-
-        for entry in entries {
-            let local_date = Self::local_date_from_timestamp(entry.created_at);
-            let output_units = Self::approximate_output_units(&entry.final_text);
-            let char_count = entry.final_text.chars().count() as i64;
-
-            total_chars += char_count;
-            total_output_units += output_units;
-
-            if local_date == today {
-                today_count += 1;
-            }
-            if local_date >= last_7_cutoff {
-                last_7_days_count += 1;
-                last_7_days_output_units += output_units;
-            }
-
-            if let Some(audio_ms) = entry.audio_duration_ms {
-                total_audio_ms += audio_ms;
-                audio_count += 1;
-                if local_date >= last_7_cutoff {
-                    last_7_days_audio_ms += audio_ms;
-                }
-            }
-
-            if let Some(stt_ms) = entry.stt_duration_ms {
-                total_stt_ms += stt_ms;
-                stt_count += 1;
-            }
-
-            if entry.is_cloud {
-                cloud_count += 1;
-            } else {
-                local_count += 1;
-            }
-            if entry.polish_applied {
-                polish_count += 1;
-            }
-
-            active_dates.insert(local_date);
-        }
-
-        let total_count = entries.len() as i64;
-        let (current_streak_days, longest_streak_days) =
-            Self::calculate_streaks(&active_dates, today);
-
-        DashboardStats {
-            total_count,
-            today_count,
-            total_chars,
-            total_output_units,
-            total_audio_ms,
-            avg_stt_ms: if stt_count > 0 {
-                Some(total_stt_ms / stt_count)
-            } else {
-                None
-            },
-            avg_audio_ms: if audio_count > 0 {
-                Some(total_audio_ms / audio_count)
-            } else {
-                None
-            },
-            avg_output_units: if total_count > 0 {
-                Some(total_output_units as f64 / total_count as f64)
-            } else {
-                None
-            },
-            local_count,
-            cloud_count,
-            polish_count,
-            active_days: active_dates.len() as i64,
-            current_streak_days,
-            longest_streak_days,
-            last_7_days_count,
-            last_7_days_audio_ms,
-            last_7_days_output_units,
-        }
-    }
-
-    fn map_dashboard_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<DashboardEntry> {
-        Ok(DashboardEntry {
-            created_at: row.get(0)?,
-            final_text: row.get(1)?,
-            audio_duration_ms: row.get(2)?,
-            stt_duration_ms: row.get(3)?,
-            polish_applied: row.get::<_, i32>(4)? != 0,
-            is_cloud: row.get::<_, i32>(5)? != 0,
-            stt_engine: row.get(6)?,
-        })
-    }
-
-    fn calculate_streaks(
-        active_dates: &BTreeSet<chrono::NaiveDate>,
-        today: chrono::NaiveDate,
-    ) -> (i64, i64) {
-        if active_dates.is_empty() {
-            return (0, 0);
-        }
-
-        let sorted_dates = active_dates.iter().copied().collect::<Vec<_>>();
-        let mut longest_streak = 1_i64;
-        let mut current_run = 1_i64;
-
-        for window in sorted_dates.windows(2) {
-            let previous = window[0];
-            let current = window[1];
-            if current == previous + Duration::days(1) {
-                current_run += 1;
-                longest_streak = longest_streak.max(current_run);
-            } else {
-                current_run = 1;
-            }
-        }
-
-        let latest_date = *sorted_dates.last().unwrap();
-        if latest_date < today - Duration::days(1) {
-            return (0, longest_streak);
-        }
-
-        let mut current_streak = 0_i64;
-        let mut cursor = latest_date;
-        while active_dates.contains(&cursor) {
-            current_streak += 1;
-            cursor -= Duration::days(1);
-        }
-
-        (current_streak, longest_streak)
-    }
-
-    fn local_date_from_timestamp(timestamp_ms: i64) -> chrono::NaiveDate {
-        Local
-            .timestamp_millis_opt(timestamp_ms)
-            .single()
-            .unwrap()
-            .date_naive()
-    }
-
-    fn approximate_output_units(text: &str) -> i64 {
-        let mut units = 0_i64;
-        let mut in_word = false;
-
-        for ch in text.chars() {
-            if ch.is_whitespace() {
-                in_word = false;
-                continue;
-            }
-
-            if Self::is_cjk_ideograph(ch) {
-                units += 1;
-                in_word = false;
-                continue;
-            }
-
-            if ch.is_alphanumeric() {
-                if !in_word {
-                    units += 1;
-                    in_word = true;
-                }
-                continue;
-            }
-
-            in_word = false;
-        }
-
-        units
-    }
-
-    fn is_cjk_ideograph(ch: char) -> bool {
-        matches!(
-            ch as u32,
-            0x3400..=0x4DBF
-                | 0x4E00..=0x9FFF
-                | 0xF900..=0xFAFF
-                | 0x20000..=0x2A6DF
-                | 0x2A700..=0x2B73F
-                | 0x2B740..=0x2B81F
-                | 0x2B820..=0x2CEAF
-                | 0x2CEB0..=0x2EBEF
-                | 0x30000..=0x3134F
-        )
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::history::RetentionPolicy;
+    use chrono::{Duration, Local};
     use std::fs;
 
     fn test_store() -> HistoryStore {
@@ -1333,6 +1136,7 @@ mod tests {
         polish_applied: bool,
         is_cloud: bool,
         stt_engine: &'static str,
+        source_kind: &'static str,
     }
 
     impl<'a> TestEntry<'a> {
@@ -1346,6 +1150,7 @@ mod tests {
                 polish_applied: false,
                 is_cloud: false,
                 stt_engine: "Whisper",
+                source_kind: "recording",
             }
         }
 
@@ -1355,14 +1160,13 @@ mod tests {
             self
         }
 
-        fn polished(mut self) -> Self {
-            self.polish_applied = true;
+        fn from_file(mut self) -> Self {
+            self.source_kind = "file";
             self
         }
 
-        fn cloud(mut self, engine: &'static str) -> Self {
+        fn from_cloud(mut self) -> Self {
             self.is_cloud = true;
-            self.stt_engine = engine;
             self
         }
     }
@@ -1377,14 +1181,15 @@ mod tests {
             polish_applied,
             is_cloud,
             stt_engine,
+            source_kind,
         } = entry;
         let conn = store.conn.lock();
         conn.execute(
             "INSERT INTO transcription_history \
              (id, created_at, raw_text, final_text, stt_engine, stt_model, language, \
               audio_duration_ms, stt_duration_ms, polish_duration_ms, total_duration_ms, \
-              polish_applied, polish_engine, is_cloud) \
-             VALUES (?1, ?2, ?3, ?4, ?5, NULL, NULL, ?6, ?7, NULL, NULL, ?8, NULL, ?9)",
+              polish_applied, polish_engine, is_cloud, source_kind) \
+             VALUES (?1, ?2, ?3, ?4, ?5, NULL, NULL, ?6, ?7, NULL, NULL, ?8, NULL, ?9, ?10)",
             params![
                 id,
                 created_at,
@@ -1395,9 +1200,128 @@ mod tests {
                 stt_duration_ms,
                 polish_applied as i32,
                 is_cloud as i32,
+                source_kind,
             ],
         )
         .unwrap();
+    }
+
+    #[test]
+    fn statistics_count_only_successful_microphone_dictations() {
+        let store = test_store();
+        let now = timestamp_for_day_offset(0, 18);
+        insert_entry(
+            &store,
+            TestEntry::new("local", timestamp_for_day_offset(0, 9), "Hello, world!")
+                .with_timings(1_500, 100),
+        );
+        insert_entry(
+            &store,
+            TestEntry::new("cloud", timestamp_for_day_offset(0, 10), "bonjour à tous").from_cloud(),
+        );
+        insert_entry(
+            &store,
+            TestEntry::new("file", timestamp_for_day_offset(0, 11), "imported words")
+                .with_timings(99_000, 200)
+                .from_file(),
+        );
+        insert_entry(
+            &store,
+            TestEntry::new("failed", timestamp_for_day_offset(0, 12), "failed words")
+                .with_timings(5_000, 300),
+        );
+        store.mark_error("failed", "network error").unwrap();
+
+        let stats = store
+            .get_history_statistics_at(super::super::models::StatisticsPeriod::SevenDays, now)
+            .unwrap();
+
+        assert_eq!(stats.word_count, 5);
+        assert_eq!(stats.dictation_count, 2);
+        assert_eq!(stats.audio_duration_ms, 1_500);
+        assert_eq!(stats.active_days, 1);
+        assert_eq!(stats.local_dictation_count, 1);
+        assert_eq!(stats.cloud_dictation_count, 1);
+    }
+
+    #[test]
+    fn seven_day_statistics_use_local_calendar_boundaries_and_dense_trend() {
+        let store = test_store();
+        let now = timestamp_for_day_offset(0, 18);
+        insert_entry(
+            &store,
+            TestEntry::new("today", timestamp_for_day_offset(0, 9), "today"),
+        );
+        insert_entry(
+            &store,
+            TestEntry::new("six-days", timestamp_for_day_offset(6, 9), "included"),
+        );
+        insert_entry(
+            &store,
+            TestEntry::new("seven-days", timestamp_for_day_offset(7, 9), "excluded"),
+        );
+
+        let stats = store
+            .get_history_statistics_at(super::super::models::StatisticsPeriod::SevenDays, now)
+            .unwrap();
+
+        assert_eq!(stats.dictation_count, 2);
+        assert_eq!(stats.active_days, 2);
+        assert_eq!(stats.trend.len(), 7);
+        assert_eq!(stats.trend.first().unwrap().dictation_count, 1);
+        assert_eq!(stats.trend.last().unwrap().dictation_count, 1);
+        assert_eq!(
+            stats
+                .trend
+                .iter()
+                .filter(|point| point.dictation_count == 0)
+                .count(),
+            5
+        );
+    }
+
+    #[test]
+    fn all_time_statistics_return_sparse_daily_trend() {
+        let store = test_store();
+        let now = timestamp_for_day_offset(0, 18);
+        insert_entry(
+            &store,
+            TestEntry::new("old", timestamp_for_day_offset(400, 9), "old entry"),
+        );
+        insert_entry(
+            &store,
+            TestEntry::new("today", timestamp_for_day_offset(0, 9), "new entry"),
+        );
+
+        let stats = store
+            .get_history_statistics_at(super::super::models::StatisticsPeriod::All, now)
+            .unwrap();
+
+        assert_eq!(stats.dictation_count, 2);
+        assert_eq!(stats.trend.len(), 2);
+        assert!(stats.trend.iter().all(|point| point.dictation_count == 1));
+        assert_eq!(stats.range_start_ms, Some(timestamp_for_day_offset(400, 9)));
+    }
+
+    #[test]
+    fn empty_thirty_day_statistics_return_zero_filled_local_dates() {
+        let store = test_store();
+        let now = timestamp_for_day_offset(0, 18);
+
+        let stats = store
+            .get_history_statistics_at(super::super::models::StatisticsPeriod::ThirtyDays, now)
+            .unwrap();
+
+        assert!(stats.range_start_ms.is_some());
+        assert_eq!(stats.range_end_ms, now);
+        assert_eq!(stats.word_count, 0);
+        assert_eq!(stats.dictation_count, 0);
+        assert_eq!(stats.audio_duration_ms, 0);
+        assert_eq!(stats.active_days, 0);
+        assert_eq!(stats.trend.len(), 30);
+        assert!(stats.trend.iter().all(|point| point.word_count == 0
+            && point.dictation_count == 0
+            && point.audio_duration_ms == 0));
     }
 
     #[test]
@@ -1449,117 +1373,6 @@ mod tests {
             .get_latest_successful_transcription()
             .unwrap()
             .is_none());
-    }
-
-    #[test]
-    fn dashboard_stats_aggregate_multilingual_usage_and_streaks() {
-        let store = test_store();
-        insert_entry(
-            &store,
-            TestEntry::new(
-                "entry-1",
-                timestamp_for_day_offset(2, 10),
-                "draft release note",
-            )
-            .with_timings(12_000, 600)
-            .polished(),
-        );
-        insert_entry(
-            &store,
-            TestEntry::new("entry-2", timestamp_for_day_offset(1, 11), "你好世界")
-                .with_timings(8_000, 500)
-                .cloud("Volcengine"),
-        );
-        insert_entry(
-            &store,
-            TestEntry::new(
-                "entry-3",
-                timestamp_for_day_offset(0, 9),
-                "sprint planning notes",
-            )
-            .with_timings(6_000, 300)
-            .polished(),
-        );
-
-        let stats = store.get_dashboard_stats().unwrap();
-
-        assert_eq!(stats.total_count, 3);
-        assert_eq!(stats.today_count, 1);
-        assert_eq!(stats.total_chars, 43);
-        assert_eq!(stats.total_output_units, 10);
-        assert_eq!(stats.total_audio_ms, 26_000);
-        assert_eq!(stats.avg_stt_ms, Some(466));
-        assert_eq!(stats.avg_audio_ms, Some(8_666));
-        assert_eq!(stats.avg_output_units, Some(10.0 / 3.0));
-        assert_eq!(stats.local_count, 2);
-        assert_eq!(stats.cloud_count, 1);
-        assert_eq!(stats.polish_count, 2);
-        assert_eq!(stats.active_days, 3);
-        assert_eq!(stats.current_streak_days, 3);
-        assert_eq!(stats.longest_streak_days, 3);
-        assert_eq!(stats.last_7_days_count, 3);
-        assert_eq!(stats.last_7_days_audio_ms, 26_000);
-        assert_eq!(stats.last_7_days_output_units, 10);
-    }
-
-    #[test]
-    fn daily_usage_includes_output_units_and_fills_missing_days() {
-        let store = test_store();
-        insert_entry(
-            &store,
-            TestEntry::new("entry-1", timestamp_for_day_offset(2, 10), "alpha beta")
-                .with_timings(10_000, 400),
-        );
-        insert_entry(
-            &store,
-            TestEntry::new("entry-2", timestamp_for_day_offset(0, 9), "你好")
-                .with_timings(4_000, 200)
-                .cloud("Volcengine"),
-        );
-
-        let usage = store.get_daily_usage(3).unwrap();
-
-        assert_eq!(usage.len(), 3);
-        assert_eq!(usage[0].count, 1);
-        assert_eq!(usage[0].audio_ms, 10_000);
-        assert_eq!(usage[0].output_units, 2);
-        assert_eq!(usage[1].count, 0);
-        assert_eq!(usage[1].audio_ms, 0);
-        assert_eq!(usage[1].output_units, 0);
-        assert_eq!(usage[2].count, 1);
-        assert_eq!(usage[2].audio_ms, 4_000);
-        assert_eq!(usage[2].output_units, 2);
-    }
-
-    #[test]
-    fn engine_usage_reports_average_latency() {
-        let store = test_store();
-        insert_entry(
-            &store,
-            TestEntry::new("entry-1", timestamp_for_day_offset(1, 10), "alpha beta")
-                .with_timings(10_000, 400),
-        );
-        insert_entry(
-            &store,
-            TestEntry::new("entry-2", timestamp_for_day_offset(0, 9), "gamma delta")
-                .with_timings(8_000, 600),
-        );
-        insert_entry(
-            &store,
-            TestEntry::new("entry-3", timestamp_for_day_offset(0, 11), "你好世界")
-                .with_timings(5_000, 300)
-                .cloud("Volcengine"),
-        );
-
-        let usage = store.get_engine_usage().unwrap();
-
-        assert_eq!(usage.len(), 2);
-        assert_eq!(usage[0].engine, "Whisper");
-        assert_eq!(usage[0].count, 2);
-        assert_eq!(usage[0].avg_stt_ms, Some(500));
-        assert_eq!(usage[1].engine, "Volcengine");
-        assert_eq!(usage[1].count, 1);
-        assert_eq!(usage[1].avg_stt_ms, Some(300));
     }
 
     /// Helper to insert an entry with error state for retry tests

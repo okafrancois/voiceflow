@@ -26,16 +26,17 @@ impl ShortcutTriggerMode {
     }
 }
 
-/// Map of shortcut profiles with fixed keys.
-/// Stored in settings as an object/map, not an array.
+/// Input-only shape for migrating configurations saved before workflow profiles.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ShortcutProfilesMap {
     /// System profile: always exists, cannot be deleted.
     /// Fixed polish_template_id = None (no polish).
+    #[serde(default = "ShortcutProfile::default_dictate")]
     pub dictate: ShortcutProfile,
 
     /// System profile: always exists, cannot be deleted.
     /// polish_template_id defaults to first template, cannot be None.
+    #[serde(default = "ShortcutProfile::default_dictate")]
     pub riff: ShortcutProfile,
 
     /// Optional user profile: can be created and deleted (max 1).

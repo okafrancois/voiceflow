@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.voiceflow.voicetotext.dev</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>voiceflow-dev</string>
+			</array>
+		</dict>
+	</array>
+	<key>NSAccessibilityUsageDescription</key>
+	<string>Voice Flow needs accessibility permissions to insert transcribed text at your cursor position.</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Voice Flow needs accessibility permissions to insert transcribed text at your cursor position.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Voice Flow needs access to your microphone to record audio for voice-to-text transcription.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Voice Flow uses speech recognition to convert your voice to text.</string>
+</dict>
+</plist>

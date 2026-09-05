@@ -17,8 +17,7 @@ dashboard emphasizes usage rather than actionable quality failures.
 
 ## Goal
 
-Voice Flow diagnoses the local environment, applies an explicit privacy/quality
-preset, exposes a secure local developer bridge, preserves code syntax when
+Voice Flow diagnoses the local environment, applies an explicit local/cloud processing choice, exposes a secure local developer bridge, preserves code syntax when
 requested, and reports correction, latency, transcription, and delivery quality
 with enough metadata to drive improvement.
 
@@ -31,8 +30,7 @@ with enough metadata to drive improvement.
 ## First-Principles Model
 
 1. Recommendations require measured capability and an explainable rule.
-2. Presets are named bundles of settings, applied atomically and reversible by
-   later edits.
+2. Processing choices do not imply an accuracy guarantee and never alter retention or context consent.
 3. Local automation uses the same backend command service as the desktop UI.
 4. Code-aware mode is a deterministic formatting policy plus structured editor
    context, not a generic creativity prompt.
@@ -43,9 +41,9 @@ with enough metadata to drive improvement.
 
 - Setup diagnostics: microphone availability/sample, CPU/RAM/architecture,
   local-model compatibility, and a short opt-in latency test.
-- Presets: Private, Balanced, Maximum Accuracy with a visible setting summary.
+- Processing: Local only disables cloud STT and polish; Use configured cloud STT validates credentials before enabling cloud transcription.
 - Developer bridge: `voiceflow://` URL scheme plus CLI commands using local IPC;
-  loopback HTTP is optional, disabled by default, token-authenticated, and
+  authenticated loopback TCP with newline-delimited JSON is optional, disabled by default, token-authenticated, and
   binds only to `127.0.0.1`.
 - Code-aware mode: language/editor hint, selected file/path/symbol context, and
   casing/path/command preservation.
@@ -55,7 +53,7 @@ with enough metadata to drive improvement.
 ## Data Contract
 
 ```rust
-enum SetupPreset { Private, Balanced, MaximumAccuracy }
+enum SetupPreset { LocalOnly, CloudStt }
 struct DiagnosticReport { microphone: Check; hardware: Hardware; models: Vec<ModelFit>; latency: Option<LatencySample> }
 enum BridgeCommand { Start, Stop, Cancel, TranscribeFile, Insert, CopyLast, Status }
 struct CodeContext { language: Option<String>, file_path: Option<String>, symbol: Option<String>, editor_id: Option<String> }
@@ -66,12 +64,11 @@ struct QualityEvent { kind: QualityEventKind, application_id: Option<String>, du
 
 1. P10: diagnostics report microphone and hardware readiness, recommend a local
    model with a reason, and optionally measure end-to-end latency.
-2. P10: Private, Balanced, and Maximum Accuracy presets apply documented backend
-   settings atomically and can be selected during or after onboarding.
+2. P10: local-only processing disables both cloud stages atomically. Cloud STT requires configured credentials. Neither choice changes retention or context consent. No processing recommendation is made when the microphone is unavailable.
 3. P11: registered `voiceflow://` links and a bundled CLI expose start, stop,
    cancel, file transcription, insertion, last-result copy, and status through
    the same service layer; malformed/unknown commands fail safely.
-4. P11: any local HTTP bridge is off by default, loopback-only, token-protected,
+4. P11: the TCP developer bridge is off by default, loopback-only, token-protected,
    and redacts content from logs.
 5. P12: code-aware mode preserves identifiers, casing, paths, flags, commands,
    punctuation, and line breaks; IDE/file/symbol context is optional and typed.
@@ -87,11 +84,11 @@ struct QualityEvent { kind: QualityEventKind, application_id: Option<String>, du
 
 Given compatible hardware, a working microphone, and no cloud credentials
 When diagnostics finish
-Then the Private preset and a fitting local model are recommended with reasons.
+Then local-only processing and a hardware starting-point model are suggested, with no claim of measured accuracy.
 
 ### Reject a remote bridge request
 
-Given the optional HTTP bridge is enabled
+Given the optional TCP bridge is enabled
 When a non-loopback peer or invalid token sends a command
 Then the backend rejects it without executing an action.
 
@@ -116,7 +113,9 @@ And no transcript content is returned.
 - Frontend tests for diagnostics, presets, and quality filters.
 - Native URL-scheme and CLI smoke tests on the local build.
 
-## Completion Evidence
+## Original completion evidence
+
+The [product simplification contract](../../../product-simplification/0.1.0/prd/erd.md) supersedes broad presets, unconditional bridge startup, and primary navigation placement. Diagnostics and code context now live under Advanced. The evidence below predates that reduction.
 
 - Diagnostics, presets, onboarding, authenticated loopback bridge, bundled and
   standalone CLI, `voiceflow://`, code context/formatting, and content-free

@@ -52,7 +52,105 @@ function runRequired(command, args, options = {}) {
   if (result.status !== 0) process.exit(result.status ?? 1);
 }
 
-export function main() {
+function readPlist(path, input) {
+  const result = spawnSync(
+    "/usr/bin/plutil",
+    ["-convert", "json", "-o", "-", path],
+    { encoding: "utf8", input },
+  );
+  if (result.status !== 0) {
+    throw new Error(result.stderr.trim() || `Unable to read plist: ${path}`);
+  }
+  return JSON.parse(result.stdout);
+}
+
+export function parseArguments(args) {
+  let open = true;
+
+  for (const argument of args) {
+    if (argument === "--no-open") {
+      open = false;
+      continue;
+    }
+    throw new Error(`Unknown argument: ${argument}`);
+  }
+
+  return { open };
+}
+
+export function localInstallBuildArguments() {
+  return [
+    "build",
+    "--debug",
+    "--bundles",
+    "app",
+    "--config",
+    "src-tauri/tauri.dev.conf.json",
+    "--config",
+    "src-tauri/tauri.macos.unsigned.conf.json",
+    "--config",
+    "src-tauri/tauri.local-install.conf.json",
+    "--config",
+    "src-tauri/tauri.runtime.generated.conf.json",
+  ];
+}
+
+export function assertLocalInstallMetadata({
+  identifier,
+  urlSchemes,
+  audioInputEntitlement,
+}) {
+  if (identifier !== "com.voiceflow.voicetotext.dev") {
+    throw new Error(`Unexpected development bundle identifier: ${identifier}`);
+  }
+  if (
+    urlSchemes.length !== 1 ||
+    urlSchemes[0] !== "voiceflow-dev"
+  ) {
+    throw new Error(
+      `Unexpected development URL schemes: ${urlSchemes.join(", ")}`,
+    );
+  }
+  if (audioInputEntitlement !== true) {
+    throw new Error("The audio-input entitlement must be true.");
+  }
+}
+
+export function verifyBundle(appPath) {
+  runRequired("/usr/bin/codesign", [
+    "--verify",
+    "--deep",
+    "--strict",
+    "--verbose=2",
+    appPath,
+  ]);
+
+  const info = readPlist(resolve(appPath, "Contents/Info.plist"));
+  const urlSchemes = (info.CFBundleURLTypes ?? []).flatMap(
+    (entry) => entry.CFBundleURLSchemes ?? [],
+  );
+
+  const entitlements = spawnSync(
+    "/usr/bin/codesign",
+    ["-d", "--entitlements", ":-", appPath],
+    { encoding: "utf8" },
+  );
+  if (entitlements.status !== 0) {
+    process.stderr.write(entitlements.stderr ?? "");
+    process.exit(entitlements.status ?? 1);
+  }
+  const entitlementPlist = readPlist("-", entitlements.stdout);
+
+  assertLocalInstallMetadata({
+    identifier: info.CFBundleIdentifier,
+    urlSchemes,
+    audioInputEntitlement:
+      entitlementPlist["com.apple.security.device.audio-input"],
+  });
+}
+
+export function main(args = process.argv.slice(2)) {
+  const options = parseArguments(args);
   runRequired(process.execPath, [
     resolve(root, "scripts/prepare-tauri-runtime-resources.mjs"),
     "--platform",
@@ -70,27 +168,20 @@ export function main() {
 
   runRequired(
     resolve(desktopDir, "node_modules/.bin/tauri"),
-    [
-      "build",
-      "--debug",
-      "--bundles",
-      "app",
-      "--config",
-      "src-tauri/tauri.dev.conf.json",
-      "--config",
-      "src-tauri/tauri.macos.unsigned.conf.json",
-      "--config",
-      "src-tauri/tauri.runtime.generated.conf.json",
-    ],
+    localInstallBuildArguments(),
     { env: buildEnv },
   );
 
-  runRequired("/usr/bin/open", [
-    resolve(
-      desktopDir,
-      "src-tauri/target/debug/bundle/macos/Voice Flow Dev.app",
-    ),
-  ]);
+  const appPath = resolve(
+    desktopDir,
+    "src-tauri/target/debug/bundle/macos/Voice Flow Dev.app",
+  );
+  verifyBundle(appPath);
+  console.log(`Verified local development application: ${appPath}`);
+
+  if (options.open) {
+    runRequired("/usr/bin/open", [appPath]);
+  }
 }
 
 if (

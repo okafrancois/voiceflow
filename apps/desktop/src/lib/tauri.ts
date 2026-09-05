@@ -179,18 +179,11 @@ export interface ShortcutProfile {
   };
 }
 
-export interface ShortcutProfilesMap {
-  dictate: ShortcutProfile;
-  riff: ShortcutProfile;
-  custom?: ShortcutProfile;
-}
-
 export type WorkflowOutputAction = "insert" | "preview" | "copy";
 export type OriginalTargetMode = "foreground" | "background";
 export type ContextSource = "accessibility" | "clipboard" | "window_metadata" | "ocr";
 export type VoiceActionKind = "shorten" | "translate" | "reply" | "list" | "custom";
 export type QuickControlKind =
-  | "undo_last_insertion"
   | "reinsert_raw"
   | "reinsert_final"
   | "copy_raw"
@@ -310,6 +303,8 @@ export interface AppSettings {
   stt_engine_user_glossary: string;
   custom_dictionary: string;
   analytics_opt_in: boolean;
+  developer_bridge_enabled: boolean;
+  vibe_coding_enabled: boolean;
   text_retention: RetentionPolicy;
   audio_retention: RetentionPolicy;
   cloud_stt_enabled: boolean;
@@ -319,13 +314,11 @@ export interface AppSettings {
   active_cloud_polish_provider: string;
   cloud_polish_configs: Record<string, CloudProviderConfig>;
   local_polish_runtime: LocalPolishRuntimeSettings;
-  polish_stream_direct_typing_enabled: boolean;
   original_target_enabled: boolean;
   original_target_mode: OriginalTargetMode;
   vad_enabled: boolean;
   stay_in_tray: boolean;
   polish_custom_templates: CustomPolishTemplate[];
-  shortcut_profiles: ShortcutProfilesMap;
   workflow_profiles: WorkflowProfile[];
   application_rules: ApplicationRule[];
   voice_snippets: VoiceSnippet[];
@@ -409,7 +402,7 @@ export interface RecommendedModel {
   downloaded: boolean;
 }
 
-export type SetupPreset = "private" | "balanced" | "maximum_accuracy";
+export type SetupPreset = "local_only" | "cloud_stt";
 
 export interface MicrophoneCheck {
   ready: boolean;
@@ -442,12 +435,14 @@ export interface DiagnosticReport {
   microphone: MicrophoneCheck;
   hardware: HardwareSnapshot;
   recommended_model: ModelRecommendation;
-  recommended_preset: SetupPreset;
+  recommended_preset: SetupPreset | null;
   recommendation_reason: string;
   latency: LatencySample | null;
 }
 
 export interface CodeContext {
+  workspace?: string | null;
+  identifiers?: string[];
   language?: string | null;
   file_path?: string | null;
   symbol?: string | null;
@@ -552,6 +547,8 @@ export const dictionaryCommands = {
     invokeWithLogging<DictionaryEntry[]>("get_custom_dictionary_entries"),
   addCustomEntry: (term: string) =>
     invokeWithLogging<DictionaryEntry>("add_custom_dictionary_entry", { term }),
+  updateCustomEntry: (term: string, aliases: string[]) =>
+    invokeWithLogging<DictionaryEntry>("update_custom_dictionary_entry", { term, aliases }),
   importCustomCsv: (csvContent: string) =>
     invokeWithLogging<DictionaryImportResult>("import_custom_dictionary_csv", { csvContent }),
   deleteCustomEntry: (term: string) =>
@@ -563,13 +560,8 @@ export const hotkeyCommands = {
   stopCapture: (profileKey: string) => invokeWithLogging<string>("stop_hotkey_capture", { profileKey }),
   cancelCapture: () => invokeWithLogging<void>("cancel_hotkey_capture"),
   peekCapture: () => invokeWithLogging<string | null>("peek_hotkey_capture"),
-  getProfiles: () => invokeWithLogging<ShortcutProfilesMap>("get_shortcut_profiles"),
   updateProfile: (key: string, profile: ShortcutProfile) =>
     invokeWithLogging<void>("update_shortcut_profile", { key, profile }),
-  createCustom: (profile: ShortcutProfile) =>
-    invokeWithLogging<void>("create_custom_profile", { profile }),
-  deleteCustom: () =>
-    invokeWithLogging<void>("delete_custom_profile"),
 };
 
 export const workflowCommands = {
@@ -775,39 +767,6 @@ export interface HistoryAudioPayload {
   bytes: number[];
 }
 
-export interface DashboardStats {
-  total_count: number;
-  today_count: number;
-  total_chars: number;
-  total_output_units: number;
-  total_audio_ms: number;
-  avg_stt_ms: number | null;
-  avg_audio_ms: number | null;
-  avg_output_units: number | null;
-  local_count: number;
-  cloud_count: number;
-  polish_count: number;
-  active_days: number;
-  current_streak_days: number;
-  longest_streak_days: number;
-  last_7_days_count: number;
-  last_7_days_audio_ms: number;
-  last_7_days_output_units: number;
-}
-
-export interface DailyUsage {
-  date: string;
-  count: number;
-  audio_ms: number;
-  output_units: number;
-}
-
-export interface EngineUsage {
-  engine: string;
-  count: number;
-  avg_stt_ms: number | null;
-}
-
 export interface HistoryFilter {
   search?: string;
   engine?: string;
@@ -819,6 +778,45 @@ export interface HistoryFilter {
   offset?: number;
 }
 
+export interface DictationHome {
+  readiness: "ready" | "microphone_required" | "permissions_required" | "model_required" | "cloud_configuration_required";
+  setup_path: string | null;
+  hotkey: string;
+  trigger_mode: ShortcutTriggerMode;
+  is_cloud: boolean;
+  last_result: { id: string; raw_text: string; final_text: string; can_copy_raw: boolean; can_copy_final: boolean; delivery_failed: boolean; error: string | null } | null;
+}
+
+export const homeCommands = {
+  getSnapshot: () => invokeWithLogging<DictationHome>("get_dictation_home"),
+};
+
+export type StatisticsPeriod = "7d" | "30d" | "all";
+export interface UsageDay {
+  date: string;
+  wordCount: number;
+  dictationCount: number;
+  audioDurationMs: number;
+  localDictationCount: number;
+  cloudDictationCount: number;
+}
+export interface HistoryStatistics {
+  period: StatisticsPeriod;
+  rangeStartMs: number | null;
+  rangeEndMs: number;
+  wordCount: number;
+  dictationCount: number;
+  audioDurationMs: number;
+  activeDays: number;
+  localDictationCount: number;
+  cloudDictationCount: number;
+  trend: UsageDay[];
+}
+export const statisticsCommands = {
+  getStatistics: (period: StatisticsPeriod) =>
+    invokeWithLogging<HistoryStatistics>("get_history_statistics", { period }),
+};
+
 export const historyCommands = {
   getHistory: (filter: HistoryFilter) =>
     invokeWithLogging<TranscriptionEntry[]>("get_transcription_history", { filter }),
@@ -826,12 +824,6 @@ export const historyCommands = {
     invokeWithLogging<number>("get_history_count", { filter }),
   getEntry: (id: string) =>
     invokeWithLogging<TranscriptionEntry | null>("get_transcription_entry", { id }),
-  getDashboardStats: () =>
-    invokeWithLogging<DashboardStats>("get_dashboard_stats"),
-  getDailyUsage: (days: number) =>
-    invokeWithLogging<DailyUsage[]>("get_daily_usage", { days }),
-  getEngineUsage: () =>
-    invokeWithLogging<EngineUsage[]>("get_engine_usage"),
   getRetentionStatus: () =>
     invokeWithLogging<RetentionStatus>("get_retention_status"),
   deleteEntry: (id: string) =>
@@ -884,6 +876,24 @@ export const historyCommands = {
     invokeWithLogging<void>("copy_history_entry", { id, version }),
   reinsertEntry: (id: string, version: HistoryTextVersion) =>
     invokeWithLogging<string>("reinsert_history_entry", { id, version }),
+};
+
+export interface VibeCodingStatus {
+  enabled: boolean;
+  context_active: boolean;
+  state: "disabled" | "waiting_for_editor" | "ready" | "stale";
+  language: string | null;
+  file_path: string | null;
+  file_name: string | null;
+  workspace: string | null;
+  editor: string | null;
+  identifiers: string[];
+  updated_at_ms: number | null;
+  expires_at_ms: number | null;
+}
+export const vibeCodingCommands = {
+  getStatus: () => invokeWithLogging<VibeCodingStatus>("get_vibe_coding_status"),
+  setEnabled: (enabled: boolean) => invokeWithLogging<VibeCodingStatus>("set_vibe_coding_enabled", { enabled }),
 };
 
 export const platformQualityCommands = {

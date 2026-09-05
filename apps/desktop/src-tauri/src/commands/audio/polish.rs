@@ -1,36 +1,16 @@
-use std::time::{Duration, Instant};
-
-use tracing::{info, instrument, warn};
-
-use crate::polish_engine::{get_template_by_id, DEFAULT_POLISH_PROMPT};
-use crate::state::app_state::AppState;
-
 use super::postprocess::strip_trailing_sentence_period;
 use super::shared::ProcessingEventTarget;
-
-struct LocalPolishContext {
-    system_prompt: String,
-    window_context: Option<String>,
-    language: String,
-    model_id: String,
-    log_context: &'static str,
-    template_id: Option<String>,
-    allow_language_change: bool,
-}
-
-struct PolishAcceptContext {
-    polish_wall_ms: u64,
-    polish_queue_ms: u64,
-    log_context: &'static str,
-    direct_stream_inserted: bool,
-    template_id: Option<String>,
-    allow_language_change: bool,
-}
+use crate::polish_engine::{get_template_by_id, PolishRequest, DEFAULT_POLISH_PROMPT};
+use crate::services::text_transform::{
+    transform_text, TransformIntent, LOCAL_POLISH_TIMEOUT_REASON,
+};
+use crate::state::app_state::AppState;
+use std::time::Instant;
+use tracing::{info, instrument, warn};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct PolishProcessingResult {
     pub text: String,
-    pub direct_stream_inserted: bool,
     pub polish_ms: u64,
     pub polish_wall_ms: u64,
     pub polish_queue_ms: u64,
@@ -48,7 +28,6 @@ impl PolishProcessingResult {
         let (text, _) = strip_trailing_sentence_period(&text);
         Self {
             text,
-            direct_stream_inserted: false,
             polish_ms: 0,
             polish_wall_ms: 0,
             polish_queue_ms: 0,
@@ -66,12 +45,10 @@ impl PolishProcessingResult {
         result: crate::polish_engine::PolishResult,
         polish_wall_ms: u64,
         polish_queue_ms: u64,
-        direct_stream_inserted: bool,
     ) -> Self {
         let (text, _) = strip_trailing_sentence_period(&result.text);
         Self {
             text,
-            direct_stream_inserted,
             polish_ms: result.total_ms,
             polish_wall_ms,
             polish_queue_ms,
@@ -94,7 +71,6 @@ impl PolishProcessingResult {
         let (text, _) = strip_trailing_sentence_period(&text);
         Self {
             text,
-            direct_stream_inserted: false,
             polish_ms: 0,
             polish_wall_ms,
             polish_queue_ms,
@@ -109,193 +85,17 @@ impl PolishProcessingResult {
     }
 }
 
-const LOCAL_POLISH_BASE_TIMEOUT: Duration = Duration::from_secs(20);
-const LOCAL_POLISH_MAX_TIMEOUT: Duration = Duration::from_secs(60);
-const LOCAL_POLISH_BASE_TIMEOUT_CHARS: usize = 500;
-const LOCAL_POLISH_TIMEOUT_STEP_CHARS: usize = 800;
-const LOCAL_POLISH_TIMEOUT_STEP: Duration = Duration::from_secs(10);
-const LOCAL_POLISH_TIMEOUT_REASON: &str = "local polish timed out";
-
-fn contains_any(text: &str, needles: &[&str]) -> bool {
-    needles.iter().any(|needle| text.contains(needle))
-}
-
-fn local_polish_timeout(text: &str) -> Duration {
-    let chars = text.chars().count();
-    let extra_chars = chars.saturating_sub(LOCAL_POLISH_BASE_TIMEOUT_CHARS);
-    let extra_steps = extra_chars.div_ceil(LOCAL_POLISH_TIMEOUT_STEP_CHARS);
-    let timeout = LOCAL_POLISH_BASE_TIMEOUT
-        + Duration::from_secs(LOCAL_POLISH_TIMEOUT_STEP.as_secs() * extra_steps as u64);
-
-    timeout.min(LOCAL_POLISH_MAX_TIMEOUT)
-}
-
-fn elapsed_ms(started: Instant) -> u64 {
-    started.elapsed().as_millis() as u64
-}
-
-fn has_question_mark(text: &str) -> bool {
-    text.contains('?') || text.contains('？')
-}
-
-fn is_question_like_text(text: &str) -> bool {
-    let lower = text.to_lowercase();
-    has_question_mark(text)
-        || contains_any(
-            &lower,
-            &[
-                "吗",
-                "是不是",
-                "是否",
-                "哪些",
-                "哪个",
-                "哪里",
-                "哪儿",
-                "为什么",
-                "怎么",
-                "如何",
-                "有没有",
-                "能不能",
-                "可不可以",
-                "what",
-                "why",
-                "how",
-                "should",
-                "could",
-                "would",
-            ],
-        )
-}
-
-fn is_answer_like_text(text: &str) -> bool {
-    let lower = text
-        .trim_start_matches(|c: char| c.is_whitespace() || matches!(c, ',' | '，' | '.' | '。'))
-        .to_lowercase();
-
-    lower.starts_with("我觉得")
-        || lower.starts_with("我认为")
-        || lower.starts_with("是的")
-        || lower.starts_with("不是")
-        || lower.starts_with("可以")
-        || lower.starts_with("不可以")
-        || lower.starts_with("不能")
-        || lower.starts_with("还不")
-        || lower.starts_with("还没")
-        || lower.starts_with("需要")
-        || lower.starts_with("不需要")
-        || contains_any(
-            &lower,
-            &[
-                "不够完整",
-                "还没到",
-                "还不是",
-                "不是所有",
-                "not ready",
-                "is ready",
-                "is not ready",
-                "i think",
-                "i believe",
-            ],
-        )
-}
-
-fn should_reject_question_answer_polish(input: &str, output: &str) -> bool {
-    is_question_like_text(input) && !has_question_mark(output) && is_answer_like_text(output)
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum DetectedTextLanguage {
-    French,
-    English,
-}
-
-fn language_score(text: &str, words: &[&str]) -> usize {
-    text.split(|character: char| !character.is_alphabetic())
-        .filter(|token| !token.is_empty())
-        .map(str::to_lowercase)
-        .filter(|token| words.contains(&token.as_str()))
-        .count()
-}
-
-fn detect_supported_language(text: &str) -> Option<DetectedTextLanguage> {
-    const FRENCH_WORDS: &[&str] = &[
-        "alors", "après", "avec", "avant", "bien", "ça", "ce", "cette", "dans", "de", "des", "du",
-        "elle", "elles", "en", "est", "et", "faire", "il", "ils", "je", "la", "le", "les", "mais",
-        "mon", "nous", "pas", "plus", "pour", "quand", "que", "qui", "quoi", "sont", "très", "tu",
-        "un", "une", "vous", "vérifie",
-    ];
-    const ENGLISH_WORDS: &[&str] = &[
-        "add", "and", "are", "as", "be", "can", "check", "create", "do", "does", "error", "fix",
-        "for", "from", "has", "have", "in", "input", "is", "not", "of", "on", "output", "please",
-        "should", "task", "that", "the", "then", "they", "this", "to", "we", "will", "with",
-        "would", "you", "your",
-    ];
-
-    let french = language_score(text, FRENCH_WORDS);
-    let english = language_score(text, ENGLISH_WORDS);
-    if french >= 3 && french >= english.saturating_add(2) {
-        Some(DetectedTextLanguage::French)
-    } else if english >= 3 && english >= french.saturating_add(2) {
-        Some(DetectedTextLanguage::English)
-    } else {
-        None
-    }
-}
-
-fn meaningful_char_count(text: &str) -> usize {
-    text.chars()
-        .filter(|character| !character.is_whitespace())
-        .count()
-}
-
-fn polish_rejection_reason_with_policy(
-    input: &str,
-    output: &str,
-    template_id: Option<&str>,
-    allow_language_change: bool,
-) -> Option<&'static str> {
-    if should_reject_question_answer_polish(input, output) {
-        return Some("polish answered dictated question");
-    }
-
-    if !allow_language_change {
-        let input_language = detect_supported_language(input);
-        let output_language = detect_supported_language(output);
-        if input_language.is_some()
-            && output_language.is_some()
-            && input_language != output_language
-        {
-            return Some("polish changed transcript language");
-        }
-    }
-
-    let input_chars = meaningful_char_count(input);
-    if input_chars >= 120 {
-        let output_chars = meaningful_char_count(output);
-        let minimum_ratio = if template_id == Some("concise") {
-            0.30
-        } else {
-            0.55
-        };
-        if (output_chars as f64) < (input_chars as f64 * minimum_ratio) {
-            return Some("polish removed too much transcript content");
-        }
-    }
-
-    None
-}
-
-#[cfg(test)]
-fn polish_rejection_reason(
-    input: &str,
-    output: &str,
-    template_id: Option<&str>,
-) -> Option<&'static str> {
-    polish_rejection_reason_with_policy(input, output, template_id, false)
-}
-
 fn classify_polish_failure_reason(error: &str) -> &'static str {
     let lower = error.to_lowercase();
+
+    if lower == "select a local polish model first" {
+        return "no polish model selected";
+    }
+    if lower == "cloud polish configuration is missing"
+        || lower == "cloud polish credentials and model are required"
+    {
+        return "cloud polish configuration incomplete";
+    }
 
     if lower.contains("incomplete") {
         "model download looks incomplete"
@@ -341,251 +141,6 @@ fn is_local_polish_timeout_error(error: &str) -> bool {
     error.to_lowercase().contains(LOCAL_POLISH_TIMEOUT_REASON)
 }
 
-fn accept_polish_result(
-    event_target: &ProcessingEventTarget<'_>,
-    task_id: u64,
-    accumulated_text: String,
-    result: crate::polish_engine::PolishResult,
-    context: PolishAcceptContext,
-) -> PolishProcessingResult {
-    let PolishAcceptContext {
-        polish_wall_ms,
-        polish_queue_ms,
-        log_context,
-        direct_stream_inserted,
-        template_id,
-        allow_language_change,
-    } = context;
-    let result_text = result.text.as_str();
-    if let Some(failure_reason) = polish_rejection_reason_with_policy(
-        &accumulated_text,
-        result_text,
-        template_id.as_deref(),
-        allow_language_change,
-    ) {
-        event_target.emit_polish_policy_tooltip(task_id);
-        warn!(
-            task_id,
-            context = log_context,
-            input_chars = accumulated_text.len(),
-            output_chars = result_text.len(),
-            failure_reason,
-            direct_stream_inserted,
-            "polish_rejected_unsafe_output-using_raw"
-        );
-        PolishProcessingResult::using_original(
-            accumulated_text,
-            polish_wall_ms,
-            polish_queue_ms,
-            failure_reason,
-        )
-    } else {
-        PolishProcessingResult::from_polish_result(result, polish_wall_ms, polish_queue_ms, false)
-    }
-}
-
-async fn run_local_polish(
-    event_target: &ProcessingEventTarget<'_>,
-    state: &AppState,
-    task_id: u64,
-    accumulated_text: String,
-    context: LocalPolishContext,
-    polish_decision_started: Instant,
-) -> PolishProcessingResult {
-    let LocalPolishContext {
-        system_prompt,
-        window_context,
-        language,
-        model_id,
-        log_context,
-        template_id,
-        allow_language_change,
-    } = context;
-
-    if model_id.is_empty() {
-        let failure_reason = "no polish model selected";
-        event_target.emit_polish_error_tooltip(task_id, Some(failure_reason));
-        warn!(
-            task_id,
-            context = log_context,
-            failure_reason,
-            "polish_model_not_configured"
-        );
-        return PolishProcessingResult::using_original(
-            accumulated_text,
-            0,
-            elapsed_ms(polish_decision_started),
-            failure_reason,
-        );
-    }
-
-    match crate::polish_engine::UnifiedPolishManager::get_engine_by_model_id(&model_id) {
-        Some(engine_type) => {
-            let model_filename = state
-                .polish_manager
-                .get_model_filename(engine_type, &model_id);
-
-            if let Some(model_filename) = model_filename.filter(|_| {
-                state
-                    .polish_manager
-                    .is_model_downloaded(engine_type, &model_id)
-            }) {
-                let polish_queue_ms = elapsed_ms(polish_decision_started);
-                info!(
-                    task_id,
-                    engine = ?engine_type,
-                    model_id = %model_id,
-                    context = log_context,
-                    polish_queue_ms,
-                    "polish_started-local"
-                );
-
-                let timeout = local_polish_timeout(&accumulated_text);
-                let request = crate::polish_engine::PolishRequest::new(
-                    accumulated_text.clone(),
-                    system_prompt,
-                    language,
-                )
-                .with_model(model_filename)
-                .with_timeout(timeout);
-                let request = match window_context {
-                    Some(ref ctx) => request.with_window_context(ctx),
-                    None => request,
-                };
-                let preview_handle = event_target.polish_preview_callback(task_id);
-                let request = match preview_handle.as_ref() {
-                    Some(handle) => request.with_preview_callback(handle.callback.clone()),
-                    None => request,
-                };
-
-                event_target.emit_polishing(task_id);
-
-                let polish_call_started = Instant::now();
-                match tokio::time::timeout(
-                    timeout,
-                    state.polish_manager.polish(engine_type, request),
-                )
-                .await
-                {
-                    Ok(Ok(result)) if !result.text.is_empty() => {
-                        let polish_wall_ms = elapsed_ms(polish_call_started);
-                        info!(
-                            task_id,
-                            chars = result.text.len(),
-                            polish_ms = result.total_ms,
-                            polish_wall_ms,
-                            polish_queue_ms,
-                            model_load_ms = result.model_load_ms,
-                            context_create_ms = result.context_create_ms,
-                            prefill_ms = result.prefill_ms,
-                            inference_ms = result.inference_ms,
-                            time_to_first_token_ms = result.time_to_first_token_ms,
-                            generation_ms = result.generation_ms,
-                            context = log_context,
-                            "polish_completed-local"
-                        );
-                        accept_polish_result(
-                            event_target,
-                            task_id,
-                            accumulated_text,
-                            result,
-                            PolishAcceptContext {
-                                polish_wall_ms,
-                                polish_queue_ms,
-                                log_context,
-                                direct_stream_inserted: preview_handle
-                                    .as_ref()
-                                    .map(|handle| handle.direct_stream_inserted())
-                                    .unwrap_or(false),
-                                template_id,
-                                allow_language_change,
-                            },
-                        )
-                    }
-                    Ok(Ok(_)) => {
-                        let polish_wall_ms = elapsed_ms(polish_call_started);
-                        let failure_reason = "model returned empty output";
-                        event_target.emit_polish_error_tooltip(task_id, Some(failure_reason));
-                        warn!(
-                            task_id,
-                            context = log_context,
-                            failure_reason,
-                            "polish_empty_result-local_using_raw"
-                        );
-                        PolishProcessingResult::using_original(
-                            accumulated_text,
-                            polish_wall_ms,
-                            polish_queue_ms,
-                            failure_reason,
-                        )
-                    }
-                    Ok(Err(e)) => {
-                        let polish_wall_ms = elapsed_ms(polish_call_started);
-                        let failure_reason = classify_polish_failure_reason(&e);
-                        if is_local_polish_timeout_error(&e) {
-                            event_target.emit_local_polish_timeout_tooltip(task_id);
-                        } else {
-                            event_target.emit_polish_error_tooltip(task_id, Some(failure_reason));
-                        }
-                        warn!(task_id, error = %e, context = log_context, failure_reason, "polish_failed-local_using_raw");
-                        PolishProcessingResult::using_original(
-                            accumulated_text,
-                            polish_wall_ms,
-                            polish_queue_ms,
-                            failure_reason,
-                        )
-                    }
-                    Err(_) => {
-                        let polish_wall_ms = elapsed_ms(polish_call_started);
-                        event_target.emit_local_polish_timeout_tooltip(task_id);
-                        warn!(
-                            task_id,
-                            context = log_context,
-                            timeout_secs = timeout.as_secs(),
-                            input_chars = accumulated_text.chars().count(),
-                            "polish_timeout-local_using_raw"
-                        );
-                        PolishProcessingResult::using_original(
-                            accumulated_text,
-                            polish_wall_ms,
-                            polish_queue_ms,
-                            LOCAL_POLISH_TIMEOUT_REASON,
-                        )
-                    }
-                }
-            } else {
-                let polish_queue_ms = elapsed_ms(polish_decision_started);
-                let failure_reason = "model is not downloaded";
-                event_target.emit_polish_error_tooltip(task_id, Some(failure_reason));
-                warn!(
-                    task_id,
-                    context = log_context,
-                    failure_reason,
-                    "polish_model_not_downloaded-using_raw"
-                );
-                PolishProcessingResult::using_original(
-                    accumulated_text,
-                    0,
-                    polish_queue_ms,
-                    failure_reason,
-                )
-            }
-        }
-        None => {
-            let polish_queue_ms = elapsed_ms(polish_decision_started);
-            let failure_reason = "unknown polish model";
-            event_target.emit_polish_error_tooltip(task_id, Some(failure_reason));
-            warn!(task_id, model_id = %model_id, context = log_context, failure_reason, "polish_model_unknown-engine_undetermined");
-            PolishProcessingResult::using_original(
-                accumulated_text,
-                0,
-                polish_queue_ms,
-                failure_reason,
-            )
-        }
-    }
-}
-
 #[instrument(
     skip(event_target, state, accumulated_text, resolved_polish_template_id),
     fields(task_id)
@@ -604,6 +159,7 @@ pub(super) async fn maybe_polish_transcription_text(
         accumulated_text,
         resolved_polish_template_id,
         None,
+        None,
     )
     .await
 }
@@ -613,221 +169,97 @@ pub(super) async fn maybe_polish_transcription_text_for_profile(
     state: &AppState,
     task_id: u64,
     accumulated_text: String,
-    resolved_polish_template_id: Option<String>,
+    template_id: Option<String>,
     profile: Option<&crate::services::product_workflows::WorkflowProfile>,
+    vibe_context: Option<&crate::services::platform_quality::CodeContext>,
 ) -> PolishProcessingResult {
-    let polish_decision_started = Instant::now();
-    let workflow_instruction = profile.and_then(workflow_profile_instruction);
-    let allow_language_change = profile
+    let instruction = profile.and_then(workflow_profile_instruction);
+    if template_id.is_none() && instruction.is_none() {
+        return PolishProcessingResult::skipped(accumulated_text, "no polish template");
+    }
+    let (mut prompt, language) = {
+        let settings = state.settings.lock();
+        let prompt = template_id
+            .as_deref()
+            .and_then(get_template_by_id)
+            .map(|template| template.system_prompt.to_string())
+            .or_else(|| {
+                settings
+                    .polish_custom_templates
+                    .iter()
+                    .find(|template| Some(&template.id) == template_id.as_ref())
+                    .map(|template| template.system_prompt.clone())
+            })
+            .unwrap_or_else(|| DEFAULT_POLISH_PROMPT.to_string());
+        let language = profile
+            .and_then(|profile| profile.language.clone())
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| settings.stt_engine_language.clone());
+        (prompt, language)
+    };
+    let translation = profile
         .and_then(|profile| profile.translation_target.as_deref())
-        .is_some_and(|target| !target.trim().is_empty());
-    match (resolved_polish_template_id, workflow_instruction) {
-        (None, None) => {
-            info!(task_id, "polish_skipped-no_template");
-            PolishProcessingResult::skipped(accumulated_text, "no polish template")
+        .filter(|value| !value.trim().is_empty());
+    let intent = if translation.is_some() {
+        TransformIntent::Translate
+    } else {
+        TransformIntent::for_template(template_id.as_deref())
+    };
+    if let Some(instruction) = instruction {
+        if translation.is_some() {
+            prompt = instruction;
+        } else {
+            prompt.push_str(&format!("\n\n{instruction}"));
         }
-        (template_id, workflow_instruction) => {
-            let (
-                system_prompt,
-                language,
-                provider_type,
-                cloud_config,
-                polish_model_id,
-                cloud_polish_enabled,
-            ) = {
-                let settings = state.settings.lock();
-
-                let mut system_prompt: String = template_id
-                    .as_deref()
-                    .and_then(get_template_by_id)
-                    .map(|template| template.system_prompt.to_string())
-                    .or_else(|| {
-                        template_id.as_deref().and_then(|id| {
-                            settings
-                                .polish_custom_templates
-                                .iter()
-                                .find(|template| template.id == id)
-                                .map(|template| template.system_prompt.clone())
-                        })
-                    })
-                    .unwrap_or_else(|| DEFAULT_POLISH_PROMPT.to_string());
-                if let Some(workflow_instruction) = workflow_instruction.as_deref() {
-                    system_prompt.push_str("\n\nWORKFLOW OUTPUT RULES:\n");
-                    system_prompt.push_str(workflow_instruction);
-                }
-
-                let language = profile
-                    .and_then(|profile| profile.language.clone())
-                    .filter(|language| !language.trim().is_empty())
-                    .unwrap_or_else(|| settings.stt_engine_language.clone());
-                let provider_type = settings.active_cloud_polish_provider.clone();
-                let cloud_config = settings.cloud_polish_configs.get(&provider_type).cloned();
-                let polish_model_id = settings.polish_model.clone();
-                let cloud_polish_enabled = settings.cloud_polish_enabled;
-
-                (
-                    system_prompt,
-                    language,
-                    provider_type,
-                    cloud_config,
-                    polish_model_id,
-                    cloud_polish_enabled,
-                )
-            };
-
-            let window_context = {
-                let session = state.session_state.lock();
-                session
-                    .as_ref()
-                    .and_then(|s| s.window_context.as_ref())
-                    .and_then(|ctx| ctx.to_polish_context())
-            };
-            let window_context_chars = window_context
-                .as_ref()
-                .map(|ctx| ctx.chars().count())
-                .unwrap_or(0);
-
-            if cloud_polish_enabled {
-                if let Some(cfg) = cloud_config {
-                    if !cfg.api_key.is_empty() && !cfg.model.is_empty() {
-                        let polish_queue_ms = elapsed_ms(polish_decision_started);
-                        info!(
-                            task_id,
-                            provider = %provider_type,
-                            model = %cfg.model,
-                            has_window_context = window_context_chars > 0,
-                            window_context_chars,
-                            polish_queue_ms,
-                            "polish_started-cloud"
-                        );
-
-                        let request = crate::polish_engine::PolishRequest::new(
-                            accumulated_text.clone(),
-                            system_prompt,
-                            language,
-                        );
-                        let request = match window_context {
-                            Some(ref ctx) => request.with_window_context(ctx),
-                            None => request,
-                        };
-                        let preview_handle = event_target.polish_preview_callback(task_id);
-                        let request = match preview_handle.as_ref() {
-                            Some(handle) => request.with_preview_callback(handle.callback.clone()),
-                            None => request,
-                        };
-
-                        event_target.emit_polishing(task_id);
-
-                        let polish_call_started = Instant::now();
-                        return match state
-                            .polish_manager
-                            .polish_cloud(
-                                request,
-                                &provider_type,
-                                &cfg.api_key,
-                                &cfg.base_url,
-                                &cfg.model,
-                                cfg.enable_thinking,
-                            )
-                            .await
-                        {
-                            Ok(result) if !result.text.is_empty() => {
-                                let polish_wall_ms = elapsed_ms(polish_call_started);
-                                info!(
-                                    task_id,
-                                    chars = result.text.len(),
-                                    polish_ms = result.total_ms,
-                                    polish_wall_ms,
-                                    polish_queue_ms,
-                                    model_load_ms = result.model_load_ms,
-                                    context_create_ms = result.context_create_ms,
-                                    prefill_ms = result.prefill_ms,
-                                    inference_ms = result.inference_ms,
-                                    time_to_first_token_ms = result.time_to_first_token_ms,
-                                    generation_ms = result.generation_ms,
-                                    "polish_completed-cloud"
-                                );
-                                accept_polish_result(
-                                    event_target,
-                                    task_id,
-                                    accumulated_text,
-                                    result,
-                                    PolishAcceptContext {
-                                        polish_wall_ms,
-                                        polish_queue_ms,
-                                        log_context: "cloud",
-                                        direct_stream_inserted: preview_handle
-                                            .as_ref()
-                                            .map(|handle| handle.direct_stream_inserted())
-                                            .unwrap_or(false),
-                                        template_id: template_id.clone(),
-                                        allow_language_change,
-                                    },
-                                )
-                            }
-                            Ok(_) => {
-                                let polish_wall_ms = elapsed_ms(polish_call_started);
-                                let failure_reason = "cloud model returned empty output";
-                                event_target
-                                    .emit_polish_error_tooltip(task_id, Some(failure_reason));
-                                warn!(task_id, provider = %provider_type, failure_reason, "polish_empty_result-cloud_using_raw");
-                                PolishProcessingResult::using_original(
-                                    accumulated_text,
-                                    polish_wall_ms,
-                                    polish_queue_ms,
-                                    failure_reason,
-                                )
-                            }
-                            Err(e) => {
-                                let polish_wall_ms = elapsed_ms(polish_call_started);
-                                let failure_reason = classify_polish_failure_reason(&e);
-                                event_target
-                                    .emit_polish_error_tooltip(task_id, Some(failure_reason));
-                                warn!(task_id, provider = %provider_type, error = %e, failure_reason, "polish_failed-cloud_using_raw");
-                                PolishProcessingResult::using_original(
-                                    accumulated_text,
-                                    polish_wall_ms,
-                                    polish_queue_ms,
-                                    failure_reason,
-                                )
-                            }
-                        };
-                    }
-                }
-
-                let failure_reason = "cloud polish configuration incomplete";
-                event_target.emit_polish_error_tooltip(task_id, Some(failure_reason));
-                warn!(
-                    task_id,
-                    provider = %provider_type,
-                    failure_reason,
-                    "polish_cloud_config_incomplete-using_raw"
-                );
-                return PolishProcessingResult::using_original(
-                    accumulated_text,
-                    0,
-                    elapsed_ms(polish_decision_started),
-                    failure_reason,
-                );
+    }
+    if let Some(context) = vibe_context {
+        prompt.push_str("\n\n");
+        prompt.push_str(&crate::services::platform_quality::build_code_aware_instruction(context));
+    }
+    let mut request = PolishRequest::new(
+        accumulated_text.clone(),
+        prompt,
+        translation.unwrap_or(&language),
+    );
+    if let Some(context) = state
+        .session_state
+        .lock()
+        .as_ref()
+        .and_then(|session| session.window_context.as_ref())
+        .and_then(|context| context.to_polish_context())
+    {
+        request = request.with_window_context(context);
+    }
+    if let Some(callback) = event_target.polish_preview_callback(task_id) {
+        request = request.with_preview_callback(callback);
+    }
+    event_target.emit_polishing(task_id);
+    let started = Instant::now();
+    match transform_text(state, request, intent).await {
+        Ok(outcome) => {
+            let wall_ms = started.elapsed().as_millis() as u64;
+            if let Some(reason) = outcome.rejection_reason {
+                event_target.emit_polish_policy_tooltip(task_id);
+                PolishProcessingResult::using_original(accumulated_text, wall_ms, 0, reason)
+            } else {
+                info!(task_id, polish_wall_ms = wall_ms, "polish_completed");
+                PolishProcessingResult::from_polish_result(outcome.result, wall_ms, 0)
             }
-
-            run_local_polish(
-                event_target,
-                state,
-                task_id,
+        }
+        Err(error) => {
+            let reason = classify_polish_failure_reason(&error);
+            if is_local_polish_timeout_error(&error) {
+                event_target.emit_local_polish_timeout_tooltip(task_id);
+            } else {
+                event_target.emit_polish_error_tooltip(task_id, Some(reason));
+            }
+            warn!(task_id, error, "polish_failed-using_original");
+            PolishProcessingResult::using_original(
                 accumulated_text,
-                LocalPolishContext {
-                    system_prompt,
-                    window_context,
-                    language,
-                    model_id: polish_model_id,
-                    log_context: "local",
-                    template_id,
-                    allow_language_change,
-                },
-                polish_decision_started,
+                started.elapsed().as_millis() as u64,
+                0,
+                reason,
             )
-            .await
         }
     }
 }
@@ -862,11 +294,22 @@ fn workflow_profile_instruction(
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        classify_polish_failure_reason, local_polish_timeout, polish_rejection_reason,
-        should_reject_question_answer_polish, workflow_profile_instruction,
-        LOCAL_POLISH_BASE_TIMEOUT, LOCAL_POLISH_MAX_TIMEOUT,
+    use super::*;
+    use crate::services::text_transform::{
+        local_polish_timeout, should_reject_question_answer_polish, LOCAL_POLISH_BASE_TIMEOUT,
+        LOCAL_POLISH_MAX_TIMEOUT,
     };
+    fn polish_rejection_reason(
+        input: &str,
+        output: &str,
+        template: Option<&str>,
+    ) -> Option<&'static str> {
+        crate::services::text_transform::rejection_reason(
+            input,
+            output,
+            TransformIntent::for_template(template),
+        )
+    }
 
     #[test]
     fn rejects_polish_output_that_answers_a_dictated_question() {
@@ -953,7 +396,11 @@ mod tests {
         let output = "Vérifie les événements de suivi, les règles de sécurité et les prochaines fonctionnalités du produit.";
 
         assert_eq!(
-            super::polish_rejection_reason_with_policy(input, output, Some("filler"), true),
+            crate::services::text_transform::rejection_reason(
+                input,
+                output,
+                TransformIntent::Translate
+            ),
             None
         );
     }

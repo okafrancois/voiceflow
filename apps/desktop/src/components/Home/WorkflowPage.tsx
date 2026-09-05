@@ -1,3 +1,4 @@
+import { useLocation } from "react-router-dom";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { ArrowsClockwise, Plus, Trash } from "@phosphor-icons/react";
@@ -47,7 +48,6 @@ const TRIGGER_MODES: WorkflowProfile["trigger_mode"][] = ["hold", "toggle", "dou
 const OUTPUT_ACTIONS: WorkflowOutputAction[] = ["insert", "preview", "copy"];
 const VOICE_ACTIONS: VoiceActionKind[] = ["shorten", "translate", "reply", "list", "custom"];
 const QUICK_CONTROLS: QuickControlKind[] = [
-  "undo_last_insertion",
   "reinsert_raw",
   "reinsert_final",
   "copy_raw",
@@ -138,7 +138,9 @@ function Field({
 export function WorkflowPage() {
   const { t } = useTranslation();
   const confirm = useConfirm();
-  const [tab, setTab] = useState<WorkflowTab>("context");
+  const location = useLocation();
+  const requestedTab = new URLSearchParams(location.search).get("tab");
+  const [tab, setTab] = useState<WorkflowTab>(() => TABS.find((candidate) => candidate === requestedTab) ?? "profiles");
   const [snapshot, setSnapshot] = useState<WorkflowSettingsSnapshot | null>(null);
   const [context, setContext] = useState<CapturedContext | null>(null);
   const [profileDraft, setProfileDraft] = useState<WorkflowProfile>(EMPTY_PROFILE);
@@ -305,7 +307,6 @@ export function WorkflowPage() {
     custom: t("workflow.voiceActions.kinds.custom"),
   };
   const quickControlLabels: Record<QuickControlKind, string> = {
-    undo_last_insertion: t("workflow.quick.undo_last_insertion"),
     reinsert_raw: t("workflow.quick.reinsert_raw"),
     reinsert_final: t("workflow.quick.reinsert_final"),
     copy_raw: t("workflow.quick.copy_raw"),

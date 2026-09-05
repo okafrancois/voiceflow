@@ -198,7 +198,6 @@ for (const project of PROJECTS) {
   const dynamicKeyPatterns = [
     /^model\.polish\.template[A-Z]/, // templateFiller, templateFormal, templateConcise, templateAgent, templateCustom (used via switch/map)
     /^model\.domain\.subdomain_/,    // subdomain_general, subdomain_security, etc. (used via switch)
-    /^dashboard\.time\./,            // time format keys (used via switch)
   ];
   
   const trulyRedundant = redundantInLocale.filter(k => 

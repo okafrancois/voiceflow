@@ -45,3 +45,9 @@ Polish may change presentation, but it must not silently change the transcript l
 - Replacing the selected model automatically.
 - General-purpose language identification for every language pair.
 - Changing STT model selection.
+
+## Shared policy coverage (2026-09-05)
+
+[Product simplification](../../../product-simplification/0.1.0/prd/erd.md) moves acceptance and provider dispatch into `services/text_transform.rs`. Recording and retries, history re-polish, and quick re-polish use Cleanup or Concise intent. Translation explicitly allows a language change; Reply intentionally allows answering; Rewrite allows more extensive shortening while retaining the applicable language/question guards. Empty output always falls back to the source.
+
+These are bounded regression heuristics, including French/English word scoring and length ratios, not semantic equivalence checks. Original text remains available. Provider-response tests cover history and workflow rejection and explicit translation; existing recording safety tests cover language, shortening, questions, and timing.

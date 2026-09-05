@@ -50,11 +50,7 @@ vi.mock("@/contexts/SettingsContext", () => ({
     loading: false,
     polishAvailable: false,
     settings: {
-      shortcut_profiles: {
-        dictate: {
-          hotkey: "Shift+Space",
-        },
-      },
+      workflow_profiles: [{ id: "dictate", name: "Dictate", hotkey: "Shift+Space", trigger_mode: "hold", polish_template_id: null, language: null, translation_target: null, output_action: "insert", code_aware: false, protected: true }],
       stt_engine_language: "zh-CN",
     },
     updateSetting: mocks.updateSettingMock,
@@ -174,8 +170,8 @@ describe("OnboardingGuide model download flow", () => {
   it("lets users apply a setup preset before leaving onboarding", async () => {
     render(<OnboardingPresetControl />);
 
-    fireEvent.click(screen.getByRole("button", { name: "platformQuality.presets.private" }));
+    fireEvent.click(screen.getByRole("button", { name: "platformQuality.presets.localOnly" }));
 
-    await waitFor(() => expect(mocks.applyPresetMock).toHaveBeenCalledWith("private"));
+    await waitFor(() => expect(mocks.applyPresetMock).toHaveBeenCalledWith("local_only"));
   });
 });

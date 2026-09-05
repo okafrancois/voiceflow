@@ -2,6 +2,31 @@
 
 All notable changes to the desktop application will be documented in this file.
 
+## v1.2.0 (2026-09-05)
+
+### Features
+
+- Restore Home usage summaries and recent transcription history
+- Add retained-history statistics with selectable periods and local/cloud totals
+- Add direct Snippets and Styles editors with app-only styles
+- Edit dictionary recognition aliases
+- Add opt-in Vibe coding with a VS Code-compatible editor adapter
+- Add a reproducible signed local development installation build
+
+### Fixes and simplification
+
+- Share transcription rewriting and output-preservation rules
+- Keep processing local by default and developer integrations opt-in
+- Preserve recovery actions while removing unsafe cross-app Undo and direct
+  streaming insertion
+- Keep select menus usable inside settings dialogs
+
+### Notes
+
+- The editor adapter shares bounded filename and symbol metadata, not source
+  file contents. Context follows the selected local or cloud processing engine.
+- Automatic @file tagging is not included.
+
 ## v1.1.5 (2026-09-04)
 
 ### Bug Fixes

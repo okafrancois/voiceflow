@@ -102,7 +102,6 @@ Versioned feature specs with verification status. Each lives under `feat/<name>/
 | Feature | Version | Status |
 |---------|---------|--------|
 | [Original Dictation Target](./feat/original-dictation-target/0.1.0/prd/erd.md) | 0.1.0 | Active |
-| [Home Dashboard Redesign](./feat/home-dashboard/0.1.0/prd/erd.md) | 0.1.0 | Active |
 | [Website Homepage Redesign](./feat/website-homepage/0.1.0/prd/erd.md) | 0.1.0 | Active |
 | [Cloud Service Tab UI](./feat/cloud-service/1.0.0/prd/erd.md) | 1.0.0 | Active |
 | [Correction Learning](./feat/correction-learning/0.1.0/prd/erd.md) | 0.1.0 | Active |
@@ -112,8 +111,13 @@ Versioned feature specs with verification status. Each lives under `feat/<name>/
 
 | Feature | Version | Status |
 |---------|---------|--------|
+| [Vibe coding](./feat/vibe-coding/0.1.0/prd/erd.md) | 0.1.0 | Completed |
+| [Dictation workspace](./feat/dictation-workspace/0.1.0/prd/erd.md) | 0.1.0 | Completed |
+| [Workflow library interface](./feat/workflow-library-ui/0.1.0/prd/erd.md) | 0.1.0 | Completed |
+| [Local macOS Development Installation](./feat/dev-local-install/0.1.0/prd/erd.md) | 0.1.0 | Completed |
 | [Polish Output Safety](./feat/polish-output-safety/0.1.0/prd/erd.md) | 0.1.0 | Completed |
 | [Reliable Windows Delivery](./feat/windows-text-injection/0.1.0/prd/erd.md) | 0.1.0 | Completed |
+| [Dictation-focused product simplification](./feat/product-simplification/0.1.0/prd/erd.md) | 0.1.0 | Completed |
 | [Context Workflows](./feat/context-workflows/0.1.0/prd/erd.md) | 0.1.0 | Completed |
 | [Transcription Workbench](./feat/file-history-translation/0.1.0/prd/erd.md) | 0.1.0 | Completed |
 | [Platform Bridge and Quality](./feat/platform-bridge-quality/0.1.0/prd/erd.md) | 0.1.0 | Completed |
@@ -127,8 +131,8 @@ Versioned feature specs with verification status. Each lives under `feat/<name>/
 
 | Feature | Version | Status | Description |
 |---------|---------|--------|-------------|
-| [Ghost-Action](./feat/ghost-action/0.1.0/prd/erd.md) | 0.1.0 | Draft | macOS computer-use via Ghost OS MCP server |
-| [Ghost-Language](./feat/ghost-language/0.1.0/prd/erd.md) | 0.1.0 | Draft | Language habit learning for STT/Polish personalization |
+| [Ghost-Action](./feat/ghost-action/0.1.0/prd/erd.md) | 0.1.0 | Deferred draft | macOS computer-use via Ghost OS MCP server |
+| [Ghost-Language](./feat/ghost-language/0.1.0/prd/erd.md) | 0.1.0 | Deferred draft | Language habit learning for STT/Polish personalization |
 
 ---
 

@@ -40,6 +40,10 @@ language and no same-language polish ambiguity.
 5. Translation preserves meaning in a declared target language; normal polish
    preserves the source language.
 
+## Current surface (2026-09-05)
+
+The [product simplification contract](../../../product-simplification/0.1.0/prd/erd.md) keeps basic history, text export, copy, reinsertion, and retry under History. Import, video decoding, explicit translation, and caption export live at Advanced → Media and captions (`/workbench`). Basic History does not initialize file jobs or drag-and-drop listeners. Further media-product expansion is deferred; the existing single-cue SRT fallback remains limited subtitle output.
+
 ## Information Architecture
 
 - Workbench import zone and native file picker for audio/video.

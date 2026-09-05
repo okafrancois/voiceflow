@@ -1,3 +1,4 @@
+import { MemoryRouter } from "react-router-dom";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -108,9 +109,9 @@ const snapshot: WorkflowSettingsSnapshot = {
 
 function renderPage() {
   return render(
-    <ConfirmProvider>
+    <MemoryRouter><ConfirmProvider>
       <WorkflowPage />
-    </ConfirmProvider>,
+    </ConfirmProvider></MemoryRouter>,
   );
 }
 
@@ -210,12 +211,12 @@ describe("WorkflowPage", () => {
     runQuickControlMock.mockRejectedValueOnce("No previous delivery is available");
     renderPage();
     fireEvent.click(await screen.findByRole("tab", { name: "workflow.tabs.actions" }));
-    const undoButton = screen.getByRole("button", { name: "workflow.quick.undo_last_insertion" });
-    await waitFor(() => expect(undoButton).toBeEnabled());
-    fireEvent.click(undoButton);
+    const copyButton = screen.getByRole("button", { name: "workflow.quick.copy_final" });
+    await waitFor(() => expect(copyButton).toBeEnabled());
+    fireEvent.click(copyButton);
 
     await waitFor(() => {
-      expect(runQuickControlMock).toHaveBeenCalledWith("undo_last_insertion");
+      expect(runQuickControlMock).toHaveBeenCalledWith("copy_final");
       expect(showErrorToastMock).toHaveBeenCalledWith("No previous delivery is available");
     });
   });

@@ -56,12 +56,5 @@ fn main() {
         sanitized_entries.len()
     );
 
-    let stats = history_store
-        .get_dashboard_stats()
-        .expect("Failed to get stats");
-    let stats_json = serde_json::to_string_pretty(&stats).expect("Failed to serialize stats");
-    fs::write(mock_dir.join("dashboard-stats.json"), &stats_json).expect("Failed to write stats");
-    println!("Exported: dashboard-stats.json");
-
     println!("\nMock data exported to: {}", output_dir);
 }

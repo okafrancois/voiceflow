@@ -1,15 +1,17 @@
 import { Outlet, useLocation } from "react-router-dom";
 import {
   CirclesFour,
+  ChartBar,
+  Code,
+  TextAa,
+  TextT,
   GearSix,
-  MagicWand,
   ClockCounterClockwise,
   BookOpenText,
   ChatCircleText,
   ArrowSquareOut,
   GithubLogo,
   Info,
-  Gauge,
   FlowArrow,
   type Icon,
 } from "@phosphor-icons/react";
@@ -115,6 +117,9 @@ export function HomeLayout() {
       label: t("nav.dashboard"),
     },
     {
+      id: "statistics", to: "/statistics", icon: ChartBar, label: t("nav.statistics"),
+    },
+    {
       id: "history",
       to: "/history",
       icon: ClockCounterClockwise,
@@ -127,22 +132,16 @@ export function HomeLayout() {
       label: t("nav.dictionary"),
     },
     {
-      id: "polish-templates",
-      to: "/polish-templates",
-      icon: MagicWand,
-      label: t("nav.polishTemplates"),
+      id: "snippets", to: "/snippets", icon: TextT, label: t("nav.snippets"),
     },
     {
-      id: "workflows",
-      to: "/workflows",
-      icon: FlowArrow,
-      label: t("nav.workflows"),
+      id: "styles", to: "/styles", icon: TextAa, label: t("nav.styles"),
     },
     {
-      id: "quality",
-      to: "/quality",
-      icon: Gauge,
-      label: t("nav.quality"),
+      id: "vibe-coding", to: "/vibe-coding", icon: Code, label: t("nav.vibeCoding"),
+    },
+    {
+      id: "advanced", to: "/advanced", icon: FlowArrow, label: t("nav.advanced"),
     },
   ];
   const settingsNeedsAttention = !hasModel || badges.permission;
@@ -254,7 +253,7 @@ export function HomeLayout() {
               {t("app.name")}
             </span>
           </div>
-          <nav className="px-4 py-4 flex flex-col h-[calc(100%-4.5rem)]">
+          <nav className="px-4 py-4 flex flex-col h-[calc(100%-4.5rem)] overflow-y-auto">
             <Navigation
               className="space-y-1"
               id="home-sidebar-navigation"

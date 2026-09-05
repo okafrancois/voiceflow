@@ -1,5 +1,12 @@
 # Home Dashboard Redesign
 
+Status: Superseded on 2026-09-05 by [Dictation-focused product simplification](../../../product-simplification/0.1.0/prd/erd.md).
+
+The simplification removed the previous aggregate endpoints and speculative productivity metrics. The subsequent [Dictation workspace](../../../dictation-workspace/0.1.0/prd/erd.md) restores factual retained-history statistics and recent results under a new contract. Detailed reliability and latency data remain in Advanced → Diagnostics.
+
+The following specification is historical and must not be used as an implementation target.
+
+
 ## Version
 
 - Feature: `home-dashboard`

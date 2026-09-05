@@ -34,6 +34,9 @@ pnpm --filter @voiceflow/desktop tauri:dev
 # Build and launch the entitled macOS app for permission testing
 pnpm --filter @voiceflow/desktop tauri:dev:mac-permissions
 
+# Build and verify the entitled macOS app without installing or launching it
+npm --prefix apps/desktop run tauri:build:mac:local-install
+
 # Build frontend only
 pnpm --filter @voiceflow/desktop build
 
@@ -49,6 +52,9 @@ pnpm --filter @voiceflow/desktop tauri:build:win
 - `pnpm --filter @voiceflow/desktop tauri:dev` starts the inhouse/dev desktop variant.
 - The standard dev command runs a raw executable. macOS can attribute privacy requests to the parent terminal or editor. Use `tauri:dev:mac-permissions` to test microphone and screen-recording access with an ad-hoc signed `Voice Flow Dev.app` carrying `entitlements.plist`.
 - The permission-test command treats the local polish sidecar as optional and automatically selects a working full Xcode installation through `DEVELOPER_DIR` without changing the machine-wide `xcode-select` setting.
+- The local-install build writes `src-tauri/target/debug/bundle/macos/Voice Flow Dev.app`, verifies its signature, bundle identifier, and audio-input entitlement, and leaves it unopened. It uses `voiceflow-dev://` so the installed development app does not claim the production URL scheme.
+- The `voiceflow-dev://` scheme is intentionally isolated from production. The current developer-bridge URL parser supports `voiceflow://` only, so the development scheme is not an automation entry point.
+- Install the verified bundle for the current user with `/usr/bin/ditto "apps/desktop/src-tauri/target/debug/bundle/macos/Voice Flow Dev.app" "$HOME/Applications/Voice Flow Dev.app"`. Keep that bundle unchanged while testing. An ad hoc signed rebuild may require granting privacy access again.
 - The `tauri:dev` script regenerates inhouse icon assets before launching Tauri. Do not hand-edit generated files in `apps/desktop/assets/icons/inhouse/`.
 - The canonical generator is `scripts/generate-inhouse-icons.sh`. Change the corner marker style there, then regenerate assets.
 - Dev bundle icons are wired through `src-tauri/tauri.dev.conf.json`.

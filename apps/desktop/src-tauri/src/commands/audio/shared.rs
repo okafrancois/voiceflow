@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Instant;
 use tauri::{AppHandle, Emitter, Manager};
@@ -37,18 +37,6 @@ pub(crate) const TEXT_INJECTION_ERROR_TOOLTIP_MESSAGE: &str =
 const POLISH_PREVIEW_MAX_CHARS: usize = 220;
 const THINK_START_TAG: &str = "<think>";
 const THINK_END_TAG: &str = "</think>";
-
-#[derive(Clone)]
-pub(crate) struct PolishPreviewHandle {
-    pub callback: crate::polish_engine::PolishPreviewCallback,
-    direct_stream_inserted: Arc<AtomicBool>,
-}
-
-impl PolishPreviewHandle {
-    pub(crate) fn direct_stream_inserted(&self) -> bool {
-        self.direct_stream_inserted.load(Ordering::SeqCst)
-    }
-}
 
 pub(crate) fn polish_error_tooltip_message(reason: Option<&str>) -> String {
     match reason.map(str::trim).filter(|reason| !reason.is_empty()) {
@@ -176,7 +164,7 @@ pub(crate) async fn apply_finalize_result(
                 crate::correction_learning::observe_post_delivery_edit(app.clone(), text);
             }
         }
-        FinalizeResult::TextAlreadyInserted {
+        FinalizeResult::OutputHandled {
             text,
             history_entry_id,
             disposition,
@@ -192,20 +180,8 @@ pub(crate) async fn apply_finalize_result(
             if let Some(runtime) =
                 app.try_state::<crate::services::product_workflows::WorkflowRuntime>()
             {
-                if should_observe_post_delivery(disposition) {
-                    runtime.commit_staged_delivery(task_id);
-                } else {
-                    runtime.discard_staged_delivery(task_id);
-                }
+                runtime.discard_staged_delivery(task_id);
                 runtime.clear_active_task(task_id);
-            }
-            let correction_memory_enabled = should_observe_post_delivery(disposition) && {
-                let state = app.state::<AppState>();
-                let settings = state.settings.lock();
-                settings.correction_memory_enabled
-            };
-            if correction_memory_enabled {
-                crate::correction_learning::observe_post_delivery_edit(app.clone(), text);
             }
         }
         FinalizeResult::TransitionToIdle => {
@@ -300,13 +276,6 @@ where
             insert_into_background_target(text)
         }
     }
-}
-
-fn should_observe_post_delivery(
-    disposition: crate::services::transcription_finalize::DeliveryDisposition,
-) -> bool {
-    disposition
-        == crate::services::transcription_finalize::DeliveryDisposition::DirectStreamInserted
 }
 
 fn emit_recording_complete(app: &AppHandle, task_id: u64, text: &str) {
@@ -479,7 +448,10 @@ impl ProcessingEventTarget<'_> {
         self.emit_processing_tooltip(task_id, POLISH_POLICY_TOOLTIP_MESSAGE.to_string());
     }
 
-    pub(crate) fn polish_preview_callback(&self, task_id: u64) -> Option<PolishPreviewHandle> {
+    pub(crate) fn polish_preview_callback(
+        &self,
+        task_id: u64,
+    ) -> Option<crate::polish_engine::PolishPreviewCallback> {
         let app = match self {
             Self::None => return None,
             Self::Recording(app) => (*app).clone(),
@@ -490,28 +462,7 @@ impl ProcessingEventTarget<'_> {
             Self::Retry { .. } => None,
             Self::None => None,
         };
-        let original_target_enabled = match self {
-            Self::Recording(app) => {
-                let state = app.state::<AppState>();
-                state.session_uses_original_target(task_id)
-            }
-            Self::Retry { .. } | Self::None => false,
-        };
-        let typed_visible_chars = Arc::new(ParkingMutex::new(0_usize));
-        let direct_stream_inserted = Arc::new(AtomicBool::new(false));
-        let callback_inserted = Arc::clone(&direct_stream_inserted);
-
         let callback = Arc::new(move |update: crate::polish_engine::PolishPreviewUpdate| {
-            if should_type_direct_stream_delta(false, update.is_final, original_target_enabled) {
-                maybe_insert_direct_stream_delta(
-                    &app,
-                    task_id,
-                    &update.text,
-                    &typed_visible_chars,
-                    &callback_inserted,
-                );
-            }
-
             let Some(message) = polish_preview_tooltip_message(&update.text) else {
                 return;
             };
@@ -523,10 +474,7 @@ impl ProcessingEventTarget<'_> {
             );
         });
 
-        Some(PolishPreviewHandle {
-            callback,
-            direct_stream_inserted,
-        })
+        Some(callback)
     }
 
     fn emit_processing_tooltip(&self, task_id: u64, message: String) {
@@ -543,71 +491,6 @@ impl ProcessingEventTarget<'_> {
             }
         }
     }
-}
-
-fn maybe_insert_direct_stream_delta(
-    app: &AppHandle,
-    task_id: u64,
-    accumulated_text: &str,
-    typed_visible_chars: &Arc<ParkingMutex<usize>>,
-    direct_stream_inserted: &Arc<AtomicBool>,
-) {
-    let state = app.state::<AppState>();
-    if state.task_counter.load(Ordering::SeqCst) != task_id
-        || state.is_cancellation_requested(task_id)
-    {
-        return;
-    }
-
-    let mut typed_chars = typed_visible_chars.lock();
-    let Some(delta) = next_direct_stream_delta(accumulated_text, &mut typed_chars) else {
-        return;
-    };
-    drop(typed_chars);
-
-    let injection_started = Instant::now();
-    let injection_result = insert_text_with_metrics(
-        &delta,
-        task_id,
-        "recording-polish-stream",
-        None,
-        crate::text_injector::insert_text,
-    );
-    match injection_result {
-        Ok(_) => direct_stream_inserted.store(true, Ordering::SeqCst),
-        Err(_) => record_injection_failure(
-            app,
-            u64::try_from(injection_started.elapsed().as_millis()).unwrap_or(u64::MAX),
-        ),
-    }
-}
-
-fn should_type_direct_stream_delta(
-    direct_typing_enabled: bool,
-    is_final_update: bool,
-    original_target_enabled: bool,
-) -> bool {
-    direct_typing_enabled && !is_final_update && !original_target_enabled
-}
-
-fn next_direct_stream_delta(
-    accumulated_text: &str,
-    typed_visible_chars: &mut usize,
-) -> Option<String> {
-    let raw_visible_text = sanitize_polish_preview_text(accumulated_text)?;
-    let (visible_text, _) = strip_trailing_sentence_period(raw_visible_text);
-    let visible_chars = visible_text.chars().count();
-    if visible_chars <= *typed_visible_chars {
-        return None;
-    }
-
-    let delta = visible_text
-        .chars()
-        .skip(*typed_visible_chars)
-        .collect::<String>();
-    *typed_visible_chars = visible_chars;
-
-    (!delta.is_empty()).then_some(delta)
 }
 
 pub(crate) fn polish_preview_tooltip_message(text: &str) -> Option<String> {
@@ -740,8 +623,7 @@ mod tests {
 
     use super::{
         deliver_recording_text_with, injection_delivery_status, insert_text_with_metrics,
-        next_direct_stream_delta, polish_error_tooltip_message, polish_preview_tooltip_message,
-        should_observe_post_delivery, should_type_direct_stream_delta,
+        polish_error_tooltip_message, polish_preview_tooltip_message,
         LOCAL_POLISH_TIMEOUT_TOOLTIP_MESSAGE, POLISH_ERROR_TOOLTIP_MESSAGE,
         POLISH_PREVIEW_MAX_CHARS, POLISH_PREVIEW_PENDING_TOOLTIP_MESSAGE,
     };
@@ -826,30 +708,6 @@ mod tests {
     }
 
     #[test]
-    fn post_delivery_observation_only_runs_for_text_inserted_by_the_stream() {
-        use crate::services::transcription_finalize::DeliveryDisposition;
-
-        assert!(should_observe_post_delivery(
-            DeliveryDisposition::DirectStreamInserted
-        ));
-        for disposition in [
-            DeliveryDisposition::Preview,
-            DeliveryDisposition::Copied,
-            DeliveryDisposition::CopyFailed,
-        ] {
-            assert!(!should_observe_post_delivery(disposition));
-        }
-    }
-
-    #[test]
-    fn direct_stream_typing_requires_explicit_non_final_update() {
-        assert!(should_type_direct_stream_delta(true, false, false));
-        assert!(!should_type_direct_stream_delta(false, false, false));
-        assert!(!should_type_direct_stream_delta(true, true, false));
-        assert!(!should_type_direct_stream_delta(true, false, true));
-    }
-
-    #[test]
     fn disabled_original_target_uses_current_focus_only() {
         let result = deliver_recording_text_with(
             false,
@@ -930,61 +788,6 @@ mod tests {
         .unwrap_err();
 
         assert_eq!(error, "Original application was not captured");
-    }
-
-    #[test]
-    fn direct_stream_delta_returns_only_new_visible_text() {
-        let mut typed_chars = 0;
-
-        assert_eq!(
-            next_direct_stream_delta("Hello", &mut typed_chars).as_deref(),
-            Some("Hello")
-        );
-        assert_eq!(typed_chars, 5);
-        assert_eq!(
-            next_direct_stream_delta("Hello world", &mut typed_chars).as_deref(),
-            Some(" world")
-        );
-        assert_eq!(typed_chars, 11);
-        assert_eq!(
-            next_direct_stream_delta("Hello world", &mut typed_chars),
-            None
-        );
-    }
-
-    #[test]
-    fn direct_stream_delta_holds_trailing_sentence_period_until_more_text_arrives() {
-        let mut typed_chars = 0;
-
-        assert_eq!(
-            next_direct_stream_delta("Hello.", &mut typed_chars).as_deref(),
-            Some("Hello")
-        );
-        assert_eq!(typed_chars, 5);
-
-        assert_eq!(next_direct_stream_delta("Hello.", &mut typed_chars), None);
-        assert_eq!(typed_chars, 5);
-
-        assert_eq!(
-            next_direct_stream_delta("Hello. Again", &mut typed_chars).as_deref(),
-            Some(". Again")
-        );
-        assert_eq!(typed_chars, 12);
-    }
-
-    #[test]
-    fn direct_stream_delta_hides_incomplete_thinking() {
-        let mut typed_chars = 0;
-
-        assert_eq!(
-            next_direct_stream_delta("<think>hidden reasoning", &mut typed_chars),
-            None
-        );
-        assert_eq!(typed_chars, 0);
-        assert_eq!(
-            next_direct_stream_delta("<think>hidden</think>\nVisible", &mut typed_chars).as_deref(),
-            Some("Visible")
-        );
     }
 
     #[test]

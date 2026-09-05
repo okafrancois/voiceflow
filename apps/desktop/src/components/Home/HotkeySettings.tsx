@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -12,7 +13,7 @@ import { SettingsPageLayout } from "./SettingsPageLayout";
 import {
   hotkeyCommands,
   modelCommands,
-  type ShortcutProfile,
+  type WorkflowProfile,
   type ShortcutTriggerMode,
   type PolishTemplate,
   type CustomPolishTemplate,
@@ -27,7 +28,7 @@ const RECORDING_MODES = [
 
 interface ProfileSectionProps {
   profileKey: string;
-  profile?: ShortcutProfile;
+  profile?: WorkflowProfile;
   templates: (PolishTemplate | CustomPolishTemplate)[];
   canChangeTemplate: boolean;
   allowNullTemplate: boolean;
@@ -51,12 +52,12 @@ function ProfileSection({
   testId,
 }: ProfileSectionProps) {
   const { t } = useTranslation();
-  const templateId = profile?.action?.Record?.polish_template_id ?? null;
+  const templateId = profile?.polish_template_id ?? null;
   const triggerMode = profile?.trigger_mode ?? "hold";
 
   const templateOptions = [
     ...(allowNullTemplate ? [{ value: "", label: t("hotkey.noPolish", "No Polish") }] : []),
-    ...templates.map((tpl) => ({ value: tpl.id, label: tpl.name })),
+    ...templates.filter((tpl) => tpl.id === "filler" || tpl.id === templateId).map((tpl) => ({ value: tpl.id, label: tpl.name })),
   ];
   const recordingModes = RECORDING_MODES.map((option) => ({
     value: option.value,
@@ -147,7 +148,7 @@ export function HotkeySettings({ variant = "page" }: HotkeySettingsProps = {}) {
 
   if (!settings) return null;
 
-  const profiles = settings.shortcut_profiles;
+  const dictate = settings.workflow_profiles.find((profile) => profile.id === "dictate");
 
   const handleUpdateDictate = async (
     hotkey: string,
@@ -181,7 +182,7 @@ export function HotkeySettings({ variant = "page" }: HotkeySettingsProps = {}) {
         <CardContent>
           <ProfileSection
             profileKey="dictate"
-            profile={profiles?.dictate}
+            profile={dictate}
             templates={templates}
             canChangeTemplate={true}
             allowNullTemplate={true}
@@ -189,6 +190,7 @@ export function HotkeySettings({ variant = "page" }: HotkeySettingsProps = {}) {
             onUpdate={handleUpdateDictate}
             testId="profile-dictate"
           />
+          <Link to="/workflows?tab=profiles" className="mt-4 inline-block text-sm underline underline-offset-4">{t("advanced.moreTemplates")}</Link>
         </CardContent>
       </Card>
 

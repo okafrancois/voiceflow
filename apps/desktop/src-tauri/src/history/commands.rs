@@ -2,13 +2,14 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, LazyLock};
-use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 
-use super::models::{HistoryFilter, NewTranscriptionEntry, TranscriptionEntry};
+use super::models::{
+    HistoryFilter, HistoryStatistics, NewTranscriptionEntry, StatisticsPeriod, TranscriptionEntry,
+};
 use super::store::{EntryUpdates, HistoryStore, WorkbenchEntryUpdates};
 use crate::services::transcription_workbench::{
     self, ExportFormat, FileTranscriptionRequest, FileTranscriptionResult, LanguageMode,
@@ -43,31 +44,6 @@ pub fn get_transcription_entry(
 }
 
 #[tauri::command]
-pub fn get_dashboard_stats(
-    state: State<'_, AppState>,
-) -> Result<super::models::DashboardStats, String> {
-    let store = state.history_store.lock();
-    store.get_dashboard_stats()
-}
-
-#[tauri::command]
-pub fn get_daily_usage(
-    state: State<'_, AppState>,
-    days: u32,
-) -> Result<Vec<super::models::DailyUsage>, String> {
-    let store = state.history_store.lock();
-    store.get_daily_usage(days)
-}
-
-#[tauri::command]
-pub fn get_engine_usage(
-    state: State<'_, AppState>,
-) -> Result<Vec<super::models::EngineUsage>, String> {
-    let store = state.history_store.lock();
-    store.get_engine_usage()
-}
-
-#[tauri::command]
 pub fn get_retention_status(
     state: State<'_, AppState>,
 ) -> Result<super::store::RetentionStatus, String> {
@@ -91,6 +67,14 @@ pub fn clear_transcription_history(state: State<'_, AppState>) -> Result<(), Str
 pub fn get_history_count(state: State<'_, AppState>, filter: HistoryFilter) -> Result<i64, String> {
     let store = state.history_store.lock();
     store.get_count(&filter)
+}
+
+#[tauri::command]
+pub fn get_history_statistics(
+    state: State<'_, AppState>,
+    period: StatisticsPeriod,
+) -> Result<HistoryStatistics, String> {
+    state.history_store.lock().get_history_statistics(period)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -769,19 +753,7 @@ async fn polish_workbench_text(
 ) -> Result<(String, i64, String), String> {
     let language_policy =
         transcription_workbench::build_language_policy(source_language, translation_target)?;
-    let (cloud_enabled, provider_type, cloud_config, polish_model, template_prompt) = {
-        let settings = state.settings.lock();
-        let provider_type = settings.active_cloud_polish_provider.clone();
-        let cloud_config = settings.cloud_polish_configs.get(&provider_type).cloned();
-        let template_prompt = resolve_workbench_template_prompt(&settings, template_id)?;
-        (
-            settings.cloud_polish_enabled,
-            provider_type,
-            cloud_config,
-            settings.polish_model.clone(),
-            template_prompt,
-        )
-    };
+    let template_prompt = resolve_workbench_template_prompt(&state.settings.lock(), template_id)?;
     let mut system_prompt = if language_policy.mode == LanguageMode::Translate {
         format!(
             "{}\nOutput only the translated text. Do not explain the translation.",
@@ -800,62 +772,17 @@ async fn polish_workbench_text(
         .as_deref()
         .or(source_language)
         .unwrap_or("auto");
-    let request = crate::polish_engine::PolishRequest::new(text, system_prompt, output_language)
-        .with_timeout(Duration::from_secs(60));
+    let request = crate::polish_engine::PolishRequest::new(text, system_prompt, output_language);
 
-    let result = if cloud_enabled {
-        let config = cloud_config
-            .ok_or_else(|| format!("Cloud polish provider is not configured: {provider_type}"))?;
-        if config.api_key.trim().is_empty() || config.model.trim().is_empty() {
-            return Err(format!(
-                "Cloud polish provider is incomplete: {provider_type}"
-            ));
-        }
-        tokio::time::timeout(
-            Duration::from_secs(60),
-            state.polish_manager.polish_cloud(
-                request,
-                &provider_type,
-                &config.api_key,
-                &config.base_url,
-                &config.model,
-                config.enable_thinking,
-            ),
-        )
-        .await
-        .map_err(|_| "Workbench polish timed out after 60 seconds".to_string())??
+    let intent = if language_policy.mode == LanguageMode::Translate {
+        crate::services::text_transform::TransformIntent::Translate
     } else {
-        if polish_model.trim().is_empty() {
-            return Err(
-                "Configure a local or cloud polish model before using polish or translation"
-                    .to_string(),
-            );
-        }
-        let engine_type =
-            crate::polish_engine::UnifiedPolishManager::get_engine_by_model_id(&polish_model)
-                .ok_or_else(|| format!("Unknown polish model: {polish_model}"))?;
-        if !state
-            .polish_manager
-            .is_model_downloaded(engine_type, &polish_model)
-        {
-            return Err(format!("Polish model is not downloaded: {polish_model}"));
-        }
-        let model_filename = state
-            .polish_manager
-            .get_model_filename(engine_type, &polish_model)
-            .ok_or_else(|| format!("Polish model file is unavailable: {polish_model}"))?;
-        let request = request.with_model(model_filename);
-        tokio::time::timeout(
-            Duration::from_secs(60),
-            state.polish_manager.polish(engine_type, request),
-        )
-        .await
-        .map_err(|_| "Workbench polish timed out after 60 seconds".to_string())??
+        crate::services::text_transform::TransformIntent::for_template(template_id)
     };
-    let output = result.text.trim().to_string();
-    if output.is_empty() {
-        return Err("Workbench polish returned empty text".to_string());
-    }
+    let outcome = crate::services::text_transform::transform_text(state, request, intent).await?;
+    let result = outcome.result;
+    let output = result.text.clone();
+
     Ok((
         output,
         result.total_ms as i64,
@@ -1266,6 +1193,52 @@ mod tests {
             timed_segments: Vec::new(),
             delivery_status: "not_delivered".to_string(),
         }
+    }
+
+    #[tokio::test]
+    async fn history_polish_preserves_source_but_explicit_translation_can_change_language() {
+        use wiremock::{
+            matchers::{method, path},
+            Mock, MockServer, ResponseTemplate,
+        };
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "choices": [{"message": {"content": "Please fix the error and check the output"}}]
+            })))
+            .expect(2)
+            .mount(&server)
+            .await;
+        let state = crate::state::app_state::AppState::new();
+        {
+            let mut settings = state.settings.lock();
+            settings.cloud_polish_enabled = true;
+            settings.active_cloud_polish_provider = "openai".to_string();
+            settings.cloud_polish_configs.insert(
+                "openai".to_string(),
+                crate::commands::settings::CloudProviderConfig {
+                    enabled: true,
+                    provider_type: "openai".to_string(),
+                    api_key: "test-key".to_string(),
+                    base_url: server.uri(),
+                    model: "test-model".to_string(),
+                    enable_thinking: false,
+                },
+            );
+        }
+        let source = "Alors je veux que tu vérifies les données et les règles de sécurité dans cette application";
+
+        let cleanup =
+            super::polish_workbench_text(&state, source, Some("fr"), None, Some("filler"), false)
+                .await
+                .unwrap();
+        assert_eq!(cleanup.0, source);
+        let translated =
+            super::polish_workbench_text(&state, source, Some("fr"), Some("en"), None, false)
+                .await
+                .unwrap();
+        assert_eq!(translated.0, "Please fix the error and check the output");
     }
 
     #[test]

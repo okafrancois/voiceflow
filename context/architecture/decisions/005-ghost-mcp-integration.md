@@ -1,7 +1,7 @@
 # ADR-005: Ghost Concept Architecture
 
 **Date**: 2025-04
-**Status**: Proposed
+**Status**: Deferred (2026-09-05). This is a historical proposal, not shipped architecture. See [product simplification](../../feat/product-simplification/0.1.0/prd/erd.md).
 
 ## Decision
 

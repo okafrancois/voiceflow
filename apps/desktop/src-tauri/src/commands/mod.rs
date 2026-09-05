@@ -1,4 +1,5 @@
 pub mod audio;
+pub mod home;
 pub mod hotkey;
 pub mod model;
 pub mod model_cache;
@@ -9,4 +10,5 @@ pub mod settings;
 pub mod system;
 pub mod text;
 pub mod updater;
+pub mod vibe_coding;
 pub mod window;

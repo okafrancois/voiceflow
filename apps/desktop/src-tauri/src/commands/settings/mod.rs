@@ -11,8 +11,8 @@ use crate::events::EventName;
 use crate::history::RetentionPolicy;
 use crate::services::product_workflows::{
     apply_profile_registration_transaction, default_workflow_profiles, migrate_legacy_profiles,
-    project_legacy_profiles, ApplicationRule, ContextCaptureSettings, VoiceSnippet,
-    WorkflowProfile, WorkflowProfileRegistrar,
+    ApplicationRule, ContextCaptureSettings, VoiceSnippet, WorkflowProfile,
+    WorkflowProfileRegistrar,
 };
 use crate::shortcut::ShortcutProfilesMap;
 use crate::state::app_state::AppState;
@@ -121,8 +121,6 @@ pub enum OriginalTargetMode {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AppSettings {
-    /// Legacy shortcut projection kept while old clients migrate to workflow profiles.
-    pub shortcut_profiles: ShortcutProfilesMap,
     /// Canonical unlimited recording profiles.
     pub workflow_profiles: Vec<WorkflowProfile>,
     /// Ordered application matchers selecting a workflow profile.
@@ -155,6 +153,10 @@ pub struct AppSettings {
     pub stt_engine_user_glossary: String,
     pub custom_dictionary: String,
     pub analytics_opt_in: bool,
+    /// Enable authenticated local automation and URL commands.
+    pub developer_bridge_enabled: bool,
+    /// Apply fresh, editor-scoped code context to ordinary dictation.
+    pub vibe_coding_enabled: bool,
     /// How long transcription text and history metadata remain on this device.
     pub text_retention: RetentionPolicy,
     /// How long captured WAV files remain on this device.
@@ -166,7 +168,6 @@ pub struct AppSettings {
     pub active_cloud_polish_provider: String,
     pub cloud_polish_configs: HashMap<String, CloudProviderConfig>,
     pub local_polish_runtime: LocalPolishRuntimeSettings,
-    pub polish_stream_direct_typing_enabled: bool,
     /// Deliver completed recordings to the editable target captured at start.
     pub original_target_enabled: bool,
     /// Prefer foreground compatibility or best-effort background Accessibility delivery.
@@ -446,7 +447,6 @@ fn normalize_pill_background_opacity(value: f64) -> Option<f32> {
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
-            shortcut_profiles: ShortcutProfilesMap::default(),
             workflow_profiles: default_workflow_profiles(),
             application_rules: Vec::new(),
             voice_snippets: Vec::new(),
@@ -475,6 +475,8 @@ impl Default for AppSettings {
             stt_engine_user_glossary: String::new(),
             custom_dictionary: String::new(),
             analytics_opt_in: false,
+            developer_bridge_enabled: false,
+            vibe_coding_enabled: false,
             text_retention: RetentionPolicy::Days90,
             audio_retention: RetentionPolicy::Never,
             cloud_stt_enabled: false,
@@ -484,7 +486,6 @@ impl Default for AppSettings {
             active_cloud_polish_provider: "anthropic".to_string(),
             cloud_polish_configs: HashMap::new(),
             local_polish_runtime: LocalPolishRuntimeSettings::default(),
-            polish_stream_direct_typing_enabled: false,
             original_target_enabled: false,
             original_target_mode: OriginalTargetMode::Foreground,
             vad_enabled: false,
@@ -533,26 +534,11 @@ impl AppSettings {
     }
 
     pub fn get_dictate_hotkey(&self) -> String {
-        self.shortcut_profiles.dictate.hotkey.clone()
-    }
-
-    pub fn set_dictate_hotkey(&mut self, hotkey: &str) {
-        self.shortcut_profiles.dictate.hotkey = hotkey.to_string();
-    }
-
-    pub fn get_riff_hotkey(&self) -> String {
-        self.shortcut_profiles.riff.hotkey.clone()
-    }
-
-    pub fn set_riff_hotkey(&mut self, hotkey: &str) {
-        self.shortcut_profiles.riff.hotkey = hotkey.to_string();
-    }
-
-    pub fn get_custom_hotkey(&self) -> Option<String> {
-        self.shortcut_profiles
-            .custom
-            .as_ref()
-            .map(|p| p.hotkey.clone())
+        self.workflow_profiles
+            .iter()
+            .find(|profile| profile.id == "dictate")
+            .map(|profile| profile.hotkey.clone())
+            .unwrap_or_else(|| crate::shortcut::default_dictate_hotkey().to_string())
     }
 
     /// Resolve polish provider config.
@@ -732,6 +718,14 @@ pub fn migrate_to_profiles_map_for_test(json: &mut serde_json::Value) {
 }
 
 fn migrate_to_profiles_map(json: &mut serde_json::Value) -> bool {
+    if json.get("workflow_profiles").is_some() {
+        return false;
+    }
+    let old_hotkey = json
+        .get("hotkey")
+        .and_then(|value| value.as_str())
+        .unwrap_or("Shift+Space")
+        .to_string();
     let legacy_recording_mode = json
         .get("recording_mode")
         .and_then(|value| value.as_str())
@@ -806,13 +800,6 @@ fn migrate_to_profiles_map(json: &mut serde_json::Value) -> bool {
             return true;
         }
     }
-
-    // No shortcut_profiles, create from old hotkey
-    let old_hotkey = json
-        .get("hotkey")
-        .and_then(|v| v.as_str())
-        .unwrap_or("Shift+Space")
-        .to_string();
 
     json["shortcut_profiles"] = serde_json::json!({
         "dictate": {
@@ -984,13 +971,21 @@ fn migrate_context_workflows(json: &mut serde_json::Value) -> bool {
         migrated = true;
     }
 
+    let ocr_enabled = json
+        .get("context_capture")
+        .and_then(|context| context.get("ocr_fallback"))
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
     if json
         .get("window_context_enabled")
         .and_then(serde_json::Value::as_bool)
-        != Some(false)
+        != Some(ocr_enabled)
     {
-        json["window_context_enabled"] = serde_json::Value::Bool(false);
+        json["window_context_enabled"] = serde_json::Value::Bool(ocr_enabled);
         migrated = true;
+    }
+    if let Some(object) = json.as_object_mut() {
+        migrated |= object.remove("shortcut_profiles").is_some();
     }
 
     if migrated {
@@ -1001,7 +996,6 @@ fn migrate_context_workflows(json: &mut serde_json::Value) -> bool {
 
 fn migrate_riff_into_dictate(json: &mut serde_json::Value) -> bool {
     let mut migrated = false;
-    let mut dictate_template = None;
 
     if let Some(profiles) = json
         .get_mut("workflow_profiles")
@@ -1026,7 +1020,6 @@ fn migrate_riff_into_dictate(json: &mut serde_json::Value) -> bool {
                 dictate["polish_template_id"] = template.clone().unwrap_or(serde_json::Value::Null);
                 migrated = true;
             }
-            dictate_template = template;
         }
 
         let previous_len = profiles.len();
@@ -1045,19 +1038,6 @@ fn migrate_riff_into_dictate(json: &mut serde_json::Value) -> bool {
                 rule["profile_id"] = serde_json::Value::String("dictate".to_string());
                 migrated = true;
             }
-        }
-    }
-
-    if let Some(record) = json
-        .get_mut("shortcut_profiles")
-        .and_then(|profiles| profiles.get_mut("dictate"))
-        .and_then(|dictate| dictate.get_mut("action"))
-        .and_then(|action| action.get_mut("Record"))
-    {
-        let template = dictate_template.unwrap_or(serde_json::Value::Null);
-        if record.get("polish_template_id") != Some(&template) {
-            record["polish_template_id"] = template;
-            migrated = true;
         }
     }
 
@@ -1146,35 +1126,43 @@ pub fn update_settings(
     key: String,
     value: serde_json::Value,
 ) -> Result<(), String> {
+    let previous_bridge_enabled = state.settings.lock().developer_bridge_enabled;
     let mut should_clear_cache = false;
     let mut model_to_preload: Option<String> = None;
-    let mut hotkey_to_register: Option<String> = None;
     let mut stay_in_tray_to_apply: Option<bool> = None;
     let mut local_polish_runtime_to_apply: Option<LocalPolishRuntimeSettings> = None;
     let mut local_polish_runtime_action = LocalPolishRuntimeSettingAction::None;
     let mut retention_to_apply: Option<(RetentionPolicy, RetentionPolicy)> = None;
     let preset_to_apply: Option<String>;
     let indicator_mode_to_apply: Option<String>;
-    let workflow_profile_transaction = if key == "workflow_profiles" || key == "shortcut_profiles" {
-        let requested = if key == "workflow_profiles" {
-            serde_json::from_value::<Vec<WorkflowProfile>>(value.clone())
-                .map_err(|error| format!("Invalid workflow profiles: {error}"))?
-        } else {
-            let legacy = serde_json::from_value::<ShortcutProfilesMap>(value.clone())
-                .map_err(|error| format!("Invalid shortcut profiles: {error}"))?;
-            migrate_legacy_profiles(&legacy)
-        };
+    if key == "hotkey" {
+        let hotkey = value
+            .as_str()
+            .ok_or_else(|| "Hotkey must be a string".to_string())?;
+        let mut profiles = state.settings.lock().workflow_profiles.clone();
+        let dictate = profiles
+            .iter_mut()
+            .find(|profile| profile.id == "dictate")
+            .ok_or_else(|| "Dictate profile is missing".to_string())?;
+        dictate.hotkey = hotkey.to_string();
+        return update_settings(
+            app,
+            state,
+            "workflow_profiles".to_string(),
+            serde_json::to_value(profiles).map_err(|error| error.to_string())?,
+        );
+    }
+    let workflow_profile_transaction = if key == "workflow_profiles" {
+        let requested = serde_json::from_value::<Vec<WorkflowProfile>>(value.clone())
+            .map_err(|error| format!("Invalid workflow profiles: {error}"))?;
         crate::services::product_workflows::validate_profiles(&requested)?;
-        let (previous, previous_legacy) = {
+        let previous = {
             let settings = state.settings.lock();
             crate::services::product_workflows::validate_application_rules(
                 &settings.application_rules,
                 &requested,
             )?;
-            (
-                settings.workflow_profiles.clone(),
-                settings.shortcut_profiles.clone(),
-            )
+            settings.workflow_profiles.clone()
         };
         let manager = app
             .try_state::<crate::shortcut::ShortcutManager>()
@@ -1184,7 +1172,7 @@ pub fn update_settings(
             &previous,
             &requested,
         )?;
-        Some((previous, requested, previous_legacy))
+        Some((previous, requested))
     } else {
         None
     };
@@ -1193,28 +1181,11 @@ pub fn update_settings(
         let mut settings = state.settings.lock();
 
         match key.as_str() {
-            "hotkey" => {
-                if let Some(v) = value.as_str() {
-                    settings.set_dictate_hotkey(v);
-                    hotkey_to_register = Some(v.to_string());
-                }
-            }
-            "shortcut_profiles" => {
-                let profiles = serde_json::from_value::<ShortcutProfilesMap>(value.clone())
-                    .map_err(|error| format!("Invalid shortcut profiles: {error}"))?;
-                let (_, requested, _) = workflow_profile_transaction
-                    .as_ref()
-                    .ok_or_else(|| "Workflow profile transaction is missing".to_string())?;
-                settings.workflow_profiles = requested.clone();
-                settings.shortcut_profiles = profiles;
-            }
             "workflow_profiles" => {
-                let (_, requested, _) = workflow_profile_transaction
+                let (_, requested) = workflow_profile_transaction
                     .as_ref()
                     .ok_or_else(|| "Workflow profile transaction is missing".to_string())?;
                 settings.workflow_profiles = requested.clone();
-                settings.shortcut_profiles =
-                    project_legacy_profiles(&settings.shortcut_profiles, requested);
             }
             "application_rules" => {
                 let rules = serde_json::from_value::<Vec<ApplicationRule>>(value.clone())
@@ -1464,15 +1435,21 @@ pub fn update_settings(
                     }
                 }
             }
-            "polish_stream_direct_typing_enabled" => {
-                if let Some(v) = value.as_bool() {
-                    settings.polish_stream_direct_typing_enabled = v;
-                }
-            }
+
             "original_target_enabled" => {
                 let enabled = serde_json::from_value::<bool>(value.clone())
                     .map_err(|error| format!("Invalid original target enablement: {error}"))?;
                 settings.original_target_enabled = enabled;
+            }
+            "developer_bridge_enabled" => {
+                settings.developer_bridge_enabled = value
+                    .as_bool()
+                    .ok_or_else(|| "Developer bridge setting must be a boolean".to_string())?;
+            }
+            "vibe_coding_enabled" => {
+                settings.vibe_coding_enabled = value
+                    .as_bool()
+                    .ok_or_else(|| "Vibe coding setting must be a boolean".to_string())?;
             }
             "original_target_mode" => {
                 let mode = serde_json::from_value::<OriginalTargetMode>(value.clone())
@@ -1524,11 +1501,11 @@ pub fn update_settings(
             fs::write(&path, json).map_err(|e| e.to_string())
         })();
         if let Err(error) = persist_result {
-            if let Some((previous, requested, previous_legacy)) =
-                workflow_profile_transaction.as_ref()
-            {
+            if key == "developer_bridge_enabled" {
+                settings.developer_bridge_enabled = previous_bridge_enabled;
+            }
+            if let Some((previous, requested)) = workflow_profile_transaction.as_ref() {
                 settings.workflow_profiles = previous.clone();
-                settings.shortcut_profiles = previous_legacy.clone();
                 if let Some(manager) = app.try_state::<crate::shortcut::ShortcutManager>() {
                     let rollback = apply_profile_registration_transaction(
                         &mut ShortcutManagerRegistrar(&manager),
@@ -1559,7 +1536,9 @@ pub fn update_settings(
         };
 
         info!(key = %key, "settings_updated");
-        let _ = app.emit(EventName::SETTINGS_CHANGED, settings.clone());
+        if key != "developer_bridge_enabled" {
+            let _ = app.emit(EventName::SETTINGS_CHANGED, settings.clone());
+        }
     } // lock released here
 
     if let Some(runtime_settings) = local_polish_runtime_to_apply {
@@ -1590,27 +1569,19 @@ pub fn update_settings(
         position_pill_window(&app, &preset);
     }
 
-    if let Some(hotkey) = hotkey_to_register {
-        if let Some(manager) = app.try_state::<crate::shortcut::ShortcutManager>() {
-            tracing::info!("unregistering_old_hotkey");
-            if let Err(e) = manager.unregister_profile("dictate") {
-                tracing::warn!(error = %e, "old_hotkey_unregister_failed");
-            }
-
-            let profile = crate::shortcut::ShortcutProfile {
-                hotkey: hotkey.clone(),
-                trigger_mode: state.settings.lock().shortcut_profiles.dictate.trigger_mode,
-                action: crate::shortcut::ShortcutAction::Record {
-                    polish_template_id: None,
-                },
-            };
-            match manager.register_profile("dictate", &profile) {
-                Ok(_) => info!(hotkey = %hotkey, "shortcut_registered"),
-                Err(e) => tracing::error!(error = %e, "shortcut_registration_failed"),
-            }
-        } else {
-            tracing::error!("shortcut_manager_not_available");
+    if key == "developer_bridge_enabled" {
+        if let Err(error) = crate::commands::platform_quality::sync_developer_bridge(app.clone()) {
+            state.settings.lock().developer_bridge_enabled = previous_bridge_enabled;
+            let rollback = save_settings_internal(&app);
+            let _ = app.emit(EventName::SETTINGS_CHANGED, state.settings.lock().clone());
+            return Err(match rollback {
+                Ok(()) => error,
+                Err(rollback_error) => {
+                    format!("{error}; failed to restore bridge setting: {rollback_error}")
+                }
+            });
         }
+        let _ = app.emit(EventName::SETTINGS_CHANGED, state.settings.lock().clone());
     }
 
     if indicator_mode_to_apply.is_some() {

@@ -39,6 +39,11 @@ A plan is only completed when all implementation units are closed, verification 
 
 | Plan | Type | Date |
 |------|------|------|
+| [Opt-in Vibe coding context](./completed/2026-09-05-003-feat-vibe-coding-plan.md) | feat | 2026-09-05 |
+| [Dictation workspace](./completed/2026-09-05-003-feat-dictation-workspace-plan.md) | feat | 2026-09-05 |
+| [Workflow library interface](./completed/2026-09-05-003-feat-workflow-library-ui-plan.md) | feat | 2026-09-05 |
+| [Local macOS development installation build](./completed/2026-09-05-002-feat-dev-local-install-plan.md) | feat | 2026-09-05 |
+| [Dictation-focused product simplification](./completed/2026-09-05-001-refactor-product-simplification-plan.md) | refactor | 2026-09-05 |
 | [Polish Output Safety](./completed/2026-09-04-003-fix-polish-output-safety-plan.md) | fix | 2026-09-04 |
 | [Paste Last Transcription](./completed/2026-08-25-001-feat-paste-last-transcription-plan.md) | feat | 2026-08-25 |
 | [Dictate Polish Template](./completed/2026-09-04-002-feat-dictate-polish-template-plan.md) | feat | 2026-09-04 |

@@ -44,7 +44,6 @@ pub struct VoiceActionRequest {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum QuickControlKind {
-    UndoLastInsertion,
     ReinsertRaw,
     ReinsertFinal,
     CopyRaw,
@@ -326,7 +325,21 @@ pub async fn run_voice_action(
         .map(str::trim)
         .filter(|text| !text.is_empty())
         .ok_or_else(|| "Selected text is required".to_string())?;
-    let result = polish_text(&state, source, &instruction).await?;
+    let intent = match request.kind {
+        VoiceActionKind::Translate => crate::services::text_transform::TransformIntent::Translate,
+        VoiceActionKind::Shorten => crate::services::text_transform::TransformIntent::Concise,
+        VoiceActionKind::Reply => crate::services::text_transform::TransformIntent::Reply,
+        VoiceActionKind::Custom => crate::services::text_transform::TransformIntent::Rewrite,
+        VoiceActionKind::List => crate::services::text_transform::TransformIntent::Cleanup,
+    };
+    let result = polish_text(
+        &state,
+        source,
+        &instruction,
+        intent,
+        request.translation_target.as_deref(),
+    )
+    .await?;
     let mut preview = build_voice_action_preview(
         request.kind,
         Some(source),
@@ -378,7 +391,6 @@ fn deliver_preview(
         inserted_text: preview.result_text.clone(),
         application_id: Some(application_id),
         created_at_ms: chrono::Utc::now().timestamp_millis(),
-        undone: false,
     });
     Ok(())
 }
@@ -397,7 +409,6 @@ pub fn record_workflow_delivery(
         inserted_text,
         application_id,
         created_at_ms: chrono::Utc::now().timestamp_millis(),
-        undone: false,
     });
     Ok(())
 }
@@ -410,13 +421,6 @@ pub async fn run_quick_control(
     action: QuickControlKind,
 ) -> Result<QuickControlResult, String> {
     let text = match action {
-        QuickControlKind::UndoLastInsertion => {
-            let record = require_last_delivery(&runtime)?;
-            activate_workflow_target(&app, record.application_id.as_deref())?;
-            Some(undo_last_insertion(&runtime, || {
-                crate::text_injector::quick_controls::send_undo()
-            })?)
-        }
         QuickControlKind::ReinsertRaw => {
             let record = require_last_delivery(&runtime)?;
             activate_workflow_target(&app, record.application_id.as_deref())?;
@@ -449,8 +453,14 @@ pub async fn run_quick_control(
         }
         QuickControlKind::Repolish => {
             let source = require_last_delivery(&runtime)?.raw_text;
-            let result =
-                polish_text(&state, &source, crate::polish_engine::DEFAULT_POLISH_PROMPT).await?;
+            let result = polish_text(
+                &state,
+                &source,
+                crate::polish_engine::DEFAULT_POLISH_PROMPT,
+                crate::services::text_transform::TransformIntent::Cleanup,
+                None,
+            )
+            .await?;
             let preview =
                 build_voice_action_preview(VoiceActionKind::Custom, Some(&source), &result, None)?;
             runtime.set_preview(preview);
@@ -490,7 +500,6 @@ fn record_reinsertion(runtime: &WorkflowRuntime, previous: DeliveryRecord, inser
             .and_then(|context| context.application_id)
             .or(previous.application_id),
         created_at_ms: chrono::Utc::now().timestamp_millis(),
-        undone: false,
     });
 }
 
@@ -506,80 +515,85 @@ fn activate_workflow_target(app: &AppHandle, application_id: Option<&str>) -> Re
     Ok(())
 }
 
-fn undo_last_insertion(
-    runtime: &WorkflowRuntime,
-    send_undo: impl FnOnce() -> Result<(), String>,
+async fn polish_text(
+    state: &AppState,
+    text: &str,
+    instruction: &str,
+    intent: crate::services::text_transform::TransformIntent,
+    target_language: Option<&str>,
 ) -> Result<String, String> {
-    let inserted_text = runtime.pending_undo_text()?;
-    send_undo()?;
-    runtime.mark_undone()?;
-    Ok(inserted_text)
-}
-
-async fn polish_text(state: &AppState, text: &str, instruction: &str) -> Result<String, String> {
-    let (language, cloud_enabled, provider_type, cloud_config, local_model_id) = {
-        let settings = state.settings.lock();
-        (
-            settings.stt_engine_language.clone(),
-            settings.cloud_polish_enabled,
-            settings.active_cloud_polish_provider.clone(),
-            settings
-                .cloud_polish_configs
-                .get(&settings.active_cloud_polish_provider)
-                .cloned(),
-            settings.polish_model.clone(),
-        )
-    };
-    let request = crate::polish_engine::PolishRequest::new(text, instruction, language)
-        .with_timeout(Duration::from_secs(60));
-
-    let result = if cloud_enabled {
-        let config = cloud_config.ok_or_else(|| "Cloud polish is not configured".to_string())?;
-        if config.api_key.trim().is_empty() || config.model.trim().is_empty() {
-            return Err("Cloud polish credentials and model are required".to_string());
-        }
-        state
-            .polish_manager
-            .polish_cloud(
-                request,
-                &provider_type,
-                &config.api_key,
-                &config.base_url,
-                &config.model,
-                config.enable_thinking,
-            )
+    let language = target_language
+        .map(str::to_string)
+        .unwrap_or_else(|| state.settings.lock().stt_engine_language.clone());
+    let request = crate::polish_engine::PolishRequest::new(text, instruction, language);
+    Ok(
+        crate::services::text_transform::transform_text(state, request, intent)
             .await?
-    } else {
-        let engine =
-            crate::polish_engine::UnifiedPolishManager::get_engine_by_model_id(&local_model_id)
-                .ok_or_else(|| "Select a local polish model first".to_string())?;
-        let filename = state
-            .polish_manager
-            .get_model_filename(engine, &local_model_id)
-            .ok_or_else(|| "The selected local polish model is unknown".to_string())?;
-        if !state
-            .polish_manager
-            .is_model_downloaded(engine, &local_model_id)
-        {
-            return Err("The selected local polish model is not downloaded".to_string());
-        }
-        state
-            .polish_manager
-            .polish(engine, request.with_model(filename))
-            .await?
-    };
-
-    let result = result.text.trim().to_string();
-    if result.is_empty() {
-        Err("Polish returned empty text".to_string())
-    } else {
-        Ok(result)
-    }
+            .result
+            .text,
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn quick_repolish_and_writing_actions_apply_explicit_output_policy() {
+        use wiremock::{
+            matchers::{method, path},
+            Mock, MockServer, ResponseTemplate,
+        };
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "choices": [{"message": {"content": "Please fix the error and check the output"}}]
+            })))
+            .expect(2)
+            .mount(&server)
+            .await;
+        let state = crate::state::app_state::AppState::new();
+        {
+            let mut settings = state.settings.lock();
+            settings.cloud_polish_enabled = true;
+            settings.active_cloud_polish_provider = "openai".to_string();
+            settings.cloud_polish_configs.insert(
+                "openai".to_string(),
+                crate::commands::settings::CloudProviderConfig {
+                    enabled: true,
+                    provider_type: "openai".to_string(),
+                    api_key: "test-key".to_string(),
+                    base_url: server.uri(),
+                    model: "test-model".to_string(),
+                    enable_thinking: false,
+                },
+            );
+        }
+        let source = "Alors je veux que tu vérifies les données et les règles de sécurité dans cette application";
+
+        use crate::services::text_transform::TransformIntent;
+        let cleanup = polish_text(
+            &state,
+            source,
+            "Clean the text",
+            TransformIntent::Cleanup,
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(cleanup, source);
+        let translated = polish_text(
+            &state,
+            source,
+            "Translate into English",
+            TransformIntent::Translate,
+            Some("en"),
+        )
+        .await
+        .unwrap();
+        assert_eq!(translated, "Please fix the error and check the output");
+    }
 
     #[test]
     fn workflow_snapshot_contains_all_headless_configuration() {
@@ -596,30 +610,10 @@ mod tests {
 
     #[test]
     fn quick_control_names_have_stable_snake_case_contract() {
-        assert_eq!(
-            serde_json::to_string(&QuickControlKind::UndoLastInsertion).unwrap(),
-            "\"undo_last_insertion\""
-        );
+        assert!(serde_json::from_str::<QuickControlKind>("\"undo_last_insertion\"").is_err());
         assert_eq!(
             serde_json::to_string(&QuickControlKind::CancelActiveTask).unwrap(),
             "\"cancel_active_task\""
         );
-    }
-
-    #[test]
-    fn failed_platform_undo_keeps_journal_retryable() {
-        let runtime = WorkflowRuntime::default();
-        runtime.record_delivery(DeliveryRecord {
-            raw_text: "raw".to_string(),
-            final_text: "final".to_string(),
-            inserted_text: "final".to_string(),
-            application_id: None,
-            created_at_ms: 1,
-            undone: false,
-        });
-
-        assert!(undo_last_insertion(&runtime, || Err("keyboard failed".to_string())).is_err());
-        assert_eq!(undo_last_insertion(&runtime, || Ok(())).unwrap(), "final");
-        assert!(undo_last_insertion(&runtime, || Ok(())).is_err());
     }
 }

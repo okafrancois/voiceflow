@@ -154,28 +154,7 @@ export default defineConfig({
 
 ### Component Tests
 
-```typescript
-// src/components/Home/__tests__/Dashboard.test.tsx
-import { render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { historyCommands } from "@/lib/tauri";
-
-vi.mock("@/lib/tauri", async () => ({
-  historyCommands: {
-    getDashboardStats: vi.fn(),
-  },
-}));
-
-describe("Dashboard", () => {
-  beforeEach(() => vi.clearAllMocks());
-
-  it("renders dashboard with data", async () => {
-    vi.mocked(historyCommands.getDashboardStats).mockResolvedValue({ total_count: 14 });
-    render(<Dashboard />);
-    await waitFor(() => expect(screen.getByText("14")).toBeInTheDocument());
-  });
-});
-```
+See [Dashboard.test.tsx](../../apps/desktop/src/components/Home/__tests__/Dashboard.test.tsx) for backend readiness and recovery examples, and [AdvancedPage.test.tsx](../../apps/desktop/src/components/Home/__tests__/AdvancedPage.test.tsx) for optional navigation and backend-owned settings. These component checks complement native navigation and Rust service tests.
 
 ### Utility Tests
 

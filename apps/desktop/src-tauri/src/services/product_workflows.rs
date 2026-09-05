@@ -214,7 +214,7 @@ pub struct WorkflowProfile {
 impl WorkflowProfile {
     pub fn shortcut_profile(&self) -> crate::shortcut::ShortcutProfile {
         crate::shortcut::ShortcutProfile {
-            hotkey: self.hotkey.clone(),
+            hotkey: self.hotkey.trim().to_string(),
             trigger_mode: self.trigger_mode,
             action: crate::shortcut::ShortcutAction::Record {
                 polish_template_id: self.polish_template_id.clone(),
@@ -262,24 +262,6 @@ pub fn migrate_legacy_profiles(
         });
     }
     profiles
-}
-
-pub fn project_legacy_profiles(
-    current: &crate::shortcut::ShortcutProfilesMap,
-    profiles: &[WorkflowProfile],
-) -> crate::shortcut::ShortcutProfilesMap {
-    let mut projected = current.clone();
-    if let Some(profile) = profiles.iter().find(|profile| profile.id == "dictate") {
-        projected.dictate = profile.shortcut_profile();
-    }
-    if let Some(profile) = profiles.iter().find(|profile| profile.id == "riff") {
-        projected.riff = profile.shortcut_profile();
-    }
-    projected.custom = profiles
-        .iter()
-        .find(|profile| profile.id == "custom")
-        .map(WorkflowProfile::shortcut_profile);
-    projected
 }
 
 fn shortcut_template_id(profile: &crate::shortcut::ShortcutProfile) -> Option<String> {
@@ -372,7 +354,10 @@ pub fn validate_profiles(profiles: &[WorkflowProfile]) -> Result<(), String> {
 
         let hotkey = profile.hotkey.trim().to_ascii_lowercase();
         if hotkey.is_empty() {
-            return Err(format!("Profile hotkey cannot be empty: {id}"));
+            if profile.protected {
+                return Err(format!("Protected profile hotkey cannot be empty: {id}"));
+            }
+            continue;
         }
         if !hotkeys.insert(hotkey.clone()) {
             return Err(format!("Duplicate profile hotkey: {hotkey}"));
@@ -402,27 +387,38 @@ pub fn apply_profile_registration_transaction(
     validate_profiles(requested)?;
     let requested_ids = requested
         .iter()
+        .filter(|profile| !profile.hotkey.trim().is_empty())
         .map(|profile| profile.id.as_str())
         .collect::<HashSet<_>>();
 
     let apply_result = (|| {
-        for profile in previous {
+        for profile in previous
+            .iter()
+            .filter(|profile| !profile.hotkey.trim().is_empty())
+        {
             if !requested_ids.contains(profile.id.as_str()) {
                 registrar.unregister(&profile.id)?;
             }
         }
-        for profile in requested {
+        for profile in requested
+            .iter()
+            .filter(|profile| !profile.hotkey.trim().is_empty())
+        {
             registrar.register(&profile.id, &profile.shortcut_profile())?;
         }
         Ok(())
     })();
 
     if let Err(error) = apply_result {
-        for profile in requested {
+        for profile in requested
+            .iter()
+            .filter(|profile| !profile.hotkey.trim().is_empty())
+        {
             let _ = registrar.unregister(&profile.id);
         }
         let rollback_errors = previous
             .iter()
+            .filter(|profile| !profile.hotkey.trim().is_empty())
             .filter_map(|profile| {
                 registrar
                     .register(&profile.id, &profile.shortcut_profile())
@@ -649,7 +645,6 @@ pub struct DeliveryRecord {
     pub inserted_text: String,
     pub application_id: Option<String>,
     pub created_at_ms: i64,
-    pub undone: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -672,29 +667,6 @@ impl DeliveryJournal {
 
     pub fn last_final(&self) -> Option<&str> {
         self.last.as_ref().map(|record| record.final_text.as_str())
-    }
-
-    pub fn pending_undo_text(&self) -> Result<String, String> {
-        let record = self
-            .last
-            .as_ref()
-            .ok_or_else(|| "No insertion is available to undo".to_string())?;
-        if record.undone {
-            return Err("Last insertion was already undone".to_string());
-        }
-        Ok(record.inserted_text.clone())
-    }
-
-    pub fn mark_undone(&mut self) -> Result<(), String> {
-        let record = self
-            .last
-            .as_mut()
-            .ok_or_else(|| "No insertion is available to undo".to_string())?;
-        if record.undone {
-            return Err("Last insertion was already undone".to_string());
-        }
-        record.undone = true;
-        Ok(())
     }
 }
 
@@ -768,14 +740,6 @@ impl WorkflowRuntime {
 
     pub fn last_delivery(&self) -> Option<DeliveryRecord> {
         self.journal.lock().last().cloned()
-    }
-
-    pub fn pending_undo_text(&self) -> Result<String, String> {
-        self.journal.lock().pending_undo_text()
-    }
-
-    pub fn mark_undone(&self) -> Result<(), String> {
-        self.journal.lock().mark_undone()
     }
 
     pub fn mark_task_active(&self, task_id: u64) {
@@ -1078,6 +1042,35 @@ mod tests {
     }
 
     #[test]
+    fn app_only_profile_can_omit_a_shortcut_and_resolve_from_an_application_rule() {
+        let profiles = vec![profile("dictate", "Cmd+1"), profile("mail", "")];
+        let rules = vec![ApplicationRule {
+            id: "mail".to_string(),
+            application_id: "com.apple.mail".to_string(),
+            title_contains: None,
+            profile_id: "mail".to_string(),
+            enabled: true,
+        }];
+
+        validate_profiles(&profiles).unwrap();
+        assert_eq!(
+            resolve_profile(&profiles, &rules, None, Some("com.apple.mail"), None)
+                .map(|profile| profile.id.as_str()),
+            Some("mail")
+        );
+    }
+
+    #[test]
+    fn protected_profile_still_requires_a_shortcut() {
+        let profiles = vec![profile("dictate", "")];
+
+        assert_eq!(
+            validate_profiles(&profiles).unwrap_err(),
+            "Protected profile hotkey cannot be empty: dictate"
+        );
+    }
+
+    #[test]
     fn legacy_riff_template_migrates_into_dictate_and_custom_is_preserved() {
         let legacy = crate::shortcut::ShortcutProfilesMap {
             dictate: crate::shortcut::ShortcutProfile {
@@ -1112,12 +1105,6 @@ mod tests {
         assert_eq!(migrated[1].trigger_mode, WorkflowTriggerMode::DoubleTap);
         assert_eq!(migrated[1].polish_template_id.as_deref(), Some("formal"));
         assert!(migrated.iter().all(|profile| profile.id != "riff"));
-
-        let projected = project_legacy_profiles(&legacy, &migrated);
-        assert_eq!(
-            shortcut_template_id(&projected.dictate).as_deref(),
-            Some("filler")
-        );
     }
 
     #[test]
@@ -1168,7 +1155,7 @@ mod tests {
     }
 
     #[test]
-    fn delivery_journal_allows_one_undo_and_exposes_raw_and_final() {
+    fn delivery_journal_exposes_raw_and_final() {
         let mut journal = DeliveryJournal::default();
         journal.record(DeliveryRecord {
             raw_text: "raw words".to_string(),
@@ -1176,18 +1163,10 @@ mod tests {
             inserted_text: "Final words.".to_string(),
             application_id: Some("com.example.Editor".to_string()),
             created_at_ms: 100,
-            undone: false,
         });
 
         assert_eq!(journal.last_raw(), Some("raw words"));
         assert_eq!(journal.last_final(), Some("Final words."));
-        assert_eq!(journal.pending_undo_text().unwrap(), "Final words.");
-        assert_eq!(journal.pending_undo_text().unwrap(), "Final words.");
-        journal.mark_undone().unwrap();
-        assert_eq!(
-            journal.pending_undo_text().unwrap_err(),
-            "Last insertion was already undone"
-        );
     }
 
     #[test]
@@ -1212,7 +1191,6 @@ mod tests {
             inserted_text: "final".to_string(),
             application_id: Some("com.example.Editor".to_string()),
             created_at_ms: 10,
-            undone: false,
         });
         runtime.mark_task_active(55);
         runtime.stage_delivery(
@@ -1223,7 +1201,6 @@ mod tests {
                 inserted_text: "pending final".to_string(),
                 application_id: None,
                 created_at_ms: 11,
-                undone: false,
             },
         );
 
@@ -1310,5 +1287,49 @@ mod tests {
         assert_eq!(registrar.registered.len(), 2);
         assert!(registrar.registered.contains_key("dictate"));
         assert!(registrar.registered.contains_key("old"));
+    }
+
+    #[test]
+    fn profile_registration_transaction_unregisters_a_shortcut_removed_from_a_profile() {
+        let previous = vec![profile("dictate", "Cmd+1"), profile("mail", "Cmd+2")];
+        let requested = vec![profile("dictate", "Cmd+1"), profile("mail", "")];
+        let mut registrar = FakeRegistrar {
+            registered: previous
+                .iter()
+                .map(|item| (item.id.clone(), item.shortcut_profile()))
+                .collect(),
+            fail_registration_for: None,
+        };
+
+        apply_profile_registration_transaction(&mut registrar, &previous, &requested).unwrap();
+
+        assert!(registrar.registered.contains_key("dictate"));
+        assert!(!registrar.registered.contains_key("mail"));
+    }
+
+    #[test]
+    fn profile_registration_rollback_restores_only_previously_active_shortcuts() {
+        let previous = vec![profile("dictate", "Cmd+1"), profile("mail", "Cmd+2")];
+        let requested = vec![
+            profile("dictate", "Cmd+1"),
+            profile("mail", ""),
+            profile("code", "Cmd+3"),
+        ];
+        let mut registrar = FakeRegistrar {
+            registered: previous
+                .iter()
+                .map(|item| (item.id.clone(), item.shortcut_profile()))
+                .collect(),
+            fail_registration_for: Some("code".to_string()),
+        };
+
+        assert!(
+            apply_profile_registration_transaction(&mut registrar, &previous, &requested).is_err()
+        );
+
+        assert_eq!(registrar.registered.len(), 2);
+        assert!(registrar.registered.contains_key("dictate"));
+        assert!(registrar.registered.contains_key("mail"));
+        assert!(!registrar.registered.contains_key("code"));
     }
 }

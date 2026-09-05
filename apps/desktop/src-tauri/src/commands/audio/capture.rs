@@ -40,6 +40,15 @@ pub(super) struct OriginalTargetSession {
     pub enabled: bool,
     pub mode: crate::commands::settings::OriginalTargetMode,
     pub target: Option<crate::text_injector::CapturedTextTarget>,
+    pub application_id: Option<String>,
+}
+
+pub(super) fn should_capture_application_context(
+    application_metadata_enabled: bool,
+    original_target_enabled: bool,
+    vibe_coding_enabled: bool,
+) -> bool {
+    application_metadata_enabled || original_target_enabled || vibe_coding_enabled
 }
 
 struct WorkflowTaskCleanup {
@@ -371,6 +380,19 @@ pub(super) fn start_unified_recording(
         let quality_application_id = structured_context
             .as_ref()
             .and_then(|context| context.application_id.clone());
+        let vibe_context = {
+            let state = app_clone.state::<AppState>();
+            let enabled = state.settings.lock().vibe_coding_enabled;
+            let active = crate::services::platform_quality::get_active_code_context_snapshot()
+                .ok()
+                .flatten();
+            crate::services::vibe_coding::context_for_recording(
+                enabled,
+                active.as_ref(),
+                original_target.application_id.as_deref(),
+                chrono::Utc::now().timestamp_millis(),
+            )
+        };
 
         if let (Some(runtime), Some(context)) = (
             app_clone.try_state::<crate::services::product_workflows::WorkflowRuntime>(),
@@ -410,9 +432,20 @@ pub(super) fn start_unified_recording(
             }
         }
 
-        let stt_initial_prompt = structured_context
-            .as_ref()
-            .and_then(|context| context.to_stt_prompt_hint());
+        let stt_initial_prompt = {
+            let mut hints = Vec::new();
+            if let Some(hint) = structured_context
+                .as_ref()
+                .and_then(|context| context.to_stt_prompt_hint())
+            {
+                hints.push(hint);
+            }
+            if let Some(context) = vibe_context.as_ref() {
+                hints
+                    .push(crate::services::platform_quality::build_code_aware_instruction(context));
+            }
+            (!hints.is_empty()).then(|| hints.join("\n\n"))
+        };
 
         let stt_context = crate::stt_engine::traits::SttContext {
             domain,
@@ -673,6 +706,7 @@ pub(super) fn start_unified_recording(
                             postprocess.text,
                             resolved_polish_template_id_clone.clone(),
                             workflow_profile.as_ref(),
+                            vibe_context.as_ref(),
                         )
                         .await
                     };
@@ -680,9 +714,10 @@ pub(super) fn start_unified_recording(
                     let workflow_profile = app_clone
                         .try_state::<crate::services::product_workflows::WorkflowRuntime>()
                         .and_then(|runtime| runtime.profile_for_task(task_id));
-                    let final_text = if workflow_profile
-                        .as_ref()
-                        .is_some_and(|profile| profile.code_aware)
+                    let final_text = if vibe_context.is_some()
+                        || workflow_profile
+                            .as_ref()
+                            .is_some_and(|profile| profile.code_aware)
                     {
                         crate::services::platform_quality::format_code_aware_transcript(
                             &polish_result.text,
@@ -750,7 +785,6 @@ pub(super) fn start_unified_recording(
                                             .context()
                                             .and_then(|context| context.application_id),
                                         created_at_ms: chrono::Utc::now().timestamp_millis(),
-                                        undone: false,
                                     },
                                 );
                             } else if delivery_plan == WorkflowDeliveryPlan::Preview {
@@ -812,23 +846,18 @@ pub(super) fn start_unified_recording(
                                         .context()
                                         .and_then(|context| context.application_id),
                                     created_at_ms: chrono::Utc::now().timestamp_millis(),
-                                    undone: true,
                                 },
                             );
                         }
                     }
                     let action = if !final_text.is_empty() {
-                        let delivery_disposition = if polish_result.direct_stream_inserted {
-                            DeliveryDisposition::DirectStreamInserted
-                        } else {
-                            match delivery_plan {
-                                WorkflowDeliveryPlan::Insert => DeliveryDisposition::Insert,
-                                WorkflowDeliveryPlan::Preview => DeliveryDisposition::Preview,
-                                WorkflowDeliveryPlan::Copy if copy_delivery_succeeded => {
-                                    DeliveryDisposition::Copied
-                                }
-                                WorkflowDeliveryPlan::Copy => DeliveryDisposition::CopyFailed,
+                        let delivery_disposition = match delivery_plan {
+                            WorkflowDeliveryPlan::Insert => DeliveryDisposition::Insert,
+                            WorkflowDeliveryPlan::Preview => DeliveryDisposition::Preview,
+                            WorkflowDeliveryPlan::Copy if copy_delivery_succeeded => {
+                                DeliveryDisposition::Copied
                             }
+                            WorkflowDeliveryPlan::Copy => DeliveryDisposition::CopyFailed,
                         };
                         finalize_successful_transcription_for_output(
                             &state,

@@ -32,7 +32,7 @@ pub use traits::{
 pub use unified_manager::{get_all_polish_models, PolishModelInfo, UnifiedPolishManager};
 
 // Use Qwen's default prompt as the global default
-pub const DEFAULT_POLISH_PROMPT: &str = QWEN_DEFAULT_PROMPT;
+pub const DEFAULT_POLISH_PROMPT: &str = templates::CLEAN_DICTATION_PROMPT;
 
 /// Legacy PolishModel enum for backward compatibility
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

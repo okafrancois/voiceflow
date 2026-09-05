@@ -8,6 +8,8 @@
 - Status: Completed
 - Opportunity trace: P1-P6
 
+Current surface: these tools are available under Advanced. The [product simplification contract](../../../product-simplification/0.1.0/prd/erd.md) supersedes the original undo and dual-profile behavior.
+
 ## Problem Statement
 
 Voice Flow can apply one polish template to a recording, but it cannot reliably
@@ -50,7 +52,7 @@ controls without losing the source or clipboard content.
   preview or explicitly replace.
 - Snippets: named spoken triggers with static text and supported variables
   `date`, `clipboard`, and `selection`.
-- Quick controls: undo last insertion, reinsert/copy raw or final text,
+- Quick controls: reinsert/copy raw or final text,
   re-polish, submit Enter, and cancel the active task.
 
 ## Data Contract
@@ -92,8 +94,7 @@ enum OutputAction { Insert, Preview, Copy }
 enum VoiceActionKind { Shorten, Translate, Reply, List, Custom }
 ```
 
-Persisted settings are versioned and migrate the existing Dictate, Riff, and
-optional custom map into a profile list without changing their hotkeys.
+Persist only `workflow_profiles`. Legacy maps and arrays are accepted on load and removed from serialized output. Custom IDs, shortcuts, and templates survive. The retired built-in Riff choice migrates into Dictate’s optional template; it is not projected back into a second active shortcut model.
 
 ## Acceptance Criteria
 
@@ -103,10 +104,10 @@ optional custom map into a profile list without changing their hotkeys.
 2. P2: ordered enabled application rules resolve to an existing profile;
    invalid profile references fall back to the requested/default profile.
 3. P3: selected-text actions produce a preview containing source and result;
-   replacement journals the source for undo.
+   replacement keeps source and final text in the recovery journal.
 4. P4: static snippets and `date`, `clipboard`, `selection` variables expand in
    the backend; missing required context returns a clear error.
-5. P5: quick controls cover undo, raw/final copy or reinsertion, re-polish,
+5. P5: quick controls cover raw/final copy or reinsertion, re-polish,
    submit Enter, and task cancellation with explicit unavailable states.
 6. P6: users can create, rename, update, and delete unlimited profiles while a
    protected default remains; duplicate IDs/hotkeys are rejected.
@@ -136,19 +137,13 @@ Given a snippet `meeting-note` containing `{{date}}` and `{{selection}}`
 When the spoken trigger matches and selection is available
 Then the backend expands both variables before delivery.
 
-### Undo the last insertion
+### Reject unsafe reversal
 
-Given the latest successful insertion journal contains the delivered text
-When undo is requested
-Then the backend sends the platform undo shortcut once
-And marks that journal entry undone so a second request is rejected.
+Given any previous delivery, requesting `undo_last_insertion` fails deserialization. Voice Flow does not send an application undo shortcut, because later edits cannot be distinguished safely. Copy, reinsertion, and cancellation remain available.
 
 ### Preserve migrated profiles
 
-Given legacy Dictate, Riff, and custom settings
-When settings migrate
-Then all three become named profiles with the same hotkeys, triggers, and
-template assignments.
+Given legacy profile settings, loading converts them to the canonical workflow list, preserves custom profiles and the Dictate template, removes the legacy map on save, and is idempotent on a second load.
 
 ## Verification
 
@@ -158,7 +153,9 @@ template assignments.
 - Black-box desktop E2E for profile CRUD, rule routing, snippet expansion, and
   preview/replace behavior where the automation harness can observe it.
 
-## Completion Evidence
+## Original completion evidence
+
+These checks predate the simplification. Current verification is recorded in its specification and execution plan.
 
 - Context privacy, application rules, selected-text actions, snippets, quick
   controls, profile migration, atomic shortcut updates, and recording-pipeline

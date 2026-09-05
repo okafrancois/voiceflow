@@ -88,7 +88,7 @@ const diagnostics: DiagnosticReport = {
     model_name: "whisper-turbo",
     reason: "fits hardware",
   },
-  recommended_preset: "private",
+  recommended_preset: "local_only",
   recommendation_reason: "works locally",
   latency: null,
 };
@@ -119,8 +119,8 @@ describe("PlatformQualityPage", () => {
     expect(await screen.findByTestId("diagnostic-report")).toHaveTextContent("whisper-turbo");
     expect(runDiagnosticsMock).toHaveBeenCalledTimes(1);
 
-    fireEvent.click(screen.getByRole("button", { name: "platformQuality.presets.private" }));
-    await waitFor(() => expect(applyPresetMock).toHaveBeenCalledWith("private"));
+    fireEvent.click(screen.getByRole("button", { name: "platformQuality.presets.localOnly" }));
+    await waitFor(() => expect(applyPresetMock).toHaveBeenCalledWith("local_only"));
   });
 
   it("sends period, source, outcome, and application filters to the backend", async () => {

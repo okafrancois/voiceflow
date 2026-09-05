@@ -1,8 +1,10 @@
+import { MemoryRouter } from "react-router-dom";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { HotkeySettings } from "../HotkeySettings";
 
-const { getTemplatesMock, updateProfileMock } = vi.hoisted(() => ({
+const { getTemplatesMock, updateProfileMock, profile } = vi.hoisted(() => ({
+  profile: { id: "dictate", name: "Dictate", hotkey: "Cmd+Slash", trigger_mode: "hold", polish_template_id: null as string | null, language: null, translation_target: null, output_action: "insert", code_aware: false, protected: true },
   getTemplatesMock: vi.fn(),
   updateProfileMock: vi.fn(),
 }));
@@ -10,18 +12,7 @@ const { getTemplatesMock, updateProfileMock } = vi.hoisted(() => ({
 vi.mock("@/contexts/SettingsContext", () => ({
   useSettingsContext: () => ({
     settings: {
-      shortcut_profiles: {
-        dictate: {
-          hotkey: "Cmd+Slash",
-          trigger_mode: "hold",
-          action: { Record: { polish_template_id: null } },
-        },
-        riff: {
-          hotkey: "Opt+Slash",
-          trigger_mode: "toggle",
-          action: { Record: { polish_template_id: "filler" } },
-        },
-      },
+      workflow_profiles: [profile],
     },
     polishAvailable: true,
   }),
@@ -61,6 +52,7 @@ vi.mock("react-i18next", () => ({
 
 describe("HotkeySettings", () => {
   beforeEach(() => {
+    profile.polish_template_id = null;
     getTemplatesMock.mockResolvedValue([
       { id: "filler", name: "Clean Dictation", description: "", system_prompt: "" },
       { id: "document", name: "Structured Notes", description: "", system_prompt: "" },
@@ -69,8 +61,15 @@ describe("HotkeySettings", () => {
     updateProfileMock.mockResolvedValue(undefined);
   });
 
+  it("preserves an existing advanced template in the basic shortcut editor", async () => {
+    profile.polish_template_id = "document";
+    render(<MemoryRouter><HotkeySettings /></MemoryRouter>);
+    expect(await screen.findByText("Structured Notes")).toBeInTheDocument();
+    expect(updateProfileMock).not.toHaveBeenCalled();
+  });
+
   it("shows one Dictate profile with optional polish templates", async () => {
-    render(<HotkeySettings />);
+    render(<MemoryRouter><HotkeySettings /></MemoryRouter>);
 
     expect(screen.getByText("Dictate")).toBeInTheDocument();
     expect(screen.queryByText("Riff")).not.toBeInTheDocument();
@@ -79,13 +78,14 @@ describe("HotkeySettings", () => {
     const templateSelect = await screen.findByLabelText("Polish Template");
     fireEvent.click(templateSelect);
     expect(screen.getByRole("button", { name: "No Polish" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Structured Notes" }));
+    expect(screen.queryByRole("button", { name: "Structured Notes" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Clean Dictation" }));
 
     await waitFor(() => {
       expect(updateProfileMock).toHaveBeenCalledWith("dictate", {
         hotkey: "Cmd+Slash",
         trigger_mode: "hold",
-        action: { Record: { polish_template_id: "document" } },
+        action: { Record: { polish_template_id: "filler" } },
       });
     });
   });

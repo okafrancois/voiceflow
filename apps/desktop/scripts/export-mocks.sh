@@ -42,11 +42,7 @@ else
   echo "✗ history.json (missing)"
 fi
 
-if [ -f "$MOCK_DIR/dashboard-stats.json" ]; then
-  echo "✓ dashboard-stats.json ($(wc -c < "$MOCK_DIR/dashboard-stats.json") bytes)"
-else
-  echo "✗ dashboard-stats.json (missing)"
-fi
+
 
 echo ""
 echo "=== Dynamic mock export complete ==="

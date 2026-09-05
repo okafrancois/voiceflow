@@ -1,17 +1,13 @@
-//! IPC commands for hotkey recording and legacy profile management.
-//!
-//! The workflow profile list is canonical. The fixed profile map remains as a
-//! compatibility projection for older clients.
+//! Hotkey capture and updates use the canonical workflow profile list.
 
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::commands::settings::save_settings_internal;
 use crate::events::EventName;
 use crate::services::product_workflows::{
-    apply_profile_registration_transaction, project_legacy_profiles, OutputAction, WorkflowProfile,
-    WorkflowProfileRegistrar,
+    apply_profile_registration_transaction, WorkflowProfile, WorkflowProfileRegistrar,
 };
-use crate::shortcut::{ShortcutManager, ShortcutProfile, ShortcutProfilesMap};
+use crate::shortcut::{ShortcutManager, ShortcutProfile};
 use crate::state::app_state::AppState;
 
 struct HotkeyWorkflowRegistrar<'a>(&'a ShortcutManager);
@@ -80,16 +76,13 @@ fn persist_workflow_profiles(
     requested: Vec<WorkflowProfile>,
 ) -> Result<(), String> {
     crate::services::product_workflows::validate_profiles(&requested)?;
-    let (previous, previous_legacy) = {
+    let previous = {
         let settings = state.settings.lock();
         crate::services::product_workflows::validate_application_rules(
             &settings.application_rules,
             &requested,
         )?;
-        (
-            settings.workflow_profiles.clone(),
-            settings.shortcut_profiles.clone(),
-        )
+        settings.workflow_profiles.clone()
     };
 
     let manager = app
@@ -104,15 +97,12 @@ fn persist_workflow_profiles(
     {
         let mut settings = state.settings.lock();
         settings.workflow_profiles = requested.clone();
-        settings.shortcut_profiles =
-            project_legacy_profiles(&settings.shortcut_profiles, &requested);
     }
 
     if let Err(error) = save_settings_internal(app) {
         {
             let mut settings = state.settings.lock();
             settings.workflow_profiles = previous.clone();
-            settings.shortcut_profiles = previous_legacy;
         }
         if let Err(rollback_error) = apply_profile_registration_transaction(
             &mut HotkeyWorkflowRegistrar(&manager),
@@ -162,13 +152,6 @@ pub fn peek_hotkey_capture(app: AppHandle) -> Option<String> {
         .and_then(|shortcut_manager| shortcut_manager.peek_recording_capture())
 }
 
-/// Get all shortcut profiles (map structure).
-#[tauri::command]
-pub fn get_shortcut_profiles(state: State<'_, AppState>) -> Result<ShortcutProfilesMap, String> {
-    let settings = state.settings.lock();
-    Ok(settings.shortcut_profiles.clone())
-}
-
 /// Update a specific profile by key.
 ///
 /// Validates:
@@ -196,77 +179,6 @@ pub fn update_shortcut_profile(
     persist_workflow_profiles(&app, &state, profiles)?;
 
     tracing::info!(key = %key, hotkey = %profile.hotkey, "shortcut_profile_updated");
-    Ok(())
-}
-
-/// Create custom profile (max 1).
-///
-/// Returns error if custom profile already exists.
-#[tauri::command]
-pub fn create_custom_profile(
-    app: AppHandle,
-    state: State<'_, AppState>,
-    profile: ShortcutProfile,
-) -> Result<(), String> {
-    {
-        let settings = state.settings.lock();
-
-        if settings
-            .workflow_profiles
-            .iter()
-            .any(|workflow_profile| workflow_profile.id == "custom")
-        {
-            return Err("custom_profile_already_exists".to_string());
-        }
-    }
-
-    let mut profiles = state.settings.lock().workflow_profiles.clone();
-    let polish_template_id = match profile.action {
-        crate::shortcut::ShortcutAction::Record { polish_template_id } => polish_template_id,
-    };
-    profiles.push(WorkflowProfile {
-        id: "custom".to_string(),
-        name: "Custom".to_string(),
-        hotkey: profile.hotkey,
-        trigger_mode: profile.trigger_mode,
-        language: None,
-        polish_template_id,
-        translation_target: None,
-        output_action: OutputAction::Insert,
-        code_aware: false,
-        protected: false,
-    });
-    persist_workflow_profiles(&app, &state, profiles)?;
-
-    tracing::info!("custom_profile_created");
-    Ok(())
-}
-
-/// Delete custom profile.
-///
-/// Cannot delete Dictate, the built-in profile.
-#[tauri::command]
-pub fn delete_custom_profile(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
-    let settings = state.settings.lock().clone();
-    if settings
-        .application_rules
-        .iter()
-        .any(|rule| rule.profile_id == "custom")
-    {
-        return Err("custom_profile_is_used_by_application_rule".to_string());
-    }
-    let previous_len = settings.workflow_profiles.len();
-    let profiles = settings
-        .workflow_profiles
-        .into_iter()
-        .filter(|profile| profile.id != "custom")
-        .collect::<Vec<_>>();
-    if profiles.len() == previous_len {
-        return Err("custom_profile_not_found".to_string());
-    }
-    persist_workflow_profiles(&app, &state, profiles)?;
-
-    tracing::info!("custom_profile_deleted");
     Ok(())
 }
 

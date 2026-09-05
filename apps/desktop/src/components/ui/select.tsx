@@ -67,6 +67,9 @@ const Select = React.forwardRef<HTMLButtonElement, SelectProps>(
     const selectedLabel = selectedOption
       ? selectedOption.label
       : placeholder || value;
+    const portalRoot =
+      refs.domReference.current?.closest<HTMLElement>("[role='dialog']") ??
+      undefined;
 
     if (disabled) {
       return (
@@ -130,8 +133,8 @@ const Select = React.forwardRef<HTMLButtonElement, SelectProps>(
         </button>
 
         {open && (
-          <FloatingPortal>
-            <FloatingFocusManager context={context} initialFocus={searchRef.current ? 0 : -1} returnFocus={true}>
+          <FloatingPortal root={portalRoot}>
+            <FloatingFocusManager context={context} initialFocus={searchRef} returnFocus={true}>
               <div
                 ref={refs.setFloating}
                 className="z-[9999] flex flex-col rounded-2xl border border-border bg-card shadow-lg outline-none overflow-hidden"

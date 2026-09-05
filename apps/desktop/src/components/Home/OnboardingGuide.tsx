@@ -154,7 +154,6 @@ const COMMON_LANGUAGES = [
   { code: "vi-VN", label: "Vietnamese" },
   { code: "th-TH", label: "Thai" },
   { code: "id-ID", label: "Indonesian" },
-  { code: "auto", label: "Auto" },
 ];
 
 type StepId =
@@ -652,7 +651,7 @@ function HotkeyStep() {
   if (!settings) return null;
 
   const defaultHotkey =
-    settings?.shortcut_profiles?.dictate?.hotkey || "Shift+Space";
+    settings?.workflow_profiles?.find((profile) => profile.id === "dictate")?.hotkey || "Shift+Space";
 
   // Note: HotkeyInput's onChange is called after backend has already
   // registered the hotkey. Backend emits SETTINGS_CHANGED which auto-refreshes UI.
@@ -895,9 +894,8 @@ export function OnboardingPresetControl() {
   const { t } = useTranslation();
   const [busyPreset, setBusyPreset] = useState<SetupPreset | null>(null);
   const presets: { value: SetupPreset; label: string }[] = [
-    { value: "private", label: t("platformQuality.presets.private") },
-    { value: "balanced", label: t("platformQuality.presets.balanced") },
-    { value: "maximum_accuracy", label: t("platformQuality.presets.maximum_accuracy") },
+    { value: "local_only", label: t("platformQuality.presets.localOnly") },
+    { value: "cloud_stt", label: t("platformQuality.presets.cloudStt") },
   ];
 
   const applyPreset = async (preset: SetupPreset) => {
@@ -916,7 +914,7 @@ export function OnboardingPresetControl() {
     <div className="w-full space-y-2" data-testid="onboarding-preset-control">
       <p className="text-sm font-medium">{t("platformQuality.onboarding.title")}</p>
       <p className="text-xs text-muted-foreground">{t("platformQuality.onboarding.description")}</p>
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-2 gap-2">
         {presets.map((preset) => (
           <Button
             key={preset.value}
@@ -1065,7 +1063,7 @@ export function OnboardingGuide({ isOpen, onClose }: OnboardingGuideProps) {
       case "practice":
         return (
           <PracticeStep
-            hotkey={settings?.shortcut_profiles?.dictate?.hotkey || DEFAULT_HOTKEY.toLowerCase()}
+            hotkey={settings?.workflow_profiles?.find((profile) => profile.id === "dictate")?.hotkey || DEFAULT_HOTKEY.toLowerCase()}
           />
         );
       case "done":

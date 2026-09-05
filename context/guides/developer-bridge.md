@@ -1,8 +1,9 @@
 # Developer Bridge
 
 Voice Flow exposes local automation through the same backend command service as
-the desktop UI. The desktop application must be running before a CLI request is
-sent.
+the desktop UI. Enable **Advanced → Developer integrations → Enable developer bridge** before sending a CLI request. It is off by default, including for upgraded settings that have no `developer_bridge_enabled` field. For config-driven startup, set that boolean to `true` in the application settings file before launch.
+
+The desktop application must be running. Disabling the bridge stops its listener and removes its endpoint discovery file. URL and bridge IPC requests also reject commands while disabled. Ordinary typed backend commands remain available regardless of this integration setting. The transport is newline-delimited JSON over authenticated loopback TCP, not HTTP.
 
 ## Bundled CLI
 
@@ -41,6 +42,7 @@ copy-last [raw|final]
 reinsert-last [raw|final]
 open voiceflow://COMMAND?ARGUMENTS
 clear-code-context
+vibe-coding [on|off]
 ```
 
 Text for code formatting and structured editor context is read from standard
@@ -55,7 +57,14 @@ printf '%s' 'cargo test dash dash workspace' \
 ```
 
 The editor context fields are optional. Supported fields are `language`,
-`file_path`, `symbol`, and `editor_id`.
+`file_path`, `symbol`, `editor_id`, `workspace`, and `identifiers`. Identifier
+hints are bounded and sanitized before use. The repository's VS Code-compatible
+adapter uses the editor's document-symbol provider and sends no source text.
+
+Run `vibe-coding on` only after deliberately enabling the developer bridge. The
+mode remains disabled in existing and new settings until that explicit command
+or the desktop toggle changes it. Run `vibe-coding off` to disable the mode and
+clear its active editor context.
 
 ## URL scheme
 
@@ -76,13 +85,13 @@ rejected before dispatch.
 ## Security and privacy
 
 - The bridge binds to an ephemeral `127.0.0.1` port only.
-- Each application launch creates a new random token.
+- Each bridge activation creates a new random token.
 - The endpoint file is user-private (`0600` on Unix) and contains the loopback
   address, process ID, protocol version, and token.
 - Every request is size-bounded and token-authenticated.
 - Logs contain command names, result status, and errors, but never inserted or
   transcribed content.
-- The bridge is unavailable when Voice Flow is not running.
+- The bridge is unavailable when disabled or when Voice Flow is not running.
 
 Do not copy the endpoint token into editor settings or source control. Adapters
 should invoke the bundled CLI and let it discover the current endpoint.

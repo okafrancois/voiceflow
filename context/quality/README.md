@@ -9,6 +9,10 @@ Quality index tracking grades across all product domains. Grades are updated per
 - Read this document for the current verification posture by domain, known gaps, and quality priorities
 - Do not use quality grades as a substitute for task-level verification evidence
 
+## Current review
+
+The [2026-09-05 simplification review](../brainstorms/2026-09-05-product-simplification-review.md) records source-backed gaps in privacy presets, polish acceptance, streaming settings, and undo behavior, plus the approved feature reductions. The approved reductions are implemented under the [product simplification specification](../feat/product-simplification/0.1.0/prd/erd.md), with dated verification in its execution plan. Native application compatibility and model accuracy remain separate verification limits. The domain grades below are historical snapshots, not a current release assessment.
+
 ## Grade Scale
 
 | Grade | Meaning | Requirements |
@@ -35,12 +39,12 @@ Quality index tracking grades across all product domains. Grades are updated per
 | Cloud Polish (Anthropic) | Backend | B | 2026-08 | Local request, response, and connection-check contract tests |
 | Cloud Polish (OpenAI) | Backend | B | 2026-08 | Local request, response, streaming, and connection-check contract tests |
 | Text Injection (macOS) | Backend | B | 2026-04 | Layer 0 + Layer 2 tested |
-| Text Injection (Windows) | Backend | D | 2026-04 | Not implemented |
+| Text Injection (Windows) | Backend | — | 2026-09-05 | Implemented; see [Windows delivery](../feat/windows-text-injection/0.1.0/prd/erd.md). macOS checks do not establish Windows native compatibility. |
 | Settings Persistence | Backend | B | 2026-04 | Unit tests |
 | History Storage | Backend | C | 2026-04 | Build-verified |
 | UI Components | Frontend | C | 2026-04 | TypeScript compiles, no visual regression |
 | Settings UI | Frontend | B | 2026-04 | Manual QA, component tests |
-| Dashboard UI | Frontend | B | 2026-04 | Manual QA |
+| Dictation home | Frontend | — | 2026-09-05 | Readiness/recovery component checks; see simplification evidence |
 | IPC Boundary | Full-stack | B | 2026-04 | Typed boundary, logging |
 | Logging Infrastructure | Full-stack | B | 2026-04 | Spec exists, partial coverage |
 | i18n | Frontend | A | 2026-04 | Automated check (pnpm check:i18n), 10 locales |
@@ -60,6 +64,6 @@ These are hard requirements, not grades:
 Sorted by impact:
 
 1. VAD testing (raise from C to B)
-2. Text Injection Windows implementation (raise from D)
+2. Native Windows delivery compatibility checks
 3. History storage tests (raise from C to B)
 4. Visual regression for UI components (raise from C to B)

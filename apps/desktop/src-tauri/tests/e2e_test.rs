@@ -40,9 +40,11 @@ fn test_e2e_audio_system_functions() {
 fn test_e2e_settings_default() {
     let settings = voiceflow_lib::commands::settings::AppSettings::default();
 
-    assert_eq!(settings.shortcut_profiles.dictate.hotkey, "Cmd+Slash");
-    assert_eq!(settings.shortcut_profiles.riff.hotkey, "Opt+Slash");
-    assert!(settings.shortcut_profiles.custom.is_none());
+    assert_eq!(
+        settings.get_dictate_hotkey(),
+        voiceflow_lib::shortcut::default_dictate_hotkey()
+    );
+    assert_eq!(settings.workflow_profiles.len(), 1);
     assert_eq!(settings.model, "whisper-base");
     assert_eq!(settings.language, "auto");
     assert!(!settings.cloud_polish_enabled);
@@ -375,11 +377,11 @@ mod shortcut_profiles {
     #[test]
     fn default_profiles_have_correct_hotkeys() {
         let settings = AppSettings::default();
-        let profiles = &settings.shortcut_profiles;
-
-        assert_eq!(profiles.dictate.hotkey, "Cmd+Slash");
-        assert_eq!(profiles.riff.hotkey, "Opt+Slash");
-        assert!(profiles.custom.is_none());
+        assert_eq!(settings.workflow_profiles.len(), 1);
+        assert_eq!(
+            settings.workflow_profiles[0].hotkey,
+            voiceflow_lib::shortcut::default_dictate_hotkey()
+        );
     }
 
     #[test]
@@ -478,38 +480,13 @@ mod shortcut_profiles {
     }
 
     #[test]
-    fn settings_get_riff_hotkey() {
-        let settings = AppSettings::default();
-        assert_eq!(settings.get_riff_hotkey(), "Opt+Slash");
-    }
-
-    #[test]
-    fn settings_set_dictate_hotkey() {
+    fn canonical_profile_edits_are_persisted_without_a_legacy_projection() {
         let mut settings = AppSettings::default();
-        settings.set_dictate_hotkey("Cmd+Shift+A");
-        assert_eq!(settings.shortcut_profiles.dictate.hotkey, "Cmd+Shift+A");
-    }
-
-    #[test]
-    fn settings_get_custom_hotkey_none_when_absent() {
-        let settings = AppSettings::default();
-        assert!(settings.get_custom_hotkey().is_none());
-    }
-
-    #[test]
-    fn settings_get_custom_hotkey_when_present() {
-        let mut settings = AppSettings::default();
-        settings.shortcut_profiles.custom = Some(ShortcutProfile {
-            hotkey: "Cmd+Alt+Space".to_string(),
-            trigger_mode: ShortcutTriggerMode::Toggle,
-            action: ShortcutAction::Record {
-                polish_template_id: None,
-            },
-        });
-        assert_eq!(
-            settings.get_custom_hotkey(),
-            Some("Cmd+Alt+Space".to_string())
-        );
+        settings.workflow_profiles[0].hotkey = "Cmd+Shift+A".to_string();
+        assert_eq!(settings.get_dictate_hotkey(), "Cmd+Shift+A");
+        let saved = serde_json::to_value(&settings).unwrap();
+        assert!(saved.get("shortcut_profiles").is_none());
+        assert_eq!(saved["workflow_profiles"][0]["hotkey"], "Cmd+Shift+A");
     }
 
     #[test]

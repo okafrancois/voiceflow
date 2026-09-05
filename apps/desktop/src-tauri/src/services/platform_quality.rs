@@ -45,7 +45,6 @@ pub struct LatencySample {
 pub struct DiagnosticInput {
     pub microphone: MicrophoneCheck,
     pub hardware: HardwareSnapshot,
-    pub has_cloud_credentials: bool,
     pub latency: Option<LatencySample>,
 }
 
@@ -54,33 +53,19 @@ pub struct DiagnosticReport {
     pub microphone: MicrophoneCheck,
     pub hardware: HardwareSnapshot,
     pub recommended_model: ModelRecommendation,
-    pub recommended_preset: SetupPreset,
+    pub recommended_preset: Option<SetupPreset>,
     pub recommendation_reason: String,
     pub latency: Option<LatencySample>,
 }
 
 pub fn build_diagnostic_report(input: DiagnosticInput) -> DiagnosticReport {
     let recommended_model = recommend_local_model(&input.hardware);
-    let recommended_preset = if input.microphone.ready && !input.has_cloud_credentials {
-        SetupPreset::Private
-    } else if input.microphone.ready {
-        SetupPreset::Balanced
+    let recommended_preset = input.microphone.ready.then_some(SetupPreset::LocalOnly);
+    let recommendation_reason = if input.microphone.ready {
+        format!("{} is an on-device, hardware-based starting point. Test it with your language before choosing a different model.", recommended_model.model_name)
     } else {
-        SetupPreset::MaximumAccuracy
-    };
-    let recommendation_reason = match recommended_preset {
-        SetupPreset::Private => format!(
-            "The microphone is ready and {} fits this hardware, so transcription can stay on-device without cloud credentials.",
-            recommended_model.model_name
-        ),
-        SetupPreset::Balanced => format!(
-            "The microphone is ready and {} fits this hardware; cloud services remain available as an explicit choice.",
-            recommended_model.model_name
-        ),
-        SetupPreset::MaximumAccuracy => {
-            "The microphone is not ready; configure it before measuring a local model, or use an explicitly configured cloud provider."
-                .to_string()
-        }
+        "Allow microphone access and select a working input device before testing transcription."
+            .to_string()
     };
 
     DiagnosticReport {
@@ -119,7 +104,7 @@ pub fn recommend_local_model(hardware: &HardwareSnapshot) -> ModelRecommendation
     } else {
         (
             "whisper-large-v3",
-            "Available memory and CPU capacity support maximum local accuracy.",
+            "Available memory fits Whisper Large v3; measure accuracy with your own language.",
         )
     };
     ModelRecommendation {
@@ -131,52 +116,10 @@ pub fn recommend_local_model(hardware: &HardwareSnapshot) -> ModelRecommendation
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SetupPreset {
-    Private,
-    Balanced,
-    MaximumAccuracy,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct PresetContract {
-    pub cloud_stt_enabled: bool,
-    pub window_context_enabled: bool,
-    pub clipboard_context_enabled: bool,
-    pub ocr_fallback_enabled: bool,
-    pub correction_memory_enabled: bool,
-    pub text_retention: String,
-    pub audio_retention: String,
-}
-
-pub fn preset_contract(preset: SetupPreset) -> PresetContract {
-    match preset {
-        SetupPreset::Private => PresetContract {
-            cloud_stt_enabled: false,
-            window_context_enabled: false,
-            clipboard_context_enabled: false,
-            ocr_fallback_enabled: false,
-            correction_memory_enabled: true,
-            text_retention: "days30".to_string(),
-            audio_retention: "never".to_string(),
-        },
-        SetupPreset::Balanced => PresetContract {
-            cloud_stt_enabled: false,
-            window_context_enabled: true,
-            clipboard_context_enabled: false,
-            ocr_fallback_enabled: false,
-            correction_memory_enabled: true,
-            text_retention: "days90".to_string(),
-            audio_retention: "never".to_string(),
-        },
-        SetupPreset::MaximumAccuracy => PresetContract {
-            cloud_stt_enabled: true,
-            window_context_enabled: true,
-            clipboard_context_enabled: false,
-            ocr_fallback_enabled: false,
-            correction_memory_enabled: true,
-            text_retention: "forever".to_string(),
-            audio_retention: "days7".to_string(),
-        },
-    }
+    #[serde(alias = "private", alias = "balanced")]
+    LocalOnly,
+    #[serde(alias = "maximum_accuracy")]
+    CloudStt,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -213,6 +156,9 @@ pub enum BridgeRequest {
         context: CodeContext,
     },
     ClearCodeContext,
+    SetVibeCoding {
+        enabled: bool,
+    },
     FormatCode {
         text: String,
         language: Option<String>,
@@ -259,9 +205,17 @@ pub fn parse_bridge_url(url: &str) -> Result<BridgeRequest, String> {
                 file_path: query.get("file").cloned(),
                 symbol: query.get("symbol").cloned(),
                 editor_id: query.get("editor").cloned(),
+                workspace: query.get("workspace").cloned(),
+                identifiers: query
+                    .get("identifiers")
+                    .map(|value| value.split(',').map(str::to_string).collect())
+                    .unwrap_or_default(),
             },
         }),
         "clear-code-context" => Ok(BridgeRequest::ClearCodeContext),
+        "vibe-coding" => Ok(BridgeRequest::SetVibeCoding {
+            enabled: parse_enabled(query.get("enabled").map(String::as_str))?,
+        }),
         _ => Err(format!("Unknown bridge command: {command}")),
     }
 }
@@ -290,6 +244,7 @@ pub fn bridge_request_name(request: &BridgeRequest) -> &'static str {
         BridgeRequest::Submit => "submit",
         BridgeRequest::SetCodeContext { .. } => "set-code-context",
         BridgeRequest::ClearCodeContext => "clear-code-context",
+        BridgeRequest::SetVibeCoding { .. } => "set-vibe-coding",
         BridgeRequest::FormatCode { .. } => "format-code",
     }
 }
@@ -456,6 +411,9 @@ pub fn parse_bridge_cli_args(
             Ok(BridgeRequest::SetCodeContext { context })
         }
         "clear-code-context" => Ok(BridgeRequest::ClearCodeContext),
+        "vibe-coding" => Ok(BridgeRequest::SetVibeCoding {
+            enabled: parse_enabled(args.get(1).map(String::as_str))?,
+        }),
         "format-code" => Ok(BridgeRequest::FormatCode {
             text: stdin_json
                 .filter(|text| !text.is_empty())
@@ -464,6 +422,14 @@ pub fn parse_bridge_cli_args(
             language: args.get(1).cloned(),
         }),
         _ => Err(format!("Unknown bridge command: {command}")),
+    }
+}
+
+fn parse_enabled(value: Option<&str>) -> Result<bool, String> {
+    match value {
+        Some("on" | "true" | "1") => Ok(true),
+        Some("off" | "false" | "0") => Ok(false),
+        _ => Err("vibe-coding requires on or off".to_string()),
     }
 }
 
@@ -586,20 +552,36 @@ pub struct CodeContext {
     pub file_path: Option<String>,
     pub symbol: Option<String>,
     pub editor_id: Option<String>,
+    pub workspace: Option<String>,
+    #[serde(default)]
+    pub identifiers: Vec<String>,
 }
 
-static ACTIVE_CODE_CONTEXT: LazyLock<RwLock<Option<CodeContext>>> =
-    LazyLock::new(|| RwLock::new(None));
+static ACTIVE_CODE_CONTEXT: LazyLock<
+    RwLock<Option<crate::services::vibe_coding::TimedCodeContext>>,
+> = LazyLock::new(|| RwLock::new(None));
 
 pub fn set_active_code_context(context: CodeContext) -> Result<CodeContext, String> {
-    let context = sanitize_code_context(context);
+    let context = crate::services::vibe_coding::enrich_context(sanitize_code_context(context));
     *ACTIVE_CODE_CONTEXT
         .write()
-        .map_err(|_| "Code context store is unavailable".to_string())? = Some(context.clone());
+        .map_err(|_| "Code context store is unavailable".to_string())? =
+        Some(crate::services::vibe_coding::TimedCodeContext {
+            context: context.clone(),
+            updated_at_ms: chrono::Utc::now().timestamp_millis(),
+        });
     Ok(context)
 }
 
 pub fn get_active_code_context() -> Result<Option<CodeContext>, String> {
+    ACTIVE_CODE_CONTEXT
+        .read()
+        .map(|context| context.as_ref().map(|active| active.context.clone()))
+        .map_err(|_| "Code context store is unavailable".to_string())
+}
+
+pub fn get_active_code_context_snapshot(
+) -> Result<Option<crate::services::vibe_coding::TimedCodeContext>, String> {
     ACTIVE_CODE_CONTEXT
         .read()
         .map(|context| context.clone())
@@ -619,6 +601,8 @@ fn sanitize_code_context(context: CodeContext) -> CodeContext {
         file_path: clean_code_context_value(context.file_path, 1_024),
         symbol: clean_code_context_value(context.symbol, 256),
         editor_id: clean_code_context_value(context.editor_id, 256),
+        workspace: clean_code_context_value(context.workspace, 256),
+        identifiers: context.identifiers,
     }
 }
 
@@ -644,6 +628,7 @@ pub fn build_code_aware_instruction(context: &CodeContext) -> String {
         ("File", context.file_path.as_deref()),
         ("Symbol", context.symbol.as_deref()),
         ("Editor", context.editor_id.as_deref()),
+        ("Workspace", context.workspace.as_deref()),
     ] {
         if let Some(value) = value.map(str::trim).filter(|value| !value.is_empty()) {
             let value: String = value
@@ -653,6 +638,11 @@ pub fn build_code_aware_instruction(context: &CodeContext) -> String {
                 .collect();
             instruction.push_str(&format!(" {label}: {value}."));
         }
+    }
+    if !context.identifiers.is_empty() {
+        instruction.push_str(" Preserve these identifiers exactly: ");
+        instruction.push_str(&context.identifiers.join(", "));
+        instruction.push('.');
     }
     instruction
 }
@@ -972,6 +962,9 @@ fn nearest_rank(values: &[u64], percentile: usize) -> Option<u64> {
 mod tests {
     use super::*;
 
+    static ACTIVE_CODE_CONTEXT_TEST_MUTEX: LazyLock<parking_lot::Mutex<()>> =
+        LazyLock::new(|| parking_lot::Mutex::new(()));
+
     #[test]
     fn model_recommendation_explains_hardware_tradeoff() {
         let low = recommend_local_model(&HardwareSnapshot {
@@ -988,25 +981,21 @@ mod tests {
             architecture: "aarch64".to_string(),
         });
         assert_eq!(capable.model_name, "whisper-large-v3");
-        assert!(capable.reason.contains("maximum local accuracy"));
+        assert!(capable.reason.contains("measure accuracy"));
     }
 
     #[test]
-    fn setup_presets_have_distinct_documented_privacy_profiles() {
-        let private = preset_contract(SetupPreset::Private);
-        assert!(!private.cloud_stt_enabled);
-        assert!(!private.clipboard_context_enabled);
-        assert_eq!(private.audio_retention, "never");
-
-        let balanced = preset_contract(SetupPreset::Balanced);
-        assert!(!balanced.cloud_stt_enabled);
-        assert!(balanced.correction_memory_enabled);
-        assert_eq!(balanced.text_retention, "days90");
-
-        let accurate = preset_contract(SetupPreset::MaximumAccuracy);
-        assert!(accurate.cloud_stt_enabled);
-        assert!(accurate.window_context_enabled);
-        assert!(!accurate.ocr_fallback_enabled);
+    fn legacy_presets_decode_to_explicit_processing_choices() {
+        for old in ["private", "balanced"] {
+            assert_eq!(
+                serde_json::from_value::<SetupPreset>(serde_json::json!(old)).unwrap(),
+                SetupPreset::LocalOnly
+            );
+        }
+        assert_eq!(
+            serde_json::from_value::<SetupPreset>(serde_json::json!("maximum_accuracy")).unwrap(),
+            SetupPreset::CloudStt
+        );
     }
 
     #[test]
@@ -1068,11 +1057,14 @@ mod tests {
             file_path: Some("src/services/mod.rs".to_string()),
             symbol: Some("parse_bridge_url".to_string()),
             editor_id: Some("com.microsoft.VSCode".to_string()),
+            workspace: Some("voiceflow".to_string()),
+            identifiers: vec!["BridgeRequest".to_string()],
         });
 
         assert!(instruction.contains("identifiers and casing"));
         assert!(instruction.contains("src/services/mod.rs"));
         assert!(instruction.contains("parse_bridge_url"));
+        assert!(instruction.contains("BridgeRequest"));
         assert!(!instruction.contains("```"));
     }
 
@@ -1117,7 +1109,7 @@ mod tests {
 
     #[test]
     fn diagnostic_report_recommends_private_setup_without_cloud_credentials() {
-        let report = build_diagnostic_report(DiagnosticInput {
+        let mut input = DiagnosticInput {
             microphone: MicrophoneCheck {
                 ready: true,
                 device_name: Some("Built-in Microphone".to_string()),
@@ -1131,14 +1123,17 @@ mod tests {
                 logical_cpu_count: 10,
                 architecture: "aarch64".to_string(),
             },
-            has_cloud_credentials: false,
             latency: None,
-        });
+        };
+        let report = build_diagnostic_report(input.clone());
 
         assert!(report.microphone.ready);
-        assert_eq!(report.recommended_preset, SetupPreset::Private);
+        assert_eq!(report.recommended_preset, Some(SetupPreset::LocalOnly));
         assert_eq!(report.recommended_model.model_name, "whisper-turbo");
         assert!(report.recommendation_reason.contains("on-device"));
+        input.microphone.ready = false;
+        let blocked = build_diagnostic_report(input);
+        assert_eq!(blocked.recommended_preset, None);
     }
 
     #[test]
@@ -1178,6 +1173,8 @@ mod tests {
                 file_path: Some("src/main.rs".to_string()),
                 symbol: Some("HTTPServer".to_string()),
                 editor_id: Some("com.microsoft.VSCode".to_string()),
+                workspace: Some("voiceflow".to_string()),
+                identifiers: vec!["HTTPServer".to_string()],
             },
         );
 
@@ -1196,6 +1193,7 @@ mod tests {
 
     #[test]
     fn editor_bridge_parses_json_context_and_sanitizes_control_characters() {
+        let _context_guard = ACTIVE_CODE_CONTEXT_TEST_MUTEX.lock();
         let request = parse_bridge_cli_args(
             &["code-context".to_string()],
             Some(
@@ -1211,6 +1209,33 @@ mod tests {
         assert_eq!(get_active_code_context().unwrap(), Some(stored));
         clear_active_code_context().unwrap();
         assert_eq!(get_active_code_context().unwrap(), None);
+    }
+
+    #[test]
+    fn editor_bridge_accepts_vibe_toggle_and_extended_symbol_context() {
+        let _context_guard = ACTIVE_CODE_CONTEXT_TEST_MUTEX.lock();
+        assert_eq!(
+            parse_bridge_cli_args(&["vibe-coding".to_string(), "on".to_string()], None,).unwrap(),
+            BridgeRequest::SetVibeCoding { enabled: true }
+        );
+        let request = parse_bridge_cli_args(
+            &["code-context".to_string()],
+            Some(
+                r#"{"file_path":"src/App.tsx","editor_id":"Cursor","workspace":"voiceflow","identifiers":["HTTPServer","handleRequest"]}"#,
+            ),
+        )
+        .unwrap();
+        let BridgeRequest::SetCodeContext { context } = request else {
+            panic!("expected code context request");
+        };
+        let context = set_active_code_context(context).unwrap();
+        assert_eq!(context.language.as_deref(), Some("typescriptreact"));
+        assert_eq!(context.workspace.as_deref(), Some("voiceflow"));
+        assert_eq!(
+            context.identifiers,
+            vec!["HTTPServer", "handleRequest", "App"]
+        );
+        clear_active_code_context().unwrap();
     }
 
     #[test]

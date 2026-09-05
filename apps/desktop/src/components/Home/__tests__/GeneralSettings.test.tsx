@@ -78,6 +78,8 @@ const testSettings: AppSettings = {
   active_cloud_polish_provider: "openai",
   active_cloud_stt_provider: "volcengine",
   analytics_opt_in: false,
+  developer_bridge_enabled: false,
+  vibe_coding_enabled: false,
   audio_retention: "never",
   audio_device: "default",
   auto_start: false,
@@ -109,23 +111,11 @@ const testSettings: AppSettings = {
   pill_size: 2,
   polish_custom_templates: [],
   polish_model: "",
-  polish_stream_direct_typing_enabled: false,
   original_target_enabled: true,
   original_target_mode: "foreground",
   polish_system_prompt: "",
   recording_mode: "hold",
-  shortcut_profiles: {
-    dictate: {
-      hotkey: "Cmd+Slash",
-      trigger_mode: "hold",
-      action: { Record: { polish_template_id: null } },
-    },
-    riff: {
-      hotkey: "Opt+Slash",
-      trigger_mode: "toggle",
-      action: { Record: { polish_template_id: null } },
-    },
-  },
+
   workflow_profiles: [],
   application_rules: [],
   voice_snippets: [],

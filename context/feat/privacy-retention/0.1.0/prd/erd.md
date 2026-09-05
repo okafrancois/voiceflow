@@ -126,3 +126,7 @@ Then the WAV is deleted
 - `npm run check:i18n` passed for every desktop and website locale.
 - `rustfmt --check` passed for every Rust file changed by this feature.
 - Repository-wide Cargo tests, Clippy, and builds remain part of the parent B1–P13 integration pass because parallel feature files were still changing during this verification.
+
+## Processing choices (2026-09-05)
+
+Retention is independent of the [local/cloud processing choice](../../../product-simplification/0.1.0/prd/erd.md). Choosing Local only disables cloud transcription and cloud polish. Choosing configured cloud STT does not opt into cloud polish, change stored retention, or grant context access.

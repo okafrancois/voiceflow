@@ -95,62 +95,6 @@ pub struct NewTranscriptionEntry {
     pub delivery_status: String,
 }
 
-/// Summary statistics for the dashboard.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DashboardStats {
-    /// Total number of transcriptions
-    pub total_count: i64,
-    /// Number of transcriptions today
-    pub today_count: i64,
-    /// Total characters typed across all transcriptions
-    pub total_chars: i64,
-    /// Total cross-language output units across all transcriptions
-    pub total_output_units: i64,
-    /// Total audio duration in milliseconds
-    pub total_audio_ms: i64,
-    /// Average STT processing time in milliseconds
-    pub avg_stt_ms: Option<i64>,
-    /// Average speaking duration per transcription in milliseconds
-    pub avg_audio_ms: Option<i64>,
-    /// Average output units per transcription
-    pub avg_output_units: Option<f64>,
-    /// Number of transcriptions using local engines
-    pub local_count: i64,
-    /// Number of transcriptions using cloud engines
-    pub cloud_count: i64,
-    /// Number of transcriptions where polish was applied
-    pub polish_count: i64,
-    /// Number of active usage days
-    pub active_days: i64,
-    /// Current streak of active days, tolerant of the current partial day
-    pub current_streak_days: i64,
-    /// Longest streak of active days
-    pub longest_streak_days: i64,
-    /// Captures in the last 7 days
-    pub last_7_days_count: i64,
-    /// Audio duration in the last 7 days
-    pub last_7_days_audio_ms: i64,
-    /// Output units in the last 7 days
-    pub last_7_days_output_units: i64,
-}
-
-/// Daily usage count for charting.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DailyUsage {
-    pub date: String,
-    pub count: i64,
-    pub audio_ms: i64,
-    pub output_units: i64,
-}
-
-/// Engine usage breakdown for charting.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct EngineUsage {
-    pub engine: String,
-    pub count: i64,
-    pub avg_stt_ms: Option<i64>,
-}
-
 /// Filter parameters for querying history.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HistoryFilter {
@@ -162,4 +106,40 @@ pub struct HistoryFilter {
     pub date_to: Option<i64>,
     pub limit: Option<i64>,
     pub offset: Option<i64>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum StatisticsPeriod {
+    #[serde(rename = "7d")]
+    SevenDays,
+    #[serde(rename = "30d")]
+    ThirtyDays,
+    #[serde(rename = "all")]
+    All,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DailyStatistics {
+    pub date: String,
+    pub word_count: u64,
+    pub dictation_count: u64,
+    pub audio_duration_ms: u64,
+    pub local_dictation_count: u64,
+    pub cloud_dictation_count: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoryStatistics {
+    pub period: StatisticsPeriod,
+    pub range_start_ms: Option<i64>,
+    pub range_end_ms: i64,
+    pub word_count: u64,
+    pub dictation_count: u64,
+    pub audio_duration_ms: u64,
+    pub active_days: u64,
+    pub local_dictation_count: u64,
+    pub cloud_dictation_count: u64,
+    pub trend: Vec<DailyStatistics>,
 }

@@ -83,6 +83,20 @@ pub fn add_custom_dictionary_entry(
 }
 
 #[tauri::command]
+pub fn update_custom_dictionary_entry(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    term: String,
+    aliases: Vec<String>,
+) -> Result<DictionaryEntry, String> {
+    let now_ms = chrono::Utc::now().timestamp_millis();
+    let mut entries = load_custom_entries_from_state(&state);
+    let entry = replace_custom_entry_aliases(&mut entries, &term, aliases, now_ms)?;
+    persist_custom_dictionary_entries(&app, &state, &entries)?;
+    Ok(entry)
+}
+
+#[tauri::command]
 pub fn import_custom_dictionary_csv(
     app: AppHandle,
     state: State<'_, AppState>,
@@ -253,6 +267,27 @@ fn upsert_custom_entry(
     (entry, true)
 }
 
+fn replace_custom_entry_aliases(
+    entries: &mut [DictionaryEntry],
+    term: &str,
+    aliases: Vec<String>,
+    now_ms: i64,
+) -> Result<DictionaryEntry, String> {
+    let entry = entries
+        .iter_mut()
+        .find(|entry| entry.term.eq_ignore_ascii_case(term))
+        .ok_or_else(|| format!("Custom dictionary entry not found: {term}"))?;
+    let normalized = HotwordEntry::new(
+        entry.term.clone(),
+        aliases,
+        entry.frequency,
+        entry.source.clone(),
+    )?;
+    entry.aliases = normalized.aliases;
+    entry.last_seen_at_ms = now_ms;
+    Ok(entry.clone())
+}
+
 fn serialize_custom_dictionary_entries(entries: &[DictionaryEntry]) -> String {
     let hotwords = entries
         .iter()
@@ -342,7 +377,7 @@ fn parse_csv_row(line: &str) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_csv_rows, parse_custom_dictionary_entries};
+    use super::{parse_csv_rows, parse_custom_dictionary_entries, replace_custom_entry_aliases};
 
     #[test]
     fn parses_hotword_and_legacy_custom_dictionary_entries() {
@@ -366,5 +401,39 @@ mod tests {
         assert_eq!(rows[0], vec!["wrong", "corrected"]);
         assert_eq!(rows[1], vec!["node, js", "Node.js"]);
         assert_eq!(rows[2], vec!["say \"hi\"", "hello"]);
+    }
+
+    #[test]
+    fn replaces_manual_aliases_without_changing_the_term_or_frequency() {
+        let mut entries = parse_custom_dictionary_entries("Claude | Cloud | Clawed");
+
+        let updated = replace_custom_entry_aliases(
+            &mut entries,
+            "claude",
+            vec![
+                "  Crowd  ".to_string(),
+                "cloud".to_string(),
+                "CLOUD".to_string(),
+            ],
+            42,
+        )
+        .unwrap();
+
+        assert_eq!(updated.term, "Claude");
+        assert_eq!(updated.aliases, vec!["Crowd", "cloud"]);
+        assert_eq!(updated.frequency, 1);
+        assert_eq!(updated.last_seen_at_ms, 42);
+        assert_eq!(entries, vec![updated]);
+    }
+
+    #[test]
+    fn replacing_aliases_rejects_an_unknown_manual_term() {
+        let mut entries = parse_custom_dictionary_entries("Claude | Cloud");
+
+        let error =
+            replace_custom_entry_aliases(&mut entries, "missing", vec!["alias".to_string()], 42)
+                .unwrap_err();
+
+        assert_eq!(error, "Custom dictionary entry not found: missing");
     }
 }

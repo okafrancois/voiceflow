@@ -269,12 +269,13 @@ function ImportWorkbench({ onCompleted, t }: ImportWorkbenchProps) {
 }
 
 interface HistoryEntryCardProps {
+  advanced: boolean;
   entry: TranscriptionEntry;
   onChanged: (entry?: TranscriptionEntry) => Promise<void>;
   t: (key: string, options?: Record<string, unknown>) => string;
 }
 
-function HistoryEntryCard({ entry, onChanged, t }: HistoryEntryCardProps) {
+export function HistoryEntryCard({ entry, onChanged, t, advanced }: HistoryEntryCardProps) {
   const confirm = useConfirm();
   const [expanded, setExpanded] = useState(false);
   const [busyAction, setBusyAction] = useState<string | null>(null);
@@ -374,6 +375,7 @@ function HistoryEntryCard({ entry, onChanged, t }: HistoryEntryCardProps) {
             {entry.language && <span>· {entry.language}</span>}
             {entry.translation_target && <span>→ {entry.translation_target}</span>}
           </div>
+          {["failed", "copy_failed"].includes(entry.delivery_status) && <p role="status" className="mt-2 text-xs text-amber-700 dark:text-amber-400">{t("home.deliveryFailed")}</p>}
           <p className={cn("mt-2 line-clamp-3 text-sm", isError && "text-destructive")}>
             {isError ? entry.error ?? t("history.error.failed") : entry.final_text}
           </p>
@@ -425,6 +427,7 @@ function HistoryEntryCard({ entry, onChanged, t }: HistoryEntryCardProps) {
           <div className="flex flex-wrap items-center gap-2">
             <Button variant="outline" size="sm" onClick={retranscribe} disabled={!hasMedia || busyAction !== null}><ArrowCounterClockwise className="mr-2 h-4 w-4" />{t("history.actions.retranscribe")}</Button>
             <Button variant="outline" size="sm" onClick={() => repolish(null)} disabled={!entry.raw_text || busyAction !== null}><MagicWand className="mr-2 h-4 w-4" />{t("history.actions.repolish")}</Button>
+            {advanced && <>
             <label className="sr-only" htmlFor={`translation-${entry.id}`}>{t("history.translation.target")}</label>
             <select
               id={`translation-${entry.id}`}
@@ -437,7 +440,8 @@ function HistoryEntryCard({ entry, onChanged, t }: HistoryEntryCardProps) {
               {LANGUAGE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
             </select>
             <Button variant="outline" size="sm" onClick={() => repolish(translationTarget || null)} disabled={!translationTarget || busyAction !== null} aria-label={t("history.actions.translate")}><Translate className="mr-2 h-4 w-4" />{t("history.actions.translate")}</Button>
-            {(["txt", "markdown", "srt"] as ExportFormat[]).map((format) => (
+            </>}
+            {((advanced ? ["txt", "markdown", "srt"] : ["txt", "markdown"]) as ExportFormat[]).map((format) => (
               <Button key={format} variant="ghost" size="sm" onClick={() => exportEntry(format)} disabled={busyAction !== null}><Export className="mr-1 h-4 w-4" />{format === "markdown" ? "MD" : format.toUpperCase()}</Button>
             ))}
             <Button variant="ghost" size="sm" onClick={deleteEntry} className="ml-auto text-destructive" disabled={busyAction !== null}><Trash className="mr-1 h-4 w-4" />{t("common.delete")}</Button>
@@ -448,7 +452,7 @@ function HistoryEntryCard({ entry, onChanged, t }: HistoryEntryCardProps) {
   );
 }
 
-export function HistoryPage() {
+export function HistoryPage({ advanced = false }: { advanced?: boolean } = {}) {
   const { t } = useTranslation();
   const confirm = useConfirm();
   const [entries, setEntries] = useState<TranscriptionEntry[]>([]);
@@ -509,8 +513,8 @@ export function HistoryPage() {
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 
   return (
-    <SettingsPageLayout title={t("history.title")} description={t("history.description")} testId="history-page">
-      <ImportWorkbench onCompleted={fetchHistory} t={t} />
+    <SettingsPageLayout title={advanced ? t("advanced.media.title") : t("history.title")} description={t("history.description")} testId="history-page">
+      {advanced && <ImportWorkbench onCompleted={fetchHistory} t={t} />}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <SegmentedControl items={filters} value={engineFilter} onChange={(value) => { setEngineFilter(value as EngineFilter); setCurrentPage(0); }} size="sm" />
         <div className="relative w-full sm:w-72">
@@ -523,7 +527,7 @@ export function HistoryPage() {
       <Card className="min-h-[320px]">
         {isLoading && entries.length === 0 ? <div className="p-10 text-center text-sm text-muted-foreground">{t("history.loading")}</div> : entries.length === 0 ? (
           <div className="flex flex-col items-center justify-center p-16 text-center"><Clock className="mb-3 h-8 w-8 text-muted-foreground" /><h2 className="font-semibold">{t("history.empty.title")}</h2><p className="mt-1 text-sm text-muted-foreground">{t("history.empty.description")}</p></div>
-        ) : <div data-testid="history-entries">{entries.map((entry) => <HistoryEntryCard key={entry.id} entry={entry} onChanged={onEntryChanged} t={t} />)}</div>}
+        ) : <div data-testid="history-entries">{entries.map((entry) => <HistoryEntryCard key={entry.id} advanced={advanced} entry={entry} onChanged={onEntryChanged} t={t} />)}</div>}
         {entries.length > 0 && (
           <div className="flex items-center justify-between border-t border-border/50 p-4">
             <span className="text-sm text-muted-foreground">{t("history.pagination.page", { current: currentPage + 1, total: totalPages })}</span>

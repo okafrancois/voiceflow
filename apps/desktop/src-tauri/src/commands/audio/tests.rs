@@ -10,7 +10,8 @@ use crate::runtime_context::window::{WindowContextBundle, WindowContextSource};
 use crate::state::app_state::AppState;
 
 use super::capture::{
-    should_cancel_window_context_capture, workflow_delivery_plan, WorkflowDeliveryPlan,
+    should_cancel_window_context_capture, should_capture_application_context,
+    workflow_delivery_plan, WorkflowDeliveryPlan,
 };
 use super::polish::maybe_polish_transcription_text;
 use super::shared::{
@@ -187,6 +188,63 @@ async fn streaming_finalization_honors_cloud_polish_settings() {
 }
 
 #[tokio::test]
+async fn recording_rejects_provider_language_change_and_preserves_original() {
+    let mock_server = MockServer::start().await;
+
+    let response_body = serde_json::json!({
+        "choices": [
+            {
+                "message": {
+                    "content": "Please fix the error and check the output"
+                }
+            }
+        ]
+    });
+
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .and(header("Authorization", "Bearer test_openai_api_key"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(&response_body))
+        .mount(&mock_server)
+        .await;
+
+    let state = AppState::new();
+    state.start_session(1, None);
+    {
+        let mut settings = state.settings.lock();
+        settings.cloud_polish_enabled = true;
+        settings.active_cloud_polish_provider = "openai".to_string();
+        settings.stt_engine_language = "en-US".to_string();
+        settings.cloud_polish_configs.insert(
+            "openai".to_string(),
+            CloudProviderConfig {
+                enabled: true,
+                provider_type: "openai".to_string(),
+                api_key: "test_openai_api_key".to_string(),
+                base_url: mock_server.uri(),
+                model: "gpt-4o-mini".to_string(),
+                enable_thinking: false,
+            },
+        );
+    }
+
+    let result = maybe_polish_transcription_text(
+        &ProcessingEventTarget::None,
+        &state,
+        1,
+        "Alors je veux que tu vérifies les données et les règles de sécurité dans cette application".to_string(),
+        Some("filler".to_string()),
+    )
+    .await;
+
+    assert_eq!(result.text, "Alors je veux que tu vérifies les données et les règles de sécurité dans cette application");
+    assert_eq!(
+        result.fallback_reason,
+        Some("polish changed transcript language")
+    );
+}
+
+#[tokio::test]
 async fn window_context_is_injected_into_polish_prompt() {
     let mock_server = MockServer::start().await;
 
@@ -279,6 +337,12 @@ fn window_context_capture_cancels_when_recording_ends() {
     assert!(should_cancel_window_context_capture(true, false, false));
     assert!(should_cancel_window_context_capture(true, true, true));
     assert!(should_cancel_window_context_capture(false, true, false));
+}
+
+#[test]
+fn vibe_coding_captures_only_application_identity_without_wider_context_opt_in() {
+    assert!(should_capture_application_context(false, false, true));
+    assert!(!should_capture_application_context(false, false, false));
 }
 
 #[test]

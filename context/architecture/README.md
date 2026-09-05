@@ -15,9 +15,9 @@ This document describes the high-level architecture of Voice Flow, a Tauri v2 de
 |--------|----------|----------------|
 | **Audio Pipeline** | `audio/recorder.rs`, `audio/resampler.rs`, `audio/processor.rs`, `audio/stream_processor.rs`, `audio/beep.rs`, `audio/level_meter.rs` | Capture, process, and manage audio data |
 | **STT Engine** | `stt_engine/sherpa_onnx/`, `stt_engine/cloud/`, `stt_engine/models.rs`, `stt_engine/traits.rs`, `stt_engine/unified_manager.rs` | Convert speech to text using local (sherpa-onnx) or cloud models |
+| **Transformation Policy** | `services/text_transform.rs` | Provider dispatch, timeouts, intent-specific acceptance, original-text fallback across recording, history, and writing actions |
 | **Polish Engine** | `polish_engine/lfm.rs`, `polish_engine/qwen.rs`, `polish_engine/anthropic.rs`, `polish_engine/openai.rs` | Refine transcribed text for accuracy and formatting |
 | **Text Injection** | `text_injector/macos.rs`, `text_injector/windows.rs` | Insert text at current focus, or into a captured macOS Accessibility target |
-| **Ghost** | `ghost/action/`, `ghost/language/` | Unified Ghost concept: Action (macOS computer-use via MCP), Language (habit learning for personalization) |
 | **Settings** | `commands/settings/`, `state/unified_state.rs` | Persist and manage user preferences and hotkeys |
 | **History** | `history/` | Store and retrieve transcription sessions |
 | **UI** | `src/main.tsx`, `src/pill.tsx`, `src/toast.tsx`, `src/contexts/SettingsContext.tsx` | Multi-window interface and notifications |
@@ -52,9 +52,7 @@ apps/desktop/src-tauri/src/
 ├── audio/                # Recording, resampling, VAD, beep, level meter
 ├── stt_engine/           # Local + cloud STT engines
 ├── polish_engine/        # Local + cloud polishing
-├── ghost/                # Unified Ghost concept
-│   ├── action/           # macOS computer-use via Ghost OS MCP server
-│   └── language/         # Language habit learning for personalization
+├── services/             # Transformation, delivery, profiles, diagnostics
 ├── commands/             # Tauri IPC handlers
 ├── state/                # Unified runtime state
 ├── text_injector/        # Platform text injection
@@ -91,3 +89,9 @@ apps/desktop/src-tauri/src/
 | `lib.rs` | Commands registered here, not just in modules |
 | `src/lib/tauri.ts` | All IPC calls through this file |
 | `packages/shared/` | Zero runtime dependencies |
+
+## Product surface and state
+
+The [dictation workspace specification](../feat/dictation-workspace/0.1.0/prd/erd.md) defines the current surface. Home queries backend readiness, retained-history usage aggregates and recent results. Statistics, Dictionary, Snippets, Styles and Vibe coding have direct routes. Advanced retains full profiles, templates, writing actions, media tools and diagnostics. Vibe coding accepts bounded editor metadata through the opt-in authenticated bridge; the backend expires context and scopes it to the recording target. Ghost-Action and Ghost-Language remain deferred drafts; no Ghost modules are part of this architecture.
+
+`workflow_profiles` is the sole persisted profile model. Legacy shortcut maps are migration inputs, never live projections. A recording snapshots its resolved profile once. Provider streams may update previews; only a complete, accepted result reaches final delivery. Local-only processing disables cloud STT and cloud polish without changing retention or context consent. The authenticated TCP developer bridge starts only when `developer_bridge_enabled` is true.

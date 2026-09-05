@@ -20,7 +20,7 @@ export function useRecording() {
       try {
         const settings = await settingsCommands.getSettings();
         const defaultHotkey =
-          settings?.shortcut_profiles?.dictate?.hotkey ||
+          settings?.workflow_profiles?.find((profile) => profile.id === "dictate")?.hotkey ||
           "shift+space";
         setHotkey(defaultHotkey);
       } catch (err) {

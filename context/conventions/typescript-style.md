@@ -45,15 +45,8 @@ Group imports: React core → third-party → app internals.
 Functional components only.
 
 ```typescript
-export function Dashboard() {
-  const { t } = useTranslation();
-  const [stats, setStats] = useState<DashboardStats | null>(null);
-  
-  useEffect(() => {
-    historyCommands.getDashboardStats().then(setStats);
-  }, []);
-  
-  return <div>{/* JSX */}</div>;
+export function ReadinessLabel({ label }: { label: string }) {
+  return <p role="status">{label}</p>;
 }
 ```
 
@@ -209,17 +202,7 @@ Empty catch blocks forbidden.
 
 Vitest + React Testing Library. Mock IPC.
 
-```typescript
-vi.mock("@/lib/tauri", () => ({
-  historyCommands: { getDashboardStats: vi.fn() },
-}));
-
-it("renders data", async () => {
-  vi.mocked(historyCommands.getDashboardStats).mockResolvedValue({ total_count: 14 });
-  render(<Dashboard />);
-  await waitFor(() => expect(screen.getByText("14")).toBeInTheDocument());
-});
-```
+See the [home component tests](../../apps/desktop/src/components/Home/__tests__/Dashboard.test.tsx) for typed IPC mocks, backend readiness rendering, and recovery actions. Test observable behavior and keep mocks at the IPC boundary.
 
 ---
 

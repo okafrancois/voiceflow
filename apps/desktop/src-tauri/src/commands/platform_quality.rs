@@ -1,7 +1,8 @@
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Instant;
 
 use serde::Serialize;
@@ -9,13 +10,13 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 
 use crate::events::EventName;
-use crate::history::{HistoryFilter, RetentionPolicy};
+use crate::history::HistoryFilter;
 use crate::permissions::{PermissionKind, PermissionStatus};
 use crate::services::platform_quality::store::{QualityQuery, QualityStore};
 use crate::services::platform_quality::{
     authorize_loopback_bridge, bridge_endpoint_path, bridge_request_name,
     build_code_aware_instruction, build_diagnostic_report, clear_active_code_context,
-    format_code_aware_transcript, get_active_code_context, parse_bridge_url, preset_contract,
+    format_code_aware_transcript, get_active_code_context, parse_bridge_url,
     set_active_code_context, BridgeEndpoint, BridgeEnvelope, BridgeRequest, BridgeResponse,
     CodeContext, DiagnosticInput, DiagnosticReport, HardwareSnapshot, LastTextVersion,
     LatencySample, MicrophoneCheck, QualityEvent, QualitySummary, SetupPreset,
@@ -34,12 +35,11 @@ pub struct BridgeStatus {
 
 #[tauri::command]
 pub async fn run_setup_diagnostics(
-    state: State<'_, AppState>,
     microphone_sample_ms: Option<u64>,
 ) -> Result<DiagnosticReport, String> {
     let sample_ms = microphone_sample_ms.unwrap_or(0).min(3_000);
     let permission = crate::permissions::check_permission(PermissionKind::Microphone);
-    let microphone = if sample_ms > 0 && permission != PermissionStatus::Granted {
+    let microphone = if permission != PermissionStatus::Granted {
         MicrophoneCheck {
             ready: false,
             device_name: None,
@@ -64,14 +64,6 @@ pub async fn run_setup_diagnostics(
         }
     };
     let hardware = crate::sensors::setup_diagnostics::probe_hardware();
-    let has_cloud_credentials = {
-        let settings = state.settings.lock();
-        settings.cloud_stt_configs.values().any(|config| {
-            !config.api_key.trim().is_empty()
-                && (config.provider_type != "volcengine-streaming"
-                    || !config.app_id.trim().is_empty())
-        })
-    };
     Ok(build_diagnostic_report(DiagnosticInput {
         microphone,
         hardware: HardwareSnapshot {
@@ -79,7 +71,6 @@ pub async fn run_setup_diagnostics(
             logical_cpu_count: hardware.logical_cpu_count,
             architecture: hardware.architecture,
         },
-        has_cloud_credentials,
         latency: None,
     }))
 }
@@ -121,33 +112,8 @@ pub fn apply_setup_preset(
     state: State<'_, AppState>,
     preset: SetupPreset,
 ) -> Result<crate::commands::settings::AppSettings, String> {
-    let contract = preset_contract(preset);
     let previous = state.settings.lock().clone();
-    {
-        let mut settings = state.settings.lock();
-        if contract.cloud_stt_enabled {
-            let active = settings.get_active_cloud_stt_config();
-            if active.api_key.trim().is_empty()
-                || (settings.active_cloud_stt_provider == "volcengine-streaming"
-                    && active.app_id.trim().is_empty())
-            {
-                return Err(
-                    "Maximum Accuracy requires valid credentials for the active cloud STT provider"
-                        .to_string(),
-                );
-            }
-        }
-        settings.cloud_stt_enabled = contract.cloud_stt_enabled;
-        settings.context_capture.application_metadata = contract.window_context_enabled;
-        settings.context_capture.focused_field = contract.window_context_enabled;
-        settings.context_capture.selected_text = contract.window_context_enabled;
-        settings.context_capture.clipboard = contract.clipboard_context_enabled;
-        settings.context_capture.ocr_fallback = contract.ocr_fallback_enabled;
-        settings.window_context_enabled = contract.ocr_fallback_enabled;
-        settings.correction_memory_enabled = contract.correction_memory_enabled;
-        settings.text_retention = retention_from_contract(&contract.text_retention)?;
-        settings.audio_retention = retention_from_contract(&contract.audio_retention)?;
-    }
+    apply_processing_choice(&mut state.settings.lock(), preset)?;
 
     if let Err(error) = crate::commands::settings::save_settings_internal(&app) {
         *state.settings.lock() = previous;
@@ -155,13 +121,6 @@ pub fn apply_setup_preset(
     }
     let settings = state.settings.lock().clone();
     let _ = app.emit(EventName::SETTINGS_CHANGED, settings.clone());
-    let cleanup = state
-        .history_store
-        .lock()
-        .cleanup_retention(settings.text_retention, settings.audio_retention);
-    if let Err(error) = cleanup {
-        tracing::warn!(error = %error, "setup_preset_retention_cleanup_failed");
-    }
     Ok(settings)
 }
 
@@ -260,6 +219,16 @@ async fn execute_bridge_request_inner(
     let state = app
         .try_state::<AppState>()
         .ok_or_else(|| "AppState not available".to_string())?;
+    if !app
+        .state::<AppState>()
+        .settings
+        .lock()
+        .developer_bridge_enabled
+    {
+        return Err(
+            "Enable developer integrations in Advanced before using automation".to_string(),
+        );
+    }
     match request {
         BridgeRequest::Start { profile_id } => {
             let profile = {
@@ -355,6 +324,21 @@ async fn execute_bridge_request_inner(
         BridgeRequest::ClearCodeContext => {
             clear_active_code_context()?;
             Ok(None)
+        }
+        BridgeRequest::SetVibeCoding { enabled } => {
+            crate::commands::settings::update_settings(
+                app.clone(),
+                state,
+                "vibe_coding_enabled".to_string(),
+                serde_json::Value::Bool(*enabled),
+            )?;
+            if !enabled {
+                clear_active_code_context()?;
+            }
+            let status = crate::commands::vibe_coding::status(&app.state::<AppState>())?;
+            Ok(Some(
+                serde_json::to_value(status).map_err(|error| error.to_string())?,
+            ))
         }
         BridgeRequest::FormatCode { text, language } => Ok(Some(serde_json::json!({
             "text": format_code_aware_transcript(text, language.as_deref())
@@ -469,38 +453,87 @@ fn workflow_application_id(app: &AppHandle) -> Option<String> {
         .and_then(|context| context.application_id)
 }
 
-pub fn start_developer_bridge(app: AppHandle) -> Result<BridgeEndpoint, String> {
+#[derive(Default)]
+pub struct DeveloperBridgeRuntime(parking_lot::Mutex<Option<RunningBridge>>);
+
+struct RunningBridge {
+    stop: Arc<AtomicBool>,
+    endpoint: BridgeEndpoint,
+}
+
+pub fn sync_developer_bridge(app: AppHandle) -> Result<(), String> {
+    let runtime = app.state::<DeveloperBridgeRuntime>();
+    let mut running = runtime.0.lock();
+    let enabled = app
+        .state::<AppState>()
+        .settings
+        .lock()
+        .developer_bridge_enabled;
+    if !enabled {
+        if let Some(server) = running.take() {
+            server.stop.store(true, Ordering::SeqCst);
+            let path = bridge_endpoint_path();
+            if crate::services::platform_quality::read_bridge_endpoint(&path)
+                .is_ok_and(|endpoint| endpoint.token == server.endpoint.token)
+            {
+                if let Err(error) = std::fs::remove_file(path) {
+                    tracing::warn!(error = %error, "developer_bridge_endpoint_cleanup_failed");
+                }
+            }
+        }
+        return Ok(());
+    }
+    if running.is_some() {
+        return Ok(());
+    }
     let listener = TcpListener::bind("127.0.0.1:0")
         .map_err(|error| format!("Failed to bind developer bridge: {error}"))?;
-    let address = listener
-        .local_addr()
-        .map_err(|error| format!("Failed to read developer bridge address: {error}"))?;
+    listener
+        .set_nonblocking(true)
+        .map_err(|error| error.to_string())?;
     let endpoint = BridgeEndpoint {
         protocol_version: 1,
-        address: address.to_string(),
+        address: listener
+            .local_addr()
+            .map_err(|error| error.to_string())?
+            .to_string(),
         token: uuid::Uuid::new_v4().simple().to_string(),
         process_id: std::process::id(),
     };
     write_bridge_endpoint(&endpoint)?;
+    let stop = Arc::new(AtomicBool::new(false));
+    let worker_stop = stop.clone();
     let server_endpoint = endpoint.clone();
+    let worker_app = app.clone();
     std::thread::Builder::new()
         .name("voice-flow-developer-bridge".to_string())
         .spawn(move || {
-            for connection in listener.incoming() {
-                match connection {
-                    Ok(stream) => handle_bridge_connection(&app, &server_endpoint, stream),
+            while !worker_stop.load(Ordering::SeqCst) {
+                match listener.accept() {
+                    Ok((stream, _)) => {
+                        handle_bridge_connection(&worker_app, &server_endpoint, stream)
+                    }
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        std::thread::sleep(std::time::Duration::from_millis(25))
+                    }
                     Err(error) => {
-                        tracing::warn!(error = %error, "developer_bridge_accept_failed")
+                        tracing::warn!(error = %error, "developer_bridge_accept_failed");
+                        break;
                     }
                 }
             }
         })
         .map_err(|error| format!("Failed to start developer bridge thread: {error}"))?;
-    Ok(endpoint)
+    tracing::info!(address = %endpoint.address, "developer_bridge_started");
+    *running = Some(RunningBridge { stop, endpoint });
+    Ok(())
 }
 
 fn handle_bridge_connection(app: &AppHandle, endpoint: &BridgeEndpoint, mut stream: TcpStream) {
     let response = (|| -> Result<BridgeResponse, String> {
+        stream
+            .set_read_timeout(Some(std::time::Duration::from_secs(1)))
+            .map_err(|error| error.to_string())?;
         let peer = stream
             .peer_addr()
             .map_err(|error| format!("Failed to read developer bridge peer: {error}"))?;
@@ -552,17 +585,60 @@ fn write_bridge_endpoint(endpoint: &BridgeEndpoint) -> Result<(), String> {
     Ok(())
 }
 
-fn retention_from_contract(value: &str) -> Result<RetentionPolicy, String> {
-    match value {
-        "never" => Ok(RetentionPolicy::Never),
-        "days7" => Ok(RetentionPolicy::Days7),
-        "days30" => Ok(RetentionPolicy::Days30),
-        "days90" => Ok(RetentionPolicy::Days90),
-        "forever" => Ok(RetentionPolicy::Forever),
-        _ => Err(format!("Unknown retention policy: {value}")),
+fn apply_processing_choice(
+    settings: &mut crate::commands::settings::AppSettings,
+    choice: SetupPreset,
+) -> Result<(), String> {
+    match choice {
+        SetupPreset::LocalOnly => {
+            settings.cloud_stt_enabled = false;
+            settings.cloud_polish_enabled = false;
+        }
+        SetupPreset::CloudStt => {
+            let active = settings.get_active_cloud_stt_config();
+            if active.api_key.trim().is_empty()
+                || (settings.active_cloud_stt_provider == "volcengine-streaming"
+                    && active.app_id.trim().is_empty())
+            {
+                return Err("Configure the active cloud transcription provider first".to_string());
+            }
+            settings.cloud_stt_enabled = true;
+        }
     }
+    Ok(())
 }
 
 fn elapsed_millis(started: Instant) -> u64 {
     u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX)
+}
+
+#[cfg(test)]
+mod processing_choice_tests {
+    use super::*;
+
+    #[test]
+    fn local_only_disables_both_cloud_stages_without_changing_retention_or_consent() {
+        let mut settings = crate::commands::settings::AppSettings::default();
+        settings.cloud_stt_enabled = true;
+        settings.cloud_polish_enabled = true;
+        let previous = settings.clone();
+        apply_processing_choice(&mut settings, SetupPreset::LocalOnly).unwrap();
+        assert!(!settings.cloud_stt_enabled);
+        assert!(!settings.cloud_polish_enabled);
+        assert_eq!(settings.text_retention, previous.text_retention);
+        assert_eq!(settings.audio_retention, previous.audio_retention);
+        assert_eq!(settings.context_capture, previous.context_capture);
+        assert_eq!(
+            settings.correction_memory_enabled,
+            previous.correction_memory_enabled
+        );
+    }
+
+    #[test]
+    fn invalid_cloud_choice_leaves_settings_unchanged() {
+        let mut settings = crate::commands::settings::AppSettings::default();
+        let before = serde_json::to_value(&settings).unwrap();
+        assert!(apply_processing_choice(&mut settings, SetupPreset::CloudStt).is_err());
+        assert_eq!(serde_json::to_value(settings).unwrap(), before);
+    }
 }

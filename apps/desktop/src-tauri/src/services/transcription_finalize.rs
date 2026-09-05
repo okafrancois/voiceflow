@@ -8,7 +8,7 @@ pub enum FinalizeResult {
         text: String,
         history_entry_id: Option<String>,
     },
-    TextAlreadyInserted {
+    OutputHandled {
         text: String,
         history_entry_id: Option<String>,
         disposition: DeliveryDisposition,
@@ -20,7 +20,6 @@ pub enum FinalizeResult {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DeliveryDisposition {
     Insert,
-    DirectStreamInserted,
     Preview,
     Copied,
     CopyFailed,
@@ -30,7 +29,6 @@ impl DeliveryDisposition {
     fn initial_history_status(self) -> &'static str {
         match self {
             Self::Insert => "pending_insertion",
-            Self::DirectStreamInserted => "inserted_stream",
             Self::Preview => "not_delivered",
             Self::Copied => "copied",
             Self::CopyFailed => "copy_failed",
@@ -67,28 +65,6 @@ pub fn finalize_successful_transcription(
     )
 }
 
-pub fn finalize_successful_transcription_with_delivery(
-    state: &AppState,
-    raw_text: &str,
-    final_text: &str,
-    polish_time_ms: u64,
-    audio_path: Option<String>,
-    text_already_inserted: bool,
-) -> FinalizeResult {
-    finalize_successful_transcription_for_output(
-        state,
-        raw_text,
-        final_text,
-        polish_time_ms,
-        audio_path,
-        if text_already_inserted {
-            DeliveryDisposition::DirectStreamInserted
-        } else {
-            DeliveryDisposition::Insert
-        },
-    )
-}
-
 pub fn finalize_successful_transcription_for_output(
     state: &AppState,
     raw_text: &str,
@@ -111,7 +87,7 @@ pub fn finalize_successful_transcription_for_output(
     );
 
     if disposition.is_already_delivered() {
-        FinalizeResult::TextAlreadyInserted {
+        FinalizeResult::OutputHandled {
             text: final_text.to_string(),
             history_entry_id,
             disposition,
@@ -151,7 +127,7 @@ mod tests {
     use super::{
         finalize_empty_transcription, finalize_failed_transcription, finalize_silent_recording,
         finalize_successful_transcription, finalize_successful_transcription_for_output,
-        finalize_successful_transcription_with_delivery, DeliveryDisposition, FinalizeResult,
+        DeliveryDisposition, FinalizeResult,
     };
     use crate::history::models::HistoryFilter;
     use crate::history::RetentionPolicy;
@@ -218,43 +194,6 @@ mod tests {
     }
 
     #[test]
-    fn finalize_successful_transcription_skips_delivery_when_text_was_already_inserted() {
-        let state = AppState::new();
-        let audio = NamedTempFile::new().unwrap();
-        let audio_path = audio.path().to_path_buf();
-
-        let action = finalize_successful_transcription_with_delivery(
-            &state,
-            "raw text",
-            "streamed final text",
-            123,
-            Some(audio_path.display().to_string()),
-            true,
-        );
-
-        let history_entry_id = match action {
-            FinalizeResult::TextAlreadyInserted {
-                text,
-                history_entry_id,
-                disposition,
-            } => {
-                assert_eq!(text, "streamed final text");
-                assert_eq!(disposition, DeliveryDisposition::DirectStreamInserted);
-                history_entry_id.expect("retained history entry")
-            }
-            other => panic!("expected already-inserted action, got {other:?}"),
-        };
-        assert!(!audio_path.exists());
-        let entry = state
-            .history_store
-            .lock()
-            .get_entry(&history_entry_id)
-            .unwrap()
-            .expect("saved entry");
-        assert_eq!(entry.delivery_status, "inserted_stream");
-    }
-
-    #[test]
     fn preview_and_copy_have_distinct_delivery_statuses() {
         for (disposition, expected) in [
             (DeliveryDisposition::Preview, "not_delivered"),
@@ -273,7 +212,7 @@ mod tests {
                 disposition,
             );
             let history_entry_id = match action {
-                FinalizeResult::TextAlreadyInserted {
+                FinalizeResult::OutputHandled {
                     history_entry_id, ..
                 } => history_entry_id.expect("retained history entry"),
                 other => panic!("expected non-inserting action, got {other:?}"),

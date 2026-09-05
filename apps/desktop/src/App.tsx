@@ -1,3 +1,4 @@
+import { AdvancedPage } from "./components/Home/AdvancedPage";
 import { memo } from "react";
 import { Routes, Route } from "react-router-dom";
 import { Toaster } from "sonner";
@@ -15,6 +16,10 @@ import { ChangelogPage } from "./components/Home/ChangelogPage";
 import { PolishTemplatesPage } from "./components/Home/PolishTemplatesPage";
 import { DictionaryPage } from "./components/Home/DictionaryPage";
 import { PlatformQualityPage } from "./components/Home/PlatformQualityPage";
+import { SnippetsPage } from "./components/Home/SnippetsPage";
+import { StylesPage } from "./components/Home/StylesPage";
+import { VibeCodingPage } from "./components/Home/VibeCodingPage";
+import { StatisticsPage } from "./components/Home/StatisticsPage";
 import { WorkflowPage } from "./components/Home/WorkflowPage";
 
 function App() {
@@ -98,6 +103,12 @@ function App() {
       <Routes>
         <Route path="/" element={<HomeLayout />}>
           <Route index element={<Dashboard />} />
+          <Route path="advanced" element={<AdvancedPage />} />
+          <Route path="workbench" element={<HistoryPage advanced />} />
+          <Route path="snippets" element={<SnippetsPage />} />
+          <Route path="styles" element={<StylesPage />} />
+          <Route path="vibe-coding" element={<VibeCodingPage />} />
+          <Route path="statistics" element={<StatisticsPage />} />
           <Route path="history" element={<HistoryPage />} />
           <Route path="dictionary" element={<DictionaryPage />} />
           <Route path="workflows" element={<WorkflowPage />} />

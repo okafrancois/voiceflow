@@ -3,5 +3,7 @@ pub mod product_workflows;
 pub mod recording_lifecycle;
 pub mod retry_transcription;
 pub mod shortcut;
+pub mod text_transform;
 pub mod transcription_finalize;
 pub mod transcription_workbench;
+pub mod vibe_coding;

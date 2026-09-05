@@ -318,10 +318,7 @@ fn context_workflow_migration_removes_existing_riff_and_retargets_rules() {
     assert_eq!(json["workflow_profiles"][0]["id"], "dictate");
     assert_eq!(json["workflow_profiles"][0]["polish_template_id"], "agent");
     assert_eq!(json["application_rules"][0]["profile_id"], "dictate");
-    assert_eq!(
-        json["shortcut_profiles"]["dictate"]["action"]["Record"]["polish_template_id"],
-        "agent"
-    );
+    assert!(json.get("shortcut_profiles").is_none());
 }
 
 #[test]
@@ -359,10 +356,48 @@ fn local_polish_runtime_uses_default_when_missing() {
 }
 
 #[test]
-fn direct_stream_typing_defaults_disabled() {
-    let settings: AppSettings = serde_json::from_value(json!({})).unwrap();
+fn retired_streaming_setting_is_ignored_when_loading_old_config() {
+    let settings: AppSettings =
+        serde_json::from_value(json!({"polish_stream_direct_typing_enabled": true})).unwrap();
+    assert!(serde_json::to_value(settings)
+        .unwrap()
+        .get("polish_stream_direct_typing_enabled")
+        .is_none());
+}
 
-    assert!(!settings.polish_stream_direct_typing_enabled);
+#[test]
+fn canonical_profiles_are_the_only_persisted_shortcut_configuration() {
+    let settings = AppSettings::default();
+    let serialized = serde_json::to_value(settings).unwrap();
+    assert!(serialized.get("shortcut_profiles").is_none());
+    assert_eq!(serialized["workflow_profiles"][0]["id"], "dictate");
+}
+
+#[test]
+fn developer_bridge_is_opt_in_for_new_and_existing_configs() {
+    assert!(!AppSettings::default().developer_bridge_enabled);
+    let old: AppSettings = serde_json::from_value(json!({"model": "whisper-base"})).unwrap();
+    assert!(!old.developer_bridge_enabled);
+}
+
+#[test]
+fn vibe_coding_is_opt_in_for_new_and_existing_configs() {
+    assert!(!AppSettings::default().vibe_coding_enabled);
+    let old: AppSettings = serde_json::from_value(json!({"model": "whisper-base"})).unwrap();
+    assert!(!old.vibe_coding_enabled);
+}
+
+#[test]
+fn profile_migration_discards_legacy_map_and_is_idempotent() {
+    let mut value = json!({"shortcut_profiles": {"dictate": {"hotkey": "Cmd+D", "trigger_mode": "toggle", "action": {"Record": {"polish_template_id": "formal"}}}}});
+    assert!(migrate_context_workflows_for_test(&mut value));
+    assert!(value.get("shortcut_profiles").is_none());
+    assert_eq!(value["workflow_profiles"][0]["hotkey"], "Cmd+D");
+    assert_eq!(
+        value["workflow_profiles"][0]["polish_template_id"],
+        "formal"
+    );
+    assert!(!migrate_context_workflows_for_test(&mut value));
 }
 
 #[test]

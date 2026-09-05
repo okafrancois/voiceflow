@@ -1,7 +1,9 @@
+import { Link } from "react-router-dom";
 import { ChangeEvent, useCallback, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   BookOpenText,
+  FloppyDisk,
   MagnifyingGlass,
   Plus,
   Trash,
@@ -39,12 +41,24 @@ function formatLastSeen(
 }
 
 interface DictionaryEntryRowProps {
+  aliasDraft: string;
   entry: DictionaryEntry;
+  isSaving: boolean;
   tab: DictionaryTab;
+  onAliasChange: (term: string, value: string) => void;
   onDelete: (entry: DictionaryEntry, tab: DictionaryTab) => void;
+  onSaveAliases: (entry: DictionaryEntry, value: string) => void;
 }
 
-function DictionaryEntryRow({ entry, tab, onDelete }: DictionaryEntryRowProps) {
+function DictionaryEntryRow({
+  aliasDraft,
+  entry,
+  isSaving,
+  tab,
+  onAliasChange,
+  onDelete,
+  onSaveAliases,
+}: DictionaryEntryRowProps) {
   const { t } = useTranslation();
   const isManual = tab === "manual";
 
@@ -55,7 +69,7 @@ function DictionaryEntryRow({ entry, tab, onDelete }: DictionaryEntryRowProps) {
         "transition-colors hover:bg-secondary/30",
       )}
     >
-      <div className="min-w-0 flex-1">
+      <div className="min-w-0 flex-1 space-y-3">
         <div className="flex min-w-0 flex-wrap items-center gap-2 text-[14px] leading-relaxed">
           <span className="break-words font-medium text-foreground">{entry.term}</span>
         </div>
@@ -72,6 +86,31 @@ function DictionaryEntryRow({ entry, tab, onDelete }: DictionaryEntryRowProps) {
             </>
           )}
         </div>
+        {isManual && (
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <label className="min-w-0 flex-1 space-y-1">
+              <span className="text-xs font-medium text-muted-foreground">{t("dictionary.form.aliases")}</span>
+              <Input
+                aria-label={t("dictionary.form.aliases")}
+                value={aliasDraft}
+                onChange={(event) => onAliasChange(entry.term, event.target.value)}
+                placeholder={t("dictionary.form.aliasesPlaceholder")}
+                className="h-9"
+              />
+            </label>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="sm:mt-5"
+              disabled={isSaving}
+              onClick={() => onSaveAliases(entry, aliasDraft)}
+            >
+              <FloppyDisk className="mr-2 h-4 w-4" />
+              {t("dictionary.actions.saveAliases")}
+            </Button>
+          </div>
+        )}
       </div>
 
       <Button
@@ -123,6 +162,7 @@ export function DictionaryPage() {
   const [activeTab, setActiveTab] = useState<DictionaryTab>("automatic");
   const [autoEntries, setAutoEntries] = useState<DictionaryEntry[]>([]);
   const [manualEntries, setManualEntries] = useState<DictionaryEntry[]>([]);
+  const [aliasDrafts, setAliasDrafts] = useState<Record<string, string>>({});
   const [searchQuery, setSearchQuery] = useState("");
   const [term, setTerm] = useState("");
   const [isLoading, setIsLoading] = useState(true);
@@ -138,6 +178,9 @@ export function DictionaryPage() {
       ]);
       setAutoEntries(automatic);
       setManualEntries(manual);
+      setAliasDrafts(Object.fromEntries(
+        manual.map((entry) => [entry.term, entry.aliases.join(", ")]),
+      ));
     } catch (error) {
       logger.error("failed_to_fetch_dictionary", { error: String(error) });
       showErrorToast(t("dictionary.messages.loadError"));
@@ -166,7 +209,8 @@ export function DictionaryPage() {
     }
 
     return entries.filter((entry) => {
-      return entry.term.toLowerCase().includes(query);
+      return entry.term.toLowerCase().includes(query)
+        || entry.aliases.some((alias) => alias.toLowerCase().includes(query));
     });
   }, [activeTab, autoEntries, manualEntries, searchQuery]);
 
@@ -238,12 +282,34 @@ export function DictionaryPage() {
     }
   };
 
+  const handleSaveAliases = async (entry: DictionaryEntry, value: string) => {
+    const aliases = value
+      .split(/[\n,]/)
+      .map((alias) => alias.trim())
+      .filter(Boolean);
+    setIsSaving(true);
+    try {
+      await dictionaryCommands.updateCustomEntry(entry.term, aliases);
+      await refreshDictionary();
+      showToast(t("dictionary.messages.aliasesSaved"));
+    } catch (error) {
+      logger.error("failed_to_update_dictionary_aliases", {
+        term: entry.term,
+        error: String(error),
+      });
+      showErrorToast(t("dictionary.messages.aliasesError"));
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   return (
     <SettingsPageLayout
       title={t("dictionary.title")}
       description={t("dictionary.description")}
       testId="dictionary-page"
     >
+      <Link to="/snippets" className="text-sm underline underline-offset-4">{t("advanced.snippets")}</Link>
       <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <SegmentedControl
@@ -326,9 +392,16 @@ export function DictionaryPage() {
               {visibleEntries.map((entry) => (
                 <DictionaryEntryRow
                   key={`${activeTab}:${entry.term}`}
+                  aliasDraft={aliasDrafts[entry.term] ?? ""}
                   entry={entry}
+                  isSaving={isSaving}
                   tab={activeTab}
+                  onAliasChange={(entryTerm, value) => setAliasDrafts((current) => ({
+                    ...current,
+                    [entryTerm]: value,
+                  }))}
                   onDelete={handleDelete}
+                  onSaveAliases={(dictionaryEntry, value) => void handleSaveAliases(dictionaryEntry, value)}
                 />
               ))}
             </div>

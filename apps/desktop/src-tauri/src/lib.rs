@@ -292,6 +292,7 @@ pub fn run() {
             correction_learning::commands::delete_auto_dictionary_entry,
             correction_learning::commands::get_custom_dictionary_entries,
             correction_learning::commands::add_custom_dictionary_entry,
+            correction_learning::commands::update_custom_dictionary_entry,
             correction_learning::commands::import_custom_dictionary_csv,
             correction_learning::commands::delete_custom_dictionary_entry,
             correction_learning::commands::open_correction_memory_directory,
@@ -331,10 +332,8 @@ pub fn run() {
             model_cache::preload_polish_model,
             model_cache::unload_polish_model,
             history::get_transcription_history,
+            history::commands::get_history_statistics,
             history::get_transcription_entry,
-            history::get_dashboard_stats,
-            history::get_daily_usage,
-            history::get_engine_usage,
             history::get_retention_status,
             history::get_history_count,
             history::delete_transcription_entry,
@@ -366,6 +365,8 @@ pub fn run() {
             commands::platform_quality::clear_quality_metrics,
             commands::platform_quality::export_quality_metrics,
             commands::platform_quality::execute_bridge_url,
+            commands::vibe_coding::get_vibe_coding_status,
+            commands::vibe_coding::set_vibe_coding_enabled,
             commands::product_workflows::get_workflow_settings,
             commands::product_workflows::capture_workflow_context,
             commands::product_workflows::get_latest_workflow_context,
@@ -385,14 +386,12 @@ pub fn run() {
             commands::product_workflows::replace_voice_action_preview,
             commands::product_workflows::record_workflow_delivery,
             commands::product_workflows::run_quick_control,
+            commands::home::get_dictation_home,
             hotkey::start_hotkey_capture,
             hotkey::stop_hotkey_capture,
             hotkey::cancel_hotkey_capture,
             hotkey::peek_hotkey_capture,
-            hotkey::get_shortcut_profiles,
             hotkey::update_shortcut_profile,
-            hotkey::create_custom_profile,
-            hotkey::delete_custom_profile,
             updater::check_for_update,
             updater::install_update,
         ])
@@ -416,13 +415,9 @@ pub fn run() {
             app.manage(crate::services::product_workflows::WorkflowRuntime::default());
             tracing::info!("app_state_initialized");
 
-            match crate::commands::platform_quality::start_developer_bridge(app.handle().clone()) {
-                Ok(endpoint) => tracing::info!(
-                    address = %endpoint.address,
-                    protocol_version = endpoint.protocol_version,
-                    "developer_bridge_started"
-                ),
-                Err(error) => tracing::warn!(error = %error, "developer_bridge_start_failed"),
+            app.manage(crate::commands::platform_quality::DeveloperBridgeRuntime::default());
+            if let Err(error) = crate::commands::platform_quality::sync_developer_bridge(app.handle().clone()) {
+                tracing::warn!(error = %error, "developer_bridge_start_failed");
             }
 
             {

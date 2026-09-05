@@ -80,18 +80,7 @@ describe("useRecording", () => {
     getSettingsMock.mockReset();
     listenMock.mockClear();
     getSettingsMock.mockResolvedValue({
-      shortcut_profiles: {
-        dictate: {
-          hotkey: "Cmd+Slash",
-          trigger_mode: "hold",
-          action: { Record: { polish_template_id: null } },
-        },
-        riff: {
-          hotkey: "Opt+Slash",
-          trigger_mode: "toggle",
-          action: { Record: { polish_template_id: "filler" } },
-        },
-      },
+      workflow_profiles: [{ id: "dictate", name: "Dictate", hotkey: "Cmd+Slash", trigger_mode: "hold", polish_template_id: null, language: null, translation_target: null, output_action: "insert", code_aware: false, protected: true }],
     });
   });
 

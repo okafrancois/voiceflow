@@ -72,14 +72,19 @@ pub(crate) fn start_recording_sync_internal(
     }
 
     tracing::info!("start_recording_sync_reading_settings");
-    let (context_settings, original_target_enabled) = {
+    let (context_settings, original_target_enabled, vibe_coding_enabled) = {
         let settings = state.settings.lock();
         (
             settings.context_capture.clone(),
             settings.original_target_enabled,
+            settings.vibe_coding_enabled,
         )
     };
-    let captured_application = if context_settings.application_metadata || original_target_enabled {
+    let captured_application = if super::capture::should_capture_application_context(
+        context_settings.application_metadata,
+        original_target_enabled,
+        vibe_coding_enabled,
+    ) {
         crate::sensors::focused_context::capture_application_context()
     } else {
         crate::services::product_workflows::CapturedContext::default()
@@ -152,6 +157,7 @@ pub(crate) fn start_recording_sync_internal(
             enabled: prepared.original_target_enabled,
             mode: prepared.original_target_mode,
             target: original_target,
+            application_id: captured_application.application_id,
         },
     ) {
         crate::commands::window::update_pill_visibility(app);

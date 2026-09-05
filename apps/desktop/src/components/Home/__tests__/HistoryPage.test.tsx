@@ -124,7 +124,7 @@ const entry = {
 function renderPage() {
   return render(
     <ConfirmProvider>
-      <HistoryPage />
+      <HistoryPage advanced />
     </ConfirmProvider>,
   );
 }
@@ -157,6 +157,12 @@ describe("HistoryPage workbench", () => {
     selectExportFileMock.mockResolvedValue(null);
     exportEntryMock.mockResolvedValue("/tmp/transcript.txt");
     getAudioMock.mockRejectedValue("Video playback is unavailable");
+  });
+
+  it("keeps media importing out of basic history", () => {
+    render(<ConfirmProvider><HistoryPage /></ConfirmProvider>);
+    expect(screen.queryByRole("button", { name: "history.workbench.choose" })).not.toBeInTheDocument();
+    expect(listFileJobsMock).not.toHaveBeenCalled();
   });
 
   it("imports a selected media file and refreshes history", async () => {
