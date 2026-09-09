@@ -16,6 +16,7 @@ All notable changes to the desktop application will be documented in this file.
 
 ### Notes
 
+- Validated eleven French profile cases on each of LFM2 2.6B and Qwen3 4B
 - Qwen3 4B prioritizes instruction-following with a bounded reasoning phase;
   polishing can take longer than in previous versions.
 - Output validation uses bounded heuristics. The original transcription remains

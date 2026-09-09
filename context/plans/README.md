@@ -31,7 +31,6 @@ A plan is only completed when all implementation units are closed, verification 
 
 | Plan | Type | Date | Status |
 |------|------|------|--------|
-| [Polish profile structure and v1.2.2](./active/2026-09-09-001-polish-profile-structure-release-plan.md) | fix | 2026-09-09 | Active |
 | [Original Dictation Target](./active/2026-09-04-001-feat-original-dictation-target-plan.md) | feat | 2026-09-04 | Active |
 | [Logging Standardization](./active/2026-04-03-001-fix-logging-standardization-plan.md) | fix | 2026-04-03 | Active |
 | [Multi-Shortcut Profiles](./active/2026-04-20-001-feat-multi-shortcut-profiles-plan.md) | feat | 2026-04-20 | Active |
@@ -40,6 +39,7 @@ A plan is only completed when all implementation units are closed, verification 
 
 | Plan | Type | Date |
 |------|------|------|
+| [Polish profile structure and v1.2.2](./completed/2026-09-09-001-polish-profile-structure-release-plan.md) | fix | 2026-09-09 |
 | [Smooth daily activity curve](./completed/2026-09-05-005-fix-activity-curve-plan.md) | fix | 2026-09-05 |
 | [Opt-in Vibe coding context](./completed/2026-09-05-003-feat-vibe-coding-plan.md) | feat | 2026-09-05 |
 | [Dictation workspace](./completed/2026-09-05-003-feat-dictation-workspace-plan.md) | feat | 2026-09-05 |

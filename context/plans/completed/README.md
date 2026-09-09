@@ -13,6 +13,7 @@ A plan belongs in this directory only when all of the following are true:
 
 ## Completed Plans
 
+- [Polish profile structure and v1.2.2](./2026-09-09-001-polish-profile-structure-release-plan.md) - fix - 2026-09-09
 - [Dictation workspace](./2026-09-05-003-feat-dictation-workspace-plan.md) - feature - 2026-09-05
 - [Workflow library interface](./2026-09-05-003-feat-workflow-library-ui-plan.md) - feature - 2026-09-05
 

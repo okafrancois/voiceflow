@@ -2,7 +2,7 @@
 
 ## Status
 
-Active; implementation and model evaluation verified, release publication pending. See [quality investigation](quality-investigation.md).
+Completed and published in [v1.2.2](https://github.com/okafrancois/voiceflow/releases/tag/v1.2.2). See [quality investigation](quality-investigation.md).
 
 ## Problem
 
@@ -25,3 +25,5 @@ Built-in profiles share conservative cleanup rules with only one sentence of sty
 ## Verification
 
 Rust: 937 tests passed (35 ignored); frontend: 111 tests passed. Eleven French profile cases passed on the installed LFM2 2.6B. Eleven cases also passed on Qwen3 4B. Clippy with all features and denied warnings, Rust formatting, production frontend build, shared typecheck, locale checks and 22 release-contract tests passed. See [quality investigation](quality-investigation.md). Passing fixtures do not imply universal model quality.
+
+The signed universal application was downloaded and validated with codesign, stapler, bundle-version inspection and architecture inspection. Both updater platforms and the live automatic-update endpoint serve 1.2.2.
