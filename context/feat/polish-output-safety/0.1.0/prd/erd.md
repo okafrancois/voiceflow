@@ -51,3 +51,8 @@ Polish may change presentation, but it must not silently change the transcript l
 [Product simplification](../../../product-simplification/0.1.0/prd/erd.md) moves acceptance and provider dispatch into `services/text_transform.rs`. Recording and retries, history re-polish, and quick re-polish use Cleanup or Concise intent. Translation explicitly allows a language change; Reply intentionally allows answering; Rewrite allows more extensive shortening while retaining the applicable language/question guards. Empty output always falls back to the source.
 
 These are bounded regression heuristics, including French/English word scoring and length ratios, not semantic equivalence checks. Original text remains available. Provider-response tests cover history and workflow rejection and explicit translation; existing recording safety tests cover language, shortening, questions, and timing.
+
+
+## Profile-structure extension (2026-09-09)
+
+[Polish profile structure](../../../polish-profile-structure/0.1.0/prd/erd.md) preserves the length thresholds while discounting consecutive identical complete sentences of at least eight words and distinct spoken ordinal markers represented by a complete list. French assistant-answer patterns, lost question marks, extra questions and lost explicit weekday/numeric corrections are rejected. Clear single-value corrections are resolved before inference; the raw transcript remains unchanged for history and fallback. These checks remain bounded heuristics rather than semantic equivalence tests.

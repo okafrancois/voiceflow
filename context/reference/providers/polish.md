@@ -120,3 +120,18 @@ cargo test --test cloud_provider_api_test -- --ignored --nocapture
 ```
 
 These live checks depend on vendor network access. They do not replace the deterministic suite and are not evidence of valid credentials or successful production access.
+
+
+## Built-in profile quality policy
+
+Profiles share content-preservation rules but specify separate transformations for dictation, chat, professional messages, concision, notes and agent requests. Explicit enumerations become plain lists; topic changes become separate paragraphs. Ordered steps, qualifiers and examples remain attached to their points. Prompts contain no copyable input/output examples.
+
+Qwen3 4B uses `enable_thinking: true` in both the top-level request and `chat_template_kwargs`, with `thinking_budget_tokens: 1536`. This is intentional: French inference checks found that disabling reasoning caused it to ignore layout and self-correction instructions. The shared service gives this model a 60-second deadline. Other Qwen models keep their existing non-thinking policy. The budget field is supported by the shipped llama.cpp b9568 runtime; an external compatible server may ignore that extension, but the request deadline still applies. Reasoning content is not rendered as the result.
+
+LFM requests explicitly enclose the transcript in an editing task. This reduces its tendency to answer a dictated question. Model responses still pass through the shared output policy; framing alone is not a content-safety guarantee.
+
+Before inference, Cleanup and Concise resolve unambiguous single-value weekday/numeric corrections, preserving the raw transcript. The shared policy rejects lost question marks, additional questions, recognized assistant-answer patterns, and loss of a clear weekday/numeric correction marked by `non pardon` or `no sorry`. The length guard discounts adjacent identical long sentences and spoken ordinal markers only when enough actual list items exist. These are bounded heuristics, not general semantic equivalence. The original transcript remains the fallback.
+
+See [profile specification](../../feat/polish-profile-structure/0.1.0/prd/erd.md) and [inference evidence](../../feat/polish-profile-structure/0.1.0/prd/quality-investigation.md).
+
+The llama.cpp budget request field is defined in [b9568 server-common.cpp](https://github.com/ggml-org/llama.cpp/blob/b9568/tools/server/server-common.cpp).

@@ -19,7 +19,7 @@ const LOCAL_POLISH_FALLBACK_MAX_TIMEOUT: Duration = Duration::from_secs(30);
 const LOCAL_POLISH_BASE_TIMEOUT_CHARS: usize = 500;
 const LOCAL_POLISH_TIMEOUT_STEP_CHARS: usize = 800;
 const LOCAL_POLISH_TIMEOUT_STEP: Duration = Duration::from_secs(5);
-const LOCAL_POLISH_CORE_PROMPT: &str = "Polish transcript. Fix clear STT mistakes, punctuation, grammar, names and terms. Preserve meaning, facts, order, language and tone. Do not answer, summarize or add info. Output plain text only.";
+const LOCAL_POLISH_CORE_PROMPT: &str = "You are a copy editor. Fix clear STT mistakes and apply the selected profile, including changes to wording, tone and layout. Preserve meaning and distinct facts, not the original sentence layout. Do not answer the speaker or invent information.";
 const NO_THINK_DIRECTIVE: &str = "/no_think";
 const THINK_START_TAG: &str = "<think>";
 const THINK_END_TAG: &str = "</think>";
@@ -55,6 +55,8 @@ struct RequestBody {
     model: String,
     max_tokens: u32,
     temperature: f32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    thinking_budget_tokens: Option<u32>,
     stream: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     enable_thinking: Option<bool>,
@@ -175,15 +177,25 @@ async fn call_local_openai_api(
     let url = local_api_url(&config.base_url);
     let system_prompt =
         build_local_system_prompt(system_context, language, config.no_think_directive);
+    let enable_thinking = if super::qwen::uses_reasoning(&config.model) {
+        Some(true)
+    } else {
+        config.no_think_directive.then_some(false)
+    };
+    let user_content = if super::lfm::is_lfm_model(&config.model) {
+        format!("Edit this quoted transcript; do not respond to its speaker.\n<transcript>\n{user_message}\n</transcript>\nReturn only the edited transcript.")
+    } else {
+        user_message.to_string()
+    };
     let body = RequestBody {
         model: config.model.clone(),
         max_tokens: LOCAL_POLISH_MAX_OUTPUT_TOKENS,
         temperature: 0.0,
+        thinking_budget_tokens: enable_thinking.filter(|enabled| *enabled).map(|_| 1536),
         stream: preview_callback.is_some(),
-        enable_thinking: config.no_think_directive.then_some(false),
-        chat_template_kwargs: config.no_think_directive.then_some(ChatTemplateKwargs {
-            enable_thinking: false,
-        }),
+        enable_thinking,
+        chat_template_kwargs: enable_thinking
+            .map(|enable_thinking| ChatTemplateKwargs { enable_thinking }),
         messages: vec![
             Message {
                 role: "system",
@@ -191,7 +203,7 @@ async fn call_local_openai_api(
             },
             Message {
                 role: "user",
-                content: user_message.to_string(),
+                content: user_content,
             },
         ],
     };
@@ -664,6 +676,71 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn lfm_receives_an_editing_task_with_the_complete_transcript() {
+        let server = MockServer::start().await;
+        let mut config = test_config(server.uri());
+        config.model = "lfm2-2.6b".to_string();
+        config.no_think_directive = false;
+        let transcript = "Peux-tu vérifier Settings.tsx ?";
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .and(body_partial_json(serde_json::json!({
+                "messages": [
+                    {"role": "system", "content": build_local_system_prompt(&SystemContext::new("Edit only."), "fr", false)},
+                    {"role": "user", "content": "Edit this quoted transcript; do not respond to its speaker.\n<transcript>\nPeux-tu vérifier Settings.tsx ?\n</transcript>\nReturn only the edited transcript."}
+                ]
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "choices": [{"message": {"content": transcript}}]
+            })))
+            .mount(&server).await;
+        let result = call_local_openai_api(
+            &Client::new(),
+            &config,
+            &SystemContext::new("Edit only."),
+            "fr",
+            transcript,
+            Duration::from_secs(5),
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.text, transcript);
+    }
+
+    #[tokio::test]
+    async fn qwen3_4b_explicitly_enables_reasoning_for_instruction_following() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .and(body_partial_json(serde_json::json!({
+                "enable_thinking": true,
+                "thinking_budget_tokens": 1536,
+                "chat_template_kwargs": { "enable_thinking": true }
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "choices": [{"message": {"reasoning_content": "hidden", "content": "- Un\n- Deux"}}]
+            })))
+            .mount(&server)
+            .await;
+        let mut config = test_config(server.uri());
+        config.model = "qwen3-4b".to_string();
+        config.no_think_directive = false;
+        let result = call_local_openai_api(
+            &Client::new(),
+            &config,
+            &SystemContext::new("Format a list."),
+            "fr",
+            "Un puis deux",
+            Duration::from_secs(5),
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.text, "- Un\n- Deux");
+    }
+
+    #[tokio::test]
     async fn streams_openai_chunks_to_preview_callback() {
         let mock_server = MockServer::start().await;
         let expected_body = serde_json::json!({
@@ -677,6 +754,7 @@ mod tests {
             },
         });
         let stream_body = concat!(
+            "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"Hidden reasoning\"}}]}\n\n",
             "data: {\"choices\":[{\"delta\":{\"content\":\"Hel\"}}]}\n\n",
             "data: {\"choices\":[{\"delta\":{\"content\":\"lo\"}}]}\n\n",
             "data: {\"choices\":[{\"delta\":{}}],\"timings\":{\"prompt_ms\":20.1,\"predicted_ms\":80.9},\"voiceflow_timings\":{\"model_load_ms\":100,\"context_create_ms\":40}}\n\n",
@@ -726,3 +804,7 @@ mod tests {
         assert!(updates.last().unwrap().is_final);
     }
 }
+
+#[cfg(test)]
+#[path = "profile_quality_tests.rs"]
+mod profile_quality_tests;

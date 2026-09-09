@@ -30,13 +30,15 @@ impl PolishEngine for QwenPolishEngine {
 
     async fn polish(&self, request: PolishRequest) -> Result<PolishResult, String> {
         let model_name = request.model_name.clone().ok_or("Model name required")?;
+        let model_alias = Self::model_alias(&model_name);
+        let no_think_directive = !super::uses_reasoning(&model_alias);
         let config = LocalHttpPolishConfig {
             engine_type: PolishEngineType::Qwen,
             engine_label: "polish:qwen",
-            model_alias: Self::model_alias(&model_name),
+            model_alias,
             model_filename: model_name,
             min_model_size_mb: 400,
-            no_think_directive: true,
+            no_think_directive,
         };
 
         polish_via_local_http(request, config).await

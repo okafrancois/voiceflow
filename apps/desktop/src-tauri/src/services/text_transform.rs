@@ -1,3 +1,5 @@
+mod corrections;
+
 use crate::polish_engine::{PolishRequest, PolishResult, UnifiedPolishManager};
 use crate::state::app_state::AppState;
 use std::time::Duration;
@@ -40,6 +42,14 @@ pub fn accept_output(
     (text.to_string(), reason)
 }
 
+pub(crate) fn prepare_transcript(text: &str, intent: TransformIntent) -> String {
+    if matches!(intent, TransformIntent::Cleanup | TransformIntent::Concise) {
+        corrections::resolve(text)
+    } else {
+        text.to_string()
+    }
+}
+
 /// All product entry points use this service; engines only implement provider protocols.
 pub async fn transform_text(
     state: &AppState,
@@ -59,8 +69,11 @@ pub async fn transform_text(
         )
     };
     let original = request.text.clone();
+    request.text = prepare_transcript(&original, intent);
     let timeout = if cloud_enabled {
         Duration::from_secs(60)
+    } else if crate::polish_engine::qwen::uses_reasoning(&model_id) {
+        LOCAL_POLISH_MAX_TIMEOUT
     } else {
         local_polish_timeout(&original)
     };
@@ -196,12 +209,21 @@ fn is_answer_like_text(text: &str) -> bool {
                 "is not ready",
                 "i think",
                 "i believe",
+                "je ne peux pas",
+                "je peux vous aider",
+                "je peux t'aider",
+                "je suis désolé",
+                "i cannot",
+                "i can help",
             ],
         )
 }
 
 pub(crate) fn should_reject_question_answer_polish(input: &str, output: &str) -> bool {
-    is_question_like_text(input) && !has_question_mark(output) && is_answer_like_text(output)
+    (has_question_mark(input) && !has_question_mark(output))
+        || (is_question_like_text(input)
+            && is_answer_like_text(output)
+            && !is_answer_like_text(input))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -249,6 +271,68 @@ fn meaningful_char_count(text: &str) -> usize {
         .count()
 }
 
+/// Discount only adjacent, identical complete sentences, never scattered words or
+/// short repeated steps. This changes the length baseline, not the transcript.
+fn repetition_adjusted_char_count(text: &str) -> usize {
+    let mut previous = "";
+    text.split_inclusive(['.', '!', '?', '。', '！', '？'])
+        .map(|part| {
+            let sentence = part.trim();
+            let complete = sentence.ends_with(['.', '!', '?', '。', '！', '？']);
+            let duplicate =
+                complete && sentence.split_whitespace().count() >= 8 && sentence == previous;
+            previous = sentence;
+            if duplicate {
+                0
+            } else {
+                meaningful_char_count(part)
+            }
+        })
+        .sum()
+}
+
+/// Spoken ordinal words carry layout rather than facts when represented by
+/// actual list items. Discount only repeated markers, never ordinary prose.
+fn enumeration_marker_discount(input: &str, output: &str) -> usize {
+    let list_items = output
+        .lines()
+        .filter(|line| {
+            let line = line.trim_start();
+            line.starts_with("- ")
+                || line.starts_with("• ")
+                || line
+                    .split_once(". ")
+                    .is_some_and(|(prefix, _)| prefix.parse::<usize>().is_ok())
+        })
+        .count();
+    if list_items < 2 {
+        return 0;
+    }
+    let markers: std::collections::HashSet<_> = input
+        .split(|c: char| !c.is_alphabetic())
+        .map(str::to_lowercase)
+        .filter(|word| {
+            matches!(
+                word.as_str(),
+                "premièrement"
+                    | "deuxièmement"
+                    | "troisièmement"
+                    | "quatrièmement"
+                    | "cinquièmement"
+                    | "firstly"
+                    | "secondly"
+                    | "thirdly"
+                    | "fourthly"
+                    | "fifthly"
+            )
+        })
+        .collect();
+    if markers.len() < 2 || list_items < markers.len() {
+        return 0;
+    }
+    markers.iter().map(|word| word.chars().count()).sum()
+}
+
 pub(crate) fn rejection_reason(
     input: &str,
     output: &str,
@@ -262,6 +346,17 @@ pub(crate) fn rejection_reason(
     }
     if should_reject_question_answer_polish(input, output) {
         return Some("polish answered dictated question");
+    }
+
+    if matches!(intent, TransformIntent::Cleanup | TransformIntent::Concise)
+        && corrections::lost(input, output)
+    {
+        return Some("polish lost an explicit correction");
+    }
+
+    let question_count = |text: &str| text.chars().filter(|c| matches!(c, '?' | '？')).count();
+    if question_count(input) > 0 && question_count(output) > question_count(input) {
+        return Some("polish added questions");
     }
 
     if intent != TransformIntent::Translate {
@@ -288,7 +383,11 @@ pub(crate) fn rejection_reason(
         } else {
             0.55
         };
-        if (output_chars as f64) < (input_chars as f64 * minimum_ratio) {
+        if (output_chars as f64)
+            < (repetition_adjusted_char_count(input)
+                .saturating_sub(enumeration_marker_discount(input, output)) as f64
+                * minimum_ratio)
+        {
             return Some("polish removed too much transcript content");
         }
     }
@@ -299,6 +398,148 @@ pub(crate) fn rejection_reason(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn accepts_cleanup_of_consecutive_duplicate_sentences() {
+        let sentence = "Je veux vérifier le suivi des événements et les règles de sécurité.";
+        let input = format!("{sentence} {sentence} {sentence}");
+        let (output, reason) = accept_output(&input, sentence, TransformIntent::Cleanup);
+        assert_eq!(reason, None);
+        assert_eq!(output, sentence);
+    }
+
+    #[test]
+    fn repetition_discount_does_not_hide_distinct_requirements() {
+        let repeated = "Je veux vérifier le suivi des événements et les règles de sécurité.";
+        let distinct = "Il faut conserver les identifiants des utilisateurs sans les transmettre au serveur. Il faut également tester la suppression des fichiers temporaires et documenter toutes les erreurs de connexion.";
+        let input = format!("{repeated} {repeated} {repeated} {distinct}");
+        assert_eq!(
+            rejection_reason(&input, repeated, TransformIntent::Cleanup),
+            Some("polish removed too much transcript content")
+        );
+    }
+
+    #[test]
+    fn accepts_list_without_spoken_enumeration_markers() {
+        let input = "Je veux vérifier trois points. Premièrement, le tracking des événements. Deuxièmement, la sécurité des données. Troisièmement, les nouvelles fonctionnalités de la version 1.2.2.";
+        let output = "- tracking des événements\n- sécurité des données\n- nouvelles fonctionnalités de la version 1.2.2";
+        assert_eq!(
+            rejection_reason(input, output, TransformIntent::Cleanup),
+            None
+        );
+    }
+
+    #[test]
+    fn repetition_baseline_preserves_changed_facts_and_short_steps() {
+        for input in [
+            "Tourne à gauche. Tourne à gauche. Tourne à gauche.",
+            "Il faut conserver les données pendant exactement 30 jours. Il faut conserver les données pendant exactement 60 jours.",
+            "Il faut conserver les données et transmettre les identifiants au serveur. Il faut conserver les données et ne pas transmettre les identifiants au serveur.",
+            "Je veux vérifier le suivi des événements et les règles de sécurité",
+        ] {
+            assert_eq!(repetition_adjusted_char_count(input), meaningful_char_count(input));
+        }
+    }
+
+    #[test]
+    fn rejects_french_assistant_answers_and_invented_question_tasks() {
+        let input = "Est-ce que tu peux vérifier si la sécurité de cette application est suffisante pour publier la version 1.2.2 ?";
+        for output in [
+            "Je ne peux pas vérifier directement la sécurité de l'application. Cependant, je peux vous aider à analyser les aspects de sécurité.",
+            "Je peux vous aider à vérifier la sécurité. Quels aspects souhaitez-vous examiner ?",
+            "- Vérifier la sécurité de l'application version 1.2.2\n- Documenter les résultats et confirmer les protocoles.",
+        ] {
+            assert_eq!(rejection_reason(input, output, TransformIntent::Cleanup),
+                Some("polish answered dictated question"));
+        }
+    }
+
+    #[test]
+    fn resolves_unambiguous_single_value_corrections_before_inference() {
+        assert_eq!(
+            prepare_transcript(
+                "On se retrouve mardi non pardon mercredi à 14 heures.",
+                TransformIntent::Cleanup
+            ),
+            "On se retrouve mercredi à 14 heures."
+        );
+        assert_eq!(
+            prepare_transcript(
+                "Le budget est de 250 non pardon 300 euros.",
+                TransformIntent::Concise
+            ),
+            "Le budget est de 300 euros."
+        );
+        let ambiguous = "Je pense non pardon je sais que le serveur est prêt.";
+        assert_eq!(
+            prepare_transcript(ambiguous, TransformIntent::Cleanup),
+            ambiguous
+        );
+        let reply = "On se retrouve mardi non pardon mercredi.";
+        assert_eq!(prepare_transcript(reply, TransformIntent::Reply), reply);
+    }
+
+    #[test]
+    fn rejects_lost_explicit_self_correction() {
+        let input = "Salut Camille, on se retrouve mardi non pardon mercredi à 14 heures au café République, ça te va ?";
+        let wrong =
+            "Salut Camille, on se retrouve mardi à 14 heures au café République, ça te va ?";
+        assert_eq!(
+            rejection_reason(input, wrong, TransformIntent::Cleanup),
+            Some("polish lost an explicit correction")
+        );
+        let correct =
+            "Salut Camille, on se retrouve mercredi à 14 heures au café République, ça te va ?";
+        assert_eq!(
+            rejection_reason(input, correct, TransformIntent::Cleanup),
+            None
+        );
+    }
+
+    #[test]
+    fn rejects_invented_question_expansion() {
+        let input = "Peux-tu vérifier la sécurité de cette application avant la publication de la version 1.2.2 ?";
+        let output = "Peux-tu vérifier les vulnérabilités connues de cette application ? Peux-tu confirmer les protocoles de sécurité ? Peux-tu fournir un rapport des risques ?";
+        assert_eq!(
+            rejection_reason(input, output, TransformIntent::Cleanup),
+            Some("polish added questions")
+        );
+    }
+
+    #[test]
+    fn list_discount_requires_a_complete_list_and_keeps_distinct_content() {
+        let input = "Premièrement vérifier les événements. Deuxièmement contrôler les accès. Troisièmement conserver les journaux pendant 30 jours et vérifier les permissions de chaque utilisateur.";
+        assert_eq!(
+            enumeration_marker_discount(input, "Premièrement vérifier les événements."),
+            0
+        );
+        assert_eq!(
+            enumeration_marker_discount(input, "- Événements\n- Accès"),
+            0
+        );
+        assert_eq!(
+            rejection_reason(
+                input,
+                "- Événements\n- Accès\n- Journaux",
+                TransformIntent::Cleanup
+            ),
+            Some("polish removed too much transcript content")
+        );
+    }
+
+    #[test]
+    fn accepts_dictated_answers_and_explicit_reply_intent() {
+        let text = "Je ne peux pas vérifier cette application. Peux-tu demander à Camille ?";
+        assert_eq!(rejection_reason(text, text, TransformIntent::Cleanup), None);
+        assert_eq!(
+            rejection_reason(
+                "Peux-tu vérifier cette application ?",
+                "Je peux vous aider.",
+                TransformIntent::Reply
+            ),
+            None
+        );
+    }
 
     #[test]
     fn unsafe_cleanup_returns_original_text() {

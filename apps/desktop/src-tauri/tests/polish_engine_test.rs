@@ -230,16 +230,17 @@ fn test_default_prompts_require_stt_correction_and_plain_text() {
             "{name} default prompt must forbid rich formatting by default",
         );
         assert!(
-            prompt.contains("Do not use Markdown syntax"),
+            prompt.contains("Do not use emphasis"),
             "{name} default prompt must forbid Markdown syntax",
         );
         assert!(
             prompt.contains("Do not ask the user to provide text"),
             "{name} default prompt must preserve short command-like text",
         );
-        assert!(
-            prompt.contains("\"继续\" → \"继续\""),
-            "{name} default prompt must include a regression example for short continuation text",
+        assert_eq!(
+            prompt,
+            voiceflow_lib::polish_engine::DEFAULT_POLISH_PROMPT,
+            "{name} must share the canonical example-free default"
         );
     }
 }

@@ -101,6 +101,7 @@ Versioned feature specs with verification status. Each lives under `feat/<name>/
 
 | Feature | Version | Status |
 |---------|---------|--------|
+| [Polish profile structure](./feat/polish-profile-structure/0.1.0/prd/erd.md) | 0.1.0 | Active |
 | [Original Dictation Target](./feat/original-dictation-target/0.1.0/prd/erd.md) | 0.1.0 | Active |
 | [Website Homepage Redesign](./feat/website-homepage/0.1.0/prd/erd.md) | 0.1.0 | Active |
 | [Cloud Service Tab UI](./feat/cloud-service/1.0.0/prd/erd.md) | 1.0.0 | Active |

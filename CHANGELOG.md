@@ -2,6 +2,25 @@
 
 All notable changes to the desktop application will be documented in this file.
 
+## v1.2.2 (2026-09-09)
+
+### Fixes
+
+- Give all six polish profiles explicit rewriting and plain-text layout rules
+- Turn spoken enumerations into lists and separate unrelated topics
+- Resolve explicit weekday and numeric self-corrections before polishing
+- Enable bounded reasoning for Qwen3 4B and clarify the editing task for LFM
+- Preserve valid lists and repeated-sentence cleanup in output validation
+- Reject added questions, assistant replies and lost explicit corrections
+- Share one example-free default prompt across local model families
+
+### Notes
+
+- Qwen3 4B prioritizes instruction-following with a bounded reasoning phase;
+  polishing can take longer than in previous versions.
+- Output validation uses bounded heuristics. The original transcription remains
+  available when a model response is rejected.
+
 ## v1.2.1 (2026-09-05)
 
 ### Fixes
