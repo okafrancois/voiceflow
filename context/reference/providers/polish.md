@@ -124,7 +124,7 @@ These live checks depend on vendor network access. They do not replace the deter
 
 ## Built-in profile quality policy
 
-Profiles share content-preservation rules but specify separate transformations for dictation, chat, professional messages, concision, notes and agent requests. Explicit enumerations become plain lists; topic changes become separate paragraphs. Ordered steps, qualifiers and examples remain attached to their points. Prompts contain no copyable input/output examples.
+Version 1.2.3 restores the six v1.2.1 built-in prompts and conservative shared local/cloud instructions after v1.2.2 caused unwanted lists. Automatic enumeration and paragraph formatting is limited again; Structured Notes retains its historical list-oriented style. The family defaults still share Clean Dictation, with no copyable input/output examples. The v1.2.2 transcript preparation, output guards and model request policies below remain in place.
 
 Qwen3 4B uses `enable_thinking: true` in both the top-level request and `chat_template_kwargs`, with `thinking_budget_tokens: 1536`. This is intentional: French inference checks found that disabling reasoning caused it to ignore layout and self-correction instructions. The shared service gives this model a 60-second deadline. Other Qwen models keep their existing non-thinking policy. The budget field is supported by the shipped llama.cpp b9568 runtime; an external compatible server may ignore that extension, but the request deadline still applies. Reasoning content is not rendered as the result.
 

@@ -10,7 +10,7 @@ Built-in profiles share conservative cleanup rules with only one sentence of sty
 
 ## Acceptance criteria
 
-1. Clean Dictation converts explicit enumerations to plain lists and separates topic changes into distinct paragraphs or list items, while keeping casual tone.
+1. Clean Dictation converts explicit enumerations to plain lists and separates topic changes into distinct paragraphs, while keeping casual tone.
 2. Chat produces a natural sendable message; Formal rewrites oral phrasing professionally without invented greetings or sign-offs; Concise removes redundant wording without losing distinct facts.
 3. Structured Notes groups related points under labels derived only from dictated content; Agent separates the stated task, constraints and verification requirements only when present.
 4. Steps retain dependency/order, examples stay with their point, and names, numbers, negation, uncertainty, file names and commands survive.
@@ -27,3 +27,13 @@ Built-in profiles share conservative cleanup rules with only one sentence of sty
 Rust: 937 tests passed (35 ignored); frontend: 111 tests passed. Eleven French profile cases passed on the installed LFM2 2.6B. Eleven cases also passed on Qwen3 4B. Clippy with all features and denied warnings, Rust formatting, production frontend build, shared typecheck, locale checks and 22 release-contract tests passed. See [quality investigation](quality-investigation.md). Passing fixtures do not imply universal model quality.
 
 The signed universal application was downloaded and validated with codesign, stapler, bundle-version inspection and architecture inspection. Both updater platforms and the live automatic-update endpoint serve 1.2.2.
+
+## v1.2.3 regression contract
+
+Prose is the default for every profile. A question, conversational message, narrative, inline conjunction, or context followed by a request must not become a list. Topic changes use paragraphs. Lists require a clearly announced enumeration of independent items, explicit ordinal markers, or a spoken request for list formatting. Agent instructions may group explicitly identified constraints and checks, but ordinary requests remain prose. Real inference checks must assert both required lists and forbidden lists across all six profiles; paragraph assertions cannot be satisfied by bullet counts.
+
+## Authorized v1.2.3 rollback
+
+The user accepted restoring the six v1.2.1 built-in prompts and shared provider core instructions, with their limited automatic formatting. The stricter structure contract above remains a deferred target, not a claim for this release. Keep its full inference suite and add a separate prose regression gate covering ordinary narratives, questions, context with a request, chat, professional text and concision. Retain the v1.2.2 backend correction/safety changes and model request policy. No changes to custom prompt storage.
+
+Rollback verification: exact source comparison against v1.2.1; 15 ordinary-input cases across five non-notes profiles passed on each of LFM2 2.6B and Qwen3 4B without safety fallback. Structured Notes retains its historical list style and is covered only by the deferred full quality suite. Rust: 937 passed, 36 ignored; frontend: 111 passed; Clippy, formatting, frontend build, shared typecheck, i18n, 22 release tests and markdown links passed. Publication pending.

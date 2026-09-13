@@ -2,6 +2,18 @@
 
 All notable changes to the desktop application will be documented in this file.
 
+## v1.2.3 (2026-09-13)
+
+### Fixes
+
+- Restore the six built-in polish profile prompts and shared provider instructions from v1.2.1 to remove the aggressive list formatting introduced in v1.2.2.
+- Retain the transcription self-correction and output safety improvements from v1.2.2.
+
+### Notes
+
+- This is a conservative prompt rollback. Automatic list and paragraph formatting returns to its earlier, limited behavior. Structured Notes retains its historical list-oriented style.
+- Add real-model regression checks for prose, alongside the retained stricter structure suite for future improvements.
+
 ## v1.2.2 (2026-09-09)
 
 ### Fixes
