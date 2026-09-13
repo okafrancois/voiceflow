@@ -1,8 +1,8 @@
 # Polish profile quality investigation
 
-## Outcome
+## v1.2.2 outcome (superseded)
 
-All six profiles now have explicit rewriting and layout instructions. Local model-family defaults share the canonical example-free Clean Dictation prompt. The backend resolves clear weekday/numeric corrections before inference and retains the raw transcript for history and fallback.
+Version 1.2.2 gave all six profiles explicit rewriting and layout instructions. Local model-family defaults share the canonical example-free Clean Dictation prompt. The backend resolves clear weekday/numeric corrections before inference and retains the raw transcript for history and fallback.
 
 The installed LFM2-2.6B-Q4_K_M passed all eleven French profile cases after the editing envelope and correction preparation were added. Qwen3-4B-Q4_K_M also passed all eleven cases with bounded reasoning. The LFM suite took 11.56 seconds and the Qwen suite 255.66 seconds on this machine while build verification was also running; these are whole-suite durations, not latency guarantees. This is sample-based quality evidence, not a general semantic guarantee.
 
@@ -32,7 +32,7 @@ VOICEFLOW_QUALITY_BASE_URL=http://127.0.0.1:18083/v1 VOICEFLOW_QUALITY_MODEL=lfm
 
 `VOICEFLOW_QUALITY_CASE` optionally selects one named case for diagnosis; unmatched names fail. Missing runtime/model configuration fails when the ignored suite is explicitly invoked.
 
-The eleven evaluations cover all six profiles: explicit lists, topic changes, self-correction, professional requests, concision, commands and uncertainty, and dictated questions. Assertions accept equivalent French wording (`tracking`/`suivi`, `pas confirmé`/`non confirmé`) and either paragraphs or distinct list items for topic separation. Formal writing is not required to be shorter; that requirement applies to Concise. These corrections to the original assertions avoid treating valid paraphrases as product failures. Every model result is printed for human inspection.
+The eleven evaluations cover all six profiles: explicit lists, topic changes, self-correction, professional requests, concision, commands and uncertainty, and dictated questions. The original assertions accepted equivalent French wording (`tracking`/`suivi`, `pas confirmé`/`non confirmé`) and either paragraphs or distinct list items for topic separation. Accepting list items for topic separation was a validation error: it concealed unwanted lists. Formal writing is not required to be shorter; that requirement applies to Concise. Equivalent wording remains acceptable, but formatting checks must distinguish prose from lists. Every model result is printed for human inspection.
 
 ## Deterministic verification and limits
 
@@ -43,3 +43,20 @@ The eleven evaluations cover all six profiles: explicit lists, topic changes, se
 - Family-default tests now require the canonical example-free prompt instead of requiring the old copyable continuation example, which contradicted the output-safety specification.
 
 Length ratios, question counts and lexical correction guards are bounded heuristics. They cannot prove that arbitrary model output preserves every fact. External servers may ignore the llama.cpp reasoning-budget extension; the deadline still applies. Other model families and cloud models were not evaluated with real inference in this task. No selected model is replaced automatically.
+
+## v1.2.3 regression and authorized rollback
+
+The user reported unwanted lists in ordinary speech after v1.2.2. Shared list imperatives and repeated profile-specific bullet instructions overrode the weak prose guidance. The original suite lacked negative list assertions and even accepted a bullet before a single question.
+
+New real-inference checks reproduced the problem in all six profiles for an ordinary narrative. Three prompt-only candidates could not jointly preserve prose, explicit enumerations and paragraph breaks on LFM. Their changes were reverted under the recovery protocol. The user then explicitly approved restoring the v1.2.1 prompts, accepting their weaker automatic formatting.
+
+The six built-in definitions and shared local/cloud core prompts now exactly match v1.2.1. The 1.2.2 correction preparation, acceptance guards, LFM envelope and Qwen reasoning policy remain. Structured Notes retains its historical list-oriented instruction, including a possible inline bullet in an ordinary narrative; this rollback is not a claim that every profile always avoids lists.
+
+The full `french_profile_quality` suite retains the stronger target, adds negative cases for all six profiles, and requires actual paragraphs for topic separation. The separate `french_prose_regression` release gate tests delivered text for three ordinary-input cases across the five non-notes profiles. It uses the same acceptance/fallback policy as production; final runs used no fallback. Fifteen cases passed on LFM2 2.6B in 19.38 seconds and fifteen on Qwen3 4B in 218.11 seconds. These durations are observations, not latency guarantees.
+
+```sh
+VOICEFLOW_QUALITY_BASE_URL=http://127.0.0.1:18082/v1 VOICEFLOW_QUALITY_MODEL=qwen3-4b cargo test --lib french_prose_regression -- --ignored --nocapture
+VOICEFLOW_QUALITY_BASE_URL=http://127.0.0.1:18083/v1 VOICEFLOW_QUALITY_MODEL=lfm2-2.6b cargo test --lib french_prose_regression -- --ignored --nocapture
+```
+
+Future formatting work must require both positive and negative cases before claiming improvement. A passing fallback is evidence about delivered-text safety, not about model editing quality. The full stricter suite is a deferred target for this user-authorized rollback.

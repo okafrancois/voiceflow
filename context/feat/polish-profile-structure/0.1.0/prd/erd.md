@@ -2,7 +2,7 @@
 
 ## Status
 
-Completed and published in [v1.2.2](https://github.com/okafrancois/voiceflow/releases/tag/v1.2.2). See [quality investigation](quality-investigation.md).
+Initially published in [v1.2.2](https://github.com/okafrancois/voiceflow/releases/tag/v1.2.2); its profile prompts were rolled back in [v1.2.3](https://github.com/okafrancois/voiceflow/releases/tag/v1.2.3) after unwanted lists were reported. See [quality investigation](quality-investigation.md).
 
 ## Problem
 
@@ -36,4 +36,4 @@ Prose is the default for every profile. A question, conversational message, narr
 
 The user accepted restoring the six v1.2.1 built-in prompts and shared provider core instructions, with their limited automatic formatting. The stricter structure contract above remains a deferred target, not a claim for this release. Keep its full inference suite and add a separate prose regression gate covering ordinary narratives, questions, context with a request, chat, professional text and concision. Retain the v1.2.2 backend correction/safety changes and model request policy. No changes to custom prompt storage.
 
-Rollback verification: exact source comparison against v1.2.1; 15 ordinary-input cases across five non-notes profiles passed on each of LFM2 2.6B and Qwen3 4B without safety fallback. Structured Notes retains its historical list style and is covered only by the deferred full quality suite. Rust: 937 passed, 36 ignored; frontend: 111 passed; Clippy, formatting, frontend build, shared typecheck, i18n, 22 release tests and markdown links passed. Publication pending.
+Rollback verification: exact source comparison against v1.2.1; 15 ordinary-input cases across five non-notes profiles passed on each of LFM2 2.6B and Qwen3 4B without safety fallback. Structured Notes retains its historical list style and is covered only by the deferred full quality suite. Rust: 937 passed, 36 ignored; frontend: 111 passed; Clippy, formatting, frontend build, shared typecheck, i18n, 22 release tests and markdown links passed. Published in [v1.2.3](https://github.com/okafrancois/voiceflow/releases/tag/v1.2.3). The downloaded universal app passed signature and notarization checks, its executable contains the restored prompts, and the live updater serves 1.2.3.

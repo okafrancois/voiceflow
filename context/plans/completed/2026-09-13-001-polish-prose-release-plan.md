@@ -1,7 +1,7 @@
 ---
 title: Restore conservative polish prompts and release v1.2.3
 type: fix
-status: active
+status: completed
 date: 2026-09-13
 ---
 
@@ -18,8 +18,8 @@ Built-in prompts, inference regression checks, documentation and signed macOS re
 - [x] Add negative formatting cases and reproduce the failure on the installed LFM model.
 - [x] Restore the six built-in and shared provider prompts exactly from v1.2.1.
 - [x] Verify the delivered-prose rollback gate on LFM and Qwen.
-- [ ] Run backend and release checks, bump version and publish the signed release.
-- [ ] Verify the published artifacts and updater; record evidence.
+- [x] Run backend and release checks, bump version and publish the signed release.
+- [x] Verify the published artifacts and updater; record evidence.
 
 ## System-wide impact
 
@@ -54,3 +54,13 @@ The rollback gate checks the delivered output (including the existing safety fal
 Rollback verification in progress: exact source comparison confirms all six built-in definitions and both provider core prompts match v1.2.1. Rust: 937 passed, 36 ignored; Clippy all features with denied warnings passed; frontend: 111 passed; production frontend build, shared typecheck and i18n passed. LFM final delivered-prose gate: 15/15 passed without safety fallback. The first Qwen diagnostic timed out during concurrent frontend testing and two loaded models; the final gate is being run with only Qwen active.
 
 Final rollback gate: 15/15 cases passed on LFM2 2.6B (19.38s) and 15/15 on Qwen3 4B (218.11s), with no safety fallback in either final run. Logs: `/tmp/voiceflow-rollback-final-lfm.log` and `/tmp/voiceflow-rollback-final-qwen.log`. All 22 release-contract tests, markdown links and formatting checks passed. UI E2E is not rerun for this prompt-only rollback; backend tests and real inference cover the changed behavior.
+
+## Publication evidence
+
+Commit `2134d9e034c136c3b124b64179883527b741ae31` and annotated tag `v1.2.3` were pushed atomically. [Workflow 34784066307](https://github.com/okafrancois/voiceflow/actions/runs/34784066307) succeeded: macOS build 19m08s, publication 25s. [Version 1.2.3](https://github.com/okafrancois/voiceflow/releases/tag/v1.2.3) was published at 2026-09-13 21:50:58 UTC.
+
+The published archive was downloaded and extracted. Bundle version is 1.2.3; both x86_64 and arm64 are present. The executable contains the restored Clean Dictation and Chat text and no removed mandatory-list imperatives. `codesign --verify --deep --strict --verbose=4` passed outside the sandbox; the sandboxed check had reported an invalid signature. `xcrun stapler validate` passed. The two updater platform entries match the signature sidecar and published archive URL. The live automatic-update endpoint returns 1.2.3. DMG, app archive, signature and both manifests are present on the release. The application was not installed or launched locally.
+
+## Documentation extraction
+
+Updated the quality investigation to identify the original false-positive formatting assertions and record the rollback's narrower contract. Future prompt changes must cover both required and unwanted lists. A safe fallback must never be presented as successful model editing. Historical investigation evidence is retained and marked as superseded. Unrelated user changes were excluded from both commits.
