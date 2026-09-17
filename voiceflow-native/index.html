@@ -1,0 +1,758 @@
+<!doctype html>
+<html lang="fr" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VoiceFlow — maquette native macOS Tahoe</title>
+<style>
+/* ════════════════════════════════════════════════════════════
+   TOKENS — valeurs relevées du système (macOS 26 Tahoe)
+   ════════════════════════════════════════════════════════════ */
+:root {
+  --font: -apple-system, "SF Pro Text", system-ui, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --r-window: 26px;          /* fenêtre à toolbar, Tahoe */
+  --r-group: 12px;           /* listes inset grouped */
+  --ease-spring: cubic-bezier(.3,1.35,.4,1);
+}
+[data-theme="dark"] {
+  --accent: #0A84FF;         /* systemBlue sombre */
+  --wave: #1E9DBA;           /* accent VoiceFlow (validé contraste) */
+  --violet: #8B7CF6;
+  --red: #FF453A; --green: #30D158; --orange: #FF9F0A;
+  --win-bg: #262628;
+  --content-bg: #202022;
+  --group-bg: #2e2e31;
+  --group-stroke: rgba(255,255,255,.055);
+  --sep: rgba(255,255,255,.08);
+  --label: rgba(255,255,255,.87);
+  --label-2: rgba(255,255,255,.55);
+  --label-3: rgba(255,255,255,.28);
+  --ctrl-bg: #48484c;
+  --ctrl-stroke: rgba(255,255,255,.12);
+  --seg-bg: rgba(255,255,255,.09);
+  --field-bg: rgba(255,255,255,.07);
+  --menu-bg: rgba(44,44,48,.68);
+  --sidebar-tint: rgba(28,28,32,.42);
+  --hud-tint: rgba(30,30,34,.5);
+  --dock-tint: rgba(40,40,46,.45);
+  --hairline: rgba(255,255,255,.14);
+  --chart-line: #35C3E0;
+  --chart-grid: rgba(255,255,255,.07);
+  --menubar-ink: rgba(255,255,255,.92);
+}
+[data-theme="light"] {
+  --accent: #007AFF;
+  --wave: #0E8BA8;
+  --violet: #6D5BD0;
+  --red: #FF3B30; --green: #28CD41; --orange: #FF9500;
+  --win-bg: #f0f0ef;
+  --content-bg: #f5f5f4;
+  --group-bg: #ffffff;
+  --group-stroke: rgba(0,0,0,.045);
+  --sep: rgba(0,0,0,.075);
+  --label: rgba(0,0,0,.85);
+  --label-2: rgba(0,0,0,.5);
+  --label-3: rgba(0,0,0,.26);
+  --ctrl-bg: #ffffff;
+  --ctrl-stroke: rgba(0,0,0,.14);
+  --seg-bg: rgba(0,0,0,.055);
+  --field-bg: rgba(0,0,0,.05);
+  --menu-bg: rgba(246,246,248,.72);
+  --sidebar-tint: rgba(235,235,240,.4);
+  --hud-tint: rgba(250,250,252,.5);
+  --dock-tint: rgba(245,245,250,.4);
+  --hairline: rgba(255,255,255,.55);
+  --chart-line: #0E8BA8;
+  --chart-grid: rgba(0,0,0,.07);
+  --menubar-ink: rgba(0,0,0,.85);
+}
+
+* { margin:0; padding:0; box-sizing:border-box; }
+html, body { height:100%; }
+body {
+  font-family: var(--font); font-size: 13px; color: var(--label);
+  -webkit-font-smoothing: antialiased; overflow: hidden;
+  user-select: none; -webkit-user-select: none;
+}
+
+/* ════════════════════ BUREAU ════════════════════ */
+.desktop { position: fixed; inset: 0; overflow: hidden; }
+.wallpaper { position:absolute; inset:0; background:#0b1026; transition: background .4s; }
+[data-theme="light"] .wallpaper { background:#87a8d8; }
+.wallpaper .b { position:absolute; border-radius:50%; filter: blur(90px); }
+.wallpaper .b1 { width:70vw; height:70vw; background:#20348a; top:-25vw; left:-15vw; opacity:.9; animation: drift 40s ease-in-out infinite alternate; }
+.wallpaper .b2 { width:55vw; height:55vw; background:#6a3fb0; bottom:-25vw; right:-12vw; opacity:.75; animation: drift 50s ease-in-out infinite alternate-reverse; }
+.wallpaper .b3 { width:40vw; height:40vw; background:#1d6a9e; bottom:-10vw; left:22vw; opacity:.6; animation: drift 34s ease-in-out infinite alternate; }
+.wallpaper .b4 { width:28vw; height:28vw; background:#c04f7c; top:-6vw; right:20vw; opacity:.35; }
+[data-theme="light"] .wallpaper .b1 { background:#aecdf5; } [data-theme="light"] .wallpaper .b2 { background:#d3c2f7; }
+[data-theme="light"] .wallpaper .b3 { background:#9fdcef; } [data-theme="light"] .wallpaper .b4 { background:#f7c8d8; }
+@keyframes drift { to { transform: translate(4vw, 3vw) scale(1.08); } }
+
+/* ════════════════════ BARRE DE MENUS (transparente, Tahoe) ════════════════════ */
+.menubar {
+  position:absolute; top:0; left:0; right:0; height:28px; z-index:100;
+  display:flex; align-items:center; gap:2px; padding:0 12px;
+  color: var(--menubar-ink); font-size:13px;
+  text-shadow: 0 1px 6px rgba(0,0,0,.25);
+}
+[data-theme="light"] .menubar { text-shadow: 0 1px 4px rgba(255,255,255,.35); }
+.menubar .mitem { padding: 3px 10px; border-radius: 6px; cursor: default; }
+.menubar .mitem:hover { background: rgba(127,127,127,.22); }
+.menubar .mitem.appname { font-weight: 700; }
+.menubar .apple { font-size: 15px; padding: 1px 10px 4px; }
+.menubar .spacer { flex: 1; }
+.menubar .status { display:flex; align-items:center; gap:2px; }
+.menubar .status .mitem { display:flex; align-items:center; gap:5px; padding:3px 8px; }
+.menubar svg { display:block; }
+.menubar .clock { font-variant-numeric: tabular-nums; }
+.menubar .vf-extra.open { background: rgba(127,127,127,.28); }
+.menubar .vf-extra .wv { display:flex; align-items:center; gap:1.5px; height:12px; }
+.menubar .vf-extra .wv i { width:2px; border-radius:1px; background: currentColor; }
+.menubar .vf-extra .wv i:nth-child(1){height:5px} .menubar .vf-extra .wv i:nth-child(2){height:10px}
+.menubar .vf-extra .wv i:nth-child(3){height:7px} .menubar .vf-extra .wv i:nth-child(4){height:11px}
+.menubar .vf-extra .wv i:nth-child(5){height:4px}
+
+/* ════════════════════ MENU DÉROULANT ════════════════════ */
+.menu {
+  position:absolute; z-index: 99; width: 252px;
+  background: var(--menu-bg);
+  -webkit-backdrop-filter: blur(40px) saturate(180%); backdrop-filter: blur(40px) saturate(180%);
+  border-radius: 14px; padding: 5px;
+  box-shadow: inset 0 0 0 .5px var(--hairline), 0 0 0 .5px rgba(0,0,0,.25), 0 18px 50px rgba(0,0,0,.35);
+  transform-origin: top right;
+  transition: transform .18s var(--ease-spring), opacity .14s;
+}
+.menu.hidden { opacity:0; transform: scale(.92) translateY(-4px); pointer-events:none; }
+.menu .it {
+  display:flex; align-items:center; gap:8px;
+  height: 26px; padding: 0 9px; border-radius: 8px; font-size: 13px; cursor: default;
+}
+.menu .it:hover { background: var(--accent); color:#fff; }
+.menu .it .sc { margin-left:auto; color: var(--label-3); font-size:12.5px; letter-spacing:1px; }
+.menu .it:hover .sc { color: rgba(255,255,255,.65); }
+.menu .msep { height: 1px; background: var(--sep); margin: 5px 10px; }
+.menu .mhead { padding: 7px 9px 5px; }
+.menu .mhead .t { font-weight: 600; display:flex; align-items:center; gap:7px; font-size:13px; }
+.menu .mhead .t .dot { width:7px; height:7px; border-radius:50%; background: var(--green); box-shadow:0 0 6px var(--green); }
+.menu .mhead .s { font-size: 11px; color: var(--label-2); margin-top:1px; }
+
+/* ════════════════════ FENÊTRE PRINCIPALE ════════════════════ */
+.window {
+  position:absolute; z-index: 10;
+  left: 50%; top: 50%; transform: translate(-50%, calc(-50% - 22px));
+  width: min(880px, calc(100vw - 80px)); height: min(590px, calc(100vh - 170px));
+  border-radius: var(--r-window);
+  background: var(--win-bg);
+  box-shadow: inset 0 0 0 .5px var(--hairline), 0 0 0 .5px rgba(0,0,0,.35), 0 36px 90px rgba(0,0,0,.5), 0 8px 24px rgba(0,0,0,.3);
+  display:flex; overflow:hidden;
+}
+[data-theme="light"] .window { box-shadow: inset 0 0 0 .5px var(--hairline), 0 0 0 .5px rgba(0,0,0,.18), 0 36px 90px rgba(30,40,80,.35), 0 8px 24px rgba(30,40,80,.18); }
+
+/* sidebar pleine hauteur, translucide (le mur transparaît) */
+.sidebar {
+  width: 208px; flex-shrink:0; display:flex; flex-direction:column;
+  background: var(--sidebar-tint);
+  -webkit-backdrop-filter: blur(50px) saturate(170%); backdrop-filter: blur(50px) saturate(170%);
+  border-right: .5px solid var(--sep);
+  padding: 0 10px 12px;
+}
+.traffic { display:flex; gap:8px; padding: 19px 8px 18px 10px; }
+.traffic i { width:12px; height:12px; border-radius:50%; box-shadow: inset 0 0 0 .5px rgba(0,0,0,.15); }
+.traffic i.r { background:#ff5f57; } .traffic i.y { background:#febc2e; } .traffic i.g { background:#28c840; }
+.window:not(:hover) .traffic i { background: rgba(127,127,127,.4); }
+
+.nav { display:flex; flex-direction:column; gap:1px; }
+.nav .sect { font-size:11px; font-weight:600; color: var(--label-3); padding: 12px 10px 4px; }
+.nav .item {
+  display:flex; align-items:center; gap:8px; height: 28px; padding: 0 9px;
+  border-radius: 7px; font-size:13px; color: var(--label); cursor: default;
+}
+.nav .item:hover { background: rgba(127,127,127,.14); }
+.nav .item.sel { background: rgba(127,127,127,.2); }
+.nav .item.sel .glyph, .nav .item.sel { color: var(--label); }
+.nav .item .glyph { width:17px; height:17px; flex-shrink:0; color: var(--accent); display:flex; align-items:center; justify-content:center; }
+.nav .item .badge { margin-left:auto; font-size:11px; color: var(--label-3); font-variant-numeric: tabular-nums; }
+.sidebar .foot { margin-top:auto; padding: 8px 4px 0; display:flex; align-items:center; gap:8px; font-size:12px; color: var(--label-2); }
+.sidebar .foot .avatar {
+  width:22px; height:22px; border-radius:50%;
+  background: linear-gradient(135deg, #35C3E0, #8B7CF6);
+  display:flex; align-items:center; justify-content:center; color:#fff; font-size:10px; font-weight:700;
+}
+
+/* zone de contenu */
+.main { flex:1; display:flex; flex-direction:column; background: var(--content-bg); min-width:0; }
+.toolbar {
+  height: 52px; flex-shrink:0; display:flex; align-items:center; gap: 10px;
+  padding: 0 16px;
+}
+.toolbar .title { font-size: 22px; font-weight: 700; letter-spacing:-.015em; }
+.toolbar .tools { margin-left:auto; display:flex; gap:8px; }
+.tbtn-group {
+  display:flex; border-radius: 999px; overflow:hidden;
+  background: var(--seg-bg);
+  box-shadow: inset 0 0 0 .5px var(--group-stroke);
+}
+.tbtn {
+  width: 34px; height: 26px; display:flex; align-items:center; justify-content:center;
+  color: var(--label-2); cursor: default;
+}
+.tbtn:hover { background: rgba(127,127,127,.14); color: var(--label); }
+
+.scroll { flex:1; overflow-y:auto; padding: 4px 16px 20px; }
+.scroll::-webkit-scrollbar { width: 8px; }
+.scroll::-webkit-scrollbar-thumb { background: rgba(127,127,127,.3); border-radius: 4px; background-clip: padding-box; border: 2px solid transparent; }
+
+.pane { display:none; }
+.pane.on { display:block; }
+
+/* ── listes groupées (System Settings) ── */
+.gtitle { font-size:11px; font-weight:600; color: var(--label-2); text-transform:uppercase; letter-spacing:.03em; padding: 14px 12px 5px; }
+.group {
+  background: var(--group-bg); border-radius: var(--r-group);
+  box-shadow: inset 0 0 0 .5px var(--group-stroke), 0 1px 2px rgba(0,0,0,.06);
+}
+.row {
+  display:flex; align-items:center; gap:10px; min-height: 40px; padding: 6px 12px;
+  position:relative;
+}
+.row + .row::before { content:""; position:absolute; top:0; left:12px; right:0; height:.5px; background: var(--sep); }
+.row.has-ico + .row.has-ico::before { left: 46px; }
+.row .ico {
+  width: 24px; height: 24px; border-radius: 6px; flex-shrink:0;
+  display:flex; align-items:center; justify-content:center; color:#fff;
+  box-shadow: inset 0 0 0 .5px rgba(0,0,0,.12), inset 0 1px 0 rgba(255,255,255,.25);
+}
+.row .lab { min-width:0; }
+.row .lab .t { font-size:13px; }
+.row .lab .s { font-size:11px; color: var(--label-2); margin-top:1px; }
+.row .end { margin-left:auto; display:flex; align-items:center; gap:8px; flex-shrink:0; }
+.row .chev { color: var(--label-3); font-size:13px; font-weight:600; }
+.row .val { font-size:13px; color: var(--label-2); }
+
+/* ── contrôles natifs ── */
+.switch { width: 38px; height: 22px; border-radius: 999px; background: rgba(127,127,127,.35); position:relative; cursor:pointer; transition: background .2s; flex-shrink:0; }
+.switch::after { content:""; position:absolute; top:1px; left:1px; width:20px; height:20px; border-radius:50%; background:#fff; box-shadow: 0 1px 3px rgba(0,0,0,.35), 0 0 0 .5px rgba(0,0,0,.06); transition: left .2s var(--ease-spring); }
+.switch.on { background: var(--accent); }
+.switch.on::after { left: 17px; }
+
+.popup {
+  display:flex; align-items:center; gap:6px; height: 22px; padding: 0 3px 0 10px;
+  border-radius: 6px; background: var(--ctrl-bg); font-size: 13px;
+  box-shadow: inset 0 0 0 .5px var(--ctrl-stroke), 0 1px 1px rgba(0,0,0,.08); cursor: default;
+}
+.popup .chevbox {
+  width: 16px; height: 16px; border-radius: 4.5px; background: var(--accent);
+  display:flex; align-items:center; justify-content:center;
+}
+.popup .chevbox svg { display:block; }
+
+.pushbtn {
+  height: 24px; padding: 0 13px; border-radius: 999px; border:none; font-family: var(--font);
+  font-size: 13px; color: var(--label); background: var(--ctrl-bg);
+  box-shadow: inset 0 0 0 .5px var(--ctrl-stroke), 0 1px 1px rgba(0,0,0,.08); cursor: default;
+}
+.pushbtn:active { filter: brightness(.92); }
+.pushbtn.primary { background: var(--accent); color:#fff; box-shadow: 0 1px 3px rgba(0,122,255,.4); }
+
+.seg { display:inline-flex; background: var(--seg-bg); border-radius: 8px; padding: 2px; box-shadow: inset 0 0 0 .5px var(--group-stroke); }
+.seg span { font-size: 12px; padding: 3px 12px; border-radius: 6px; color: var(--label-2); cursor: default; }
+.seg span.sel { background: var(--ctrl-bg); color: var(--label); font-weight: 500; box-shadow: 0 1px 3px rgba(0,0,0,.18), inset 0 0 0 .5px var(--ctrl-stroke); }
+
+.keycap {
+  display:inline-flex; align-items:center; gap:3px; height: 22px; padding: 0 9px;
+  border-radius: 5px; background: var(--ctrl-bg); font-size: 12.5px;
+  box-shadow: inset 0 0 0 .5px var(--ctrl-stroke), inset 0 -1.5px 0 rgba(0,0,0,.1), 0 1px 1px rgba(0,0,0,.08);
+}
+
+.slider { width: 130px; height: 4px; border-radius: 999px; background: rgba(127,127,127,.3); position:relative; }
+.slider .fill { position:absolute; inset: 0 45% 0 0; border-radius:999px; background: var(--accent); }
+.slider .knob { position:absolute; left:55%; top:50%; transform:translate(-50%,-50%); width:16px; height:16px; border-radius:50%; background:#fff; box-shadow: 0 1px 3px rgba(0,0,0,.4), 0 0 0 .5px rgba(0,0,0,.08); }
+
+.radio { width:15px; height:15px; border-radius:50%; box-shadow: inset 0 0 0 1px var(--ctrl-stroke); background: var(--ctrl-bg); flex-shrink:0; }
+.radio.on { background: var(--accent); box-shadow:none; position:relative; }
+.radio.on::after { content:""; position:absolute; inset:4.5px; border-radius:50%; background:#fff; }
+
+.searchfield {
+  display:flex; align-items:center; gap:6px; height: 26px; padding: 0 9px;
+  border-radius: 8px; background: var(--field-bg); color: var(--label-3); font-size: 13px;
+  box-shadow: inset 0 0 0 .5px var(--group-stroke); flex:1; max-width: 220px;
+}
+
+.progress { height: 4px; border-radius:999px; background: rgba(127,127,127,.25); overflow:hidden; width: 130px; }
+.progress .p { height:100%; width:64%; border-radius:999px; background: var(--accent); }
+
+.tag { font-size:10px; font-weight:600; padding: 1.5px 7px; border-radius: 999px; }
+.tag.sys { background: color-mix(in srgb, var(--green) 18%, transparent); color: var(--green); }
+.tag.local { background: color-mix(in srgb, var(--wave) 18%, transparent); color: var(--wave); }
+.tag.cloud { background: color-mix(in srgb, var(--violet) 18%, transparent); color: var(--violet); }
+
+/* ── accueil : tuiles + graphique ── */
+.tiles { display:grid; grid-template-columns: repeat(4,1fr); gap:10px; margin-top: 12px; }
+.tile { background: var(--group-bg); border-radius: var(--r-group); padding: 10px 12px; box-shadow: inset 0 0 0 .5px var(--group-stroke), 0 1px 2px rgba(0,0,0,.06); }
+.tile .v { font-size: 20px; font-weight: 700; letter-spacing:-.02em; font-variant-numeric: tabular-nums; }
+.tile .l { font-size: 11px; color: var(--label-2); }
+.tile .d { font-size: 10.5px; margin-top:3px; font-weight:500; color: var(--label-3); }
+.tile .d.up { color: var(--green); }
+
+.chartwrap { position:relative; padding: 12px 12px 4px; }
+.chartwrap .h { display:flex; align-items:baseline; margin-bottom: 2px; }
+.chartwrap .h b { font-size: 13px; font-weight: 600; }
+.chartwrap .h span { margin-left:auto; font-size:11px; color: var(--label-3); }
+#chart { width:100%; height: 120px; display:block; }
+.chart-tip { position:absolute; display:none; pointer-events:none; z-index:5; background: var(--menu-bg); -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px); border-radius: 8px; padding: 5px 9px; font-size:11px; box-shadow: inset 0 0 0 .5px var(--hairline), 0 6px 20px rgba(0,0,0,.3); white-space:nowrap; }
+.chart-tip b { font-variant-numeric: tabular-nums; }
+.chart-tip div:last-child { color: var(--label-2); font-size:10.5px; }
+details.dtable { padding: 0 12px 10px; }
+details.dtable summary { font-size:10.5px; color: var(--label-3); cursor:pointer; }
+details.dtable table { font-size:10.5px; margin-top:6px; border-collapse:collapse; font-variant-numeric: tabular-nums; }
+details.dtable td, details.dtable th { padding: 1px 8px 1px 0; color: var(--label-2); font-weight:400; text-align:left; }
+
+/* ── historique ── */
+.hrow { display:flex; align-items:center; gap:10px; min-height: 44px; padding: 7px 12px; position:relative; }
+.hrow + .hrow::before { content:""; position:absolute; top:0; left:12px; right:0; height:.5px; background: var(--sep); }
+.hrow .txt { flex:1; min-width:0; }
+.hrow .txt .t { font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.hrow .txt .m { font-size:11px; color: var(--label-3); margin-top:1px; font-variant-numeric: tabular-nums; }
+.hrow .play { width:24px; height:24px; border-radius:50%; background: var(--seg-bg); display:flex; align-items:center; justify-content:center; color: var(--label-2); flex-shrink:0; }
+
+/* ════════════════════ HUD (pill) ════════════════════ */
+.hud {
+  position:absolute; z-index: 60; left:50%; bottom: 96px; transform: translateX(-50%);
+  display:flex; align-items:center; gap: 10px;
+  height: 40px; padding: 0 16px; border-radius: 999px;
+  background: var(--hud-tint);
+  -webkit-backdrop-filter: blur(36px) saturate(180%); backdrop-filter: blur(36px) saturate(180%);
+  box-shadow: inset 0 0 0 .5px var(--hairline), inset 0 1px 0 rgba(255,255,255,.14), 0 0 0 .5px rgba(0,0,0,.28), 0 14px 40px rgba(0,0,0,.4);
+  color: var(--label); cursor: pointer;
+  transition: transform .3s var(--ease-spring), width .3s;
+}
+.hud:hover { transform: translateX(-50%) scale(1.04); }
+.hud .dot { width:8px; height:8px; border-radius:50%; background: var(--label-3); flex-shrink:0; }
+.hud[data-state="recording"] .dot { background: var(--red); animation: pulse 1.5s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity:.3; } }
+.hud .wave { display:flex; align-items:center; gap:2.5px; height:18px; }
+.hud .wave i { width:2.5px; border-radius:2px; background: var(--wave); animation: wv 1.05s ease-in-out infinite; }
+.hud[data-state="polishing"] .wave i { background: var(--violet); }
+.hud .wave i:nth-child(1){height:28%; animation-delay:0s} .hud .wave i:nth-child(2){height:62%; animation-delay:.1s}
+.hud .wave i:nth-child(3){height:95%; animation-delay:.2s} .hud .wave i:nth-child(4){height:50%; animation-delay:.3s}
+.hud .wave i:nth-child(5){height:82%; animation-delay:.4s} .hud .wave i:nth-child(6){height:38%; animation-delay:.5s}
+.hud .wave i:nth-child(7){height:68%; animation-delay:.6s} .hud .wave i:nth-child(8){height:30%; animation-delay:.7s}
+.hud .wave i:nth-child(9){height:55%; animation-delay:.8s} .hud .wave i:nth-child(10){height:40%; animation-delay:.9s}
+@keyframes wv { 50% { transform: scaleY(.3); } }
+.hud[data-state="idle"] .wave i { animation:none; height:3px !important; opacity:.4; }
+.hud .time { font-family: var(--mono); font-size: 12px; color: var(--label-2); font-variant-numeric: tabular-nums; }
+.hud .hint { font-size: 12px; color: var(--label-2); }
+.hud .shimmer {
+  font-size: 12px; font-weight:500;
+  background: linear-gradient(90deg, var(--label-3), var(--label), var(--label-3));
+  background-size: 200% 100%; -webkit-background-clip: text; background-clip:text; color: transparent;
+  animation: shine 1.5s linear infinite;
+}
+@keyframes shine { to { background-position: -200% 0; } }
+.hud > * { display:none; }
+.hud[data-state="idle"] .s-idle, .hud[data-state="recording"] .s-rec, .hud[data-state="polishing"] .s-pol { display:flex; align-items:center; gap:10px; }
+
+/* aperçu transcription live (convention MacWhisper : confirmé net / provisoire estompé) */
+.hud-preview {
+  position:absolute; z-index: 59; left:50%; bottom: 148px; transform: translateX(-50%);
+  width: 460px; border-radius: 16px; padding: 12px 14px;
+  background: var(--hud-tint);
+  -webkit-backdrop-filter: blur(36px) saturate(180%); backdrop-filter: blur(36px) saturate(180%);
+  box-shadow: inset 0 0 0 .5px var(--hairline), 0 0 0 .5px rgba(0,0,0,.28), 0 14px 40px rgba(0,0,0,.4);
+  font-size: 13px; line-height: 1.5; color: var(--label);
+  transition: opacity .2s, transform .25s var(--ease-spring);
+}
+.hud-preview.hidden { opacity:0; transform: translateX(-50%) translateY(8px) scale(.97); pointer-events:none; }
+.hud-preview .provisional { color: var(--label-3); }
+.hud-preview .bar { display:flex; align-items:center; gap:8px; margin-top: 9px; font-size: 11px; color: var(--label-2); }
+.hud-preview .bar .k { padding: 1px 6px; border-radius: 4px; background: var(--seg-bg); box-shadow: inset 0 0 0 .5px var(--group-stroke); font-size:10.5px; }
+
+/* ════════════════════ DOCK ════════════════════ */
+.dock {
+  position:absolute; z-index: 50; left:50%; bottom: 10px; transform: translateX(-50%);
+  display:flex; align-items:flex-end; gap: 8px; padding: 7px 10px;
+  border-radius: 22px;
+  background: var(--dock-tint);
+  -webkit-backdrop-filter: blur(36px) saturate(180%); backdrop-filter: blur(36px) saturate(180%);
+  box-shadow: inset 0 0 0 .5px var(--hairline), 0 0 0 .5px rgba(0,0,0,.25), 0 10px 30px rgba(0,0,0,.3);
+}
+.dock .app { position:relative; width: 46px; height: 46px; border-radius: 12px; transition: transform .22s var(--ease-spring); }
+.dock .app:hover { transform: translateY(-7px) scale(1.12); }
+.dock .app.running::after { content:""; position:absolute; bottom:-5px; left:50%; transform:translateX(-50%); width:3.5px; height:3.5px; border-radius:50%; background: var(--menubar-ink); opacity:.8; }
+.dock .dsep { width:.5px; align-self:stretch; margin: 4px 3px; background: var(--sep); }
+.dock svg { width:100%; height:100%; display:block; border-radius:12px; box-shadow: 0 3px 8px rgba(0,0,0,.3); }
+
+/* puce d'aide */
+.help {
+  position:absolute; z-index: 90; right: 14px; bottom: 14px;
+  font-size: 11px; color: var(--menubar-ink); opacity:.55; text-align:right; line-height:1.7;
+  text-shadow: 0 1px 4px rgba(0,0,0,.3);
+}
+</style>
+</head>
+<body data-theme="dark">
+<div class="desktop">
+  <div class="wallpaper"><div class="b b1"></div><div class="b b2"></div><div class="b b3"></div><div class="b b4"></div></div>
+
+  <!-- ═══ Barre de menus ═══ -->
+  <div class="menubar">
+    <span class="mitem apple"></span>
+    <span class="mitem appname">VoiceFlow</span>
+    <span class="mitem">Fichier</span><span class="mitem">Édition</span><span class="mitem">Présentation</span><span class="mitem">Fenêtre</span><span class="mitem">Aide</span>
+    <span class="spacer"></span>
+    <div class="status">
+      <span class="mitem" id="themeBtn" title="Basculer clair/sombre">
+        <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><circle cx="7.5" cy="7.5" r="3.4"/><path d="M7.5 1v1.6M7.5 12.4V14M14 7.5h-1.6M2.6 7.5H1M12.1 2.9L11 4M4 11l-1.1 1.1M12.1 12.1L11 11M4 4L2.9 2.9"/></svg>
+      </span>
+      <span class="mitem"><svg width="16" height="12" viewBox="0 0 16 12" fill="currentColor"><path d="M8 9.5a1.4 1.4 0 1 1 0 2.8 1.4 1.4 0 0 1 0-2.8zM4.9 7.4a4.6 4.6 0 0 1 6.2 0l-1.1 1.2a3 3 0 0 0-4 0L4.9 7.4zM2.7 5.1a7.8 7.8 0 0 1 10.6 0l-1.1 1.2a6.2 6.2 0 0 0-8.4 0L2.7 5.1zM.5 2.8a11 11 0 0 1 15 0l-1.1 1.2a9.4 9.4 0 0 0-12.8 0L.5 2.8z"/></svg></span>
+      <span class="mitem"><svg width="22" height="11" viewBox="0 0 22 11"><rect x=".5" y=".5" width="18" height="10" rx="2.5" fill="none" stroke="currentColor" opacity=".5"/><rect x="2" y="2" width="12" height="7" rx="1.2" fill="currentColor"/><path d="M20 3.5v4c1-.3 1.5-1 1.5-2s-.5-1.7-1.5-2z" fill="currentColor" opacity=".5"/></svg></span>
+      <span class="mitem vf-extra open" id="vfExtra">
+        <span class="wv"><i></i><i></i><i></i><i></i><i></i></span>
+      </span>
+      <span class="mitem clock">mar. 16 sept.&nbsp;&nbsp;14:32</span>
+    </div>
+  </div>
+
+  <!-- ═══ Menu VoiceFlow (barre de menus) ═══ -->
+  <div class="menu" id="vfMenu" style="top: 34px; right: 96px;">
+    <div class="mhead">
+      <div class="t"><span class="dot"></span>Prêt à dicter</div>
+      <div class="s">Profil « Vibe coding » · SpeechAnalyzer</div>
+    </div>
+    <div class="msep"></div>
+    <div class="it">Dicter<span class="sc">⌥␣</span></div>
+    <div class="it">Dicter et polir<span class="sc">⌥⇧␣</span></div>
+    <div class="it">Réinsérer la dernière dictée<span class="sc">⌥V</span></div>
+    <div class="msep"></div>
+    <div class="it">Historique…</div>
+    <div class="it">Réglages…<span class="sc">⌘,</span></div>
+    <div class="msep"></div>
+    <div class="it">Quitter VoiceFlow<span class="sc">⌘Q</span></div>
+  </div>
+
+  <!-- ═══ Fenêtre principale ═══ -->
+  <div class="window">
+    <aside class="sidebar">
+      <div class="traffic"><i class="r"></i><i class="y"></i><i class="g"></i></div>
+      <nav class="nav" id="nav">
+        <div class="item sel" data-pane="accueil" data-title="Accueil">
+          <span class="glyph"><svg width="15" height="15" viewBox="0 0 15 15" fill="currentColor"><path d="M7.5 1.2 1.3 6.5h1.5v6.8h3.7V9.5h2v3.8h3.7V6.5h1.5L7.5 1.2z"/></svg></span>Accueil
+        </div>
+        <div class="item" data-pane="historique" data-title="Historique">
+          <span class="glyph"><svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="7.5" cy="7.5" r="5.8"/><path d="M7.5 4.2v3.3l2.3 1.6"/></svg></span>Historique<span class="badge">312</span>
+        </div>
+        <div class="sect">Dictée</div>
+        <div class="item" data-pane="raccourcis" data-title="Raccourcis">
+          <span class="glyph"><svg width="15" height="15" viewBox="0 0 15 15" fill="currentColor"><rect x="1" y="3.5" width="13" height="8" rx="1.8" opacity=".4"/><rect x="3" y="5.8" width="1.8" height="1.8" rx=".4"/><rect x="6" y="5.8" width="1.8" height="1.8" rx=".4"/><rect x="9" y="5.8" width="1.8" height="1.8" rx=".4"/><rect x="4" y="8.6" width="7" height="1.4" rx=".4"/></svg></span>Raccourcis
+        </div>
+        <div class="item" data-pane="modeles" data-title="Modèles">
+          <span class="glyph"><svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M2 7.5h1.6l1.3-3.2 1.9 6.4 1.6-4.8 1.1 1.6H13"/></svg></span>Modèles
+        </div>
+        <div class="item" data-pane="reglages" data-title="Réglages">
+          <span class="glyph"><svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><circle cx="7.5" cy="7.5" r="2"/><path d="M7.5 1.2v2M7.5 11.8v2M13.8 7.5h-2M3.2 7.5h-2M12 3l-1.4 1.4M4.4 10.6 3 12M12 12l-1.4-1.4M4.4 4.4 3 3"/></svg></span>Réglages
+        </div>
+      </nav>
+      <div class="foot"><span class="avatar">B</span>Berny · okatech.fr</div>
+    </aside>
+
+    <section class="main">
+      <header class="toolbar">
+        <span class="title" id="paneTitle">Accueil</span>
+        <div class="tools">
+          <div class="searchfield" id="histSearch" style="display:none;"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="5" cy="5" r="3.6"/><path d="M8 8l2.6 2.6" stroke-linecap="round"/></svg>Rechercher</div>
+          <div class="tbtn-group">
+            <span class="tbtn"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><rect x="5" y="1.5" width="4" height="7" rx="2"/><path d="M2.8 6.5a4.2 4.2 0 0 0 8.4 0M7 10.7v1.8"/></svg></span>
+            <span class="tbtn"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M7 1.5l1.5 3.6 3.9.3-3 2.6.9 3.8L7 9.7l-3.3 2.1.9-3.8-3-2.6 3.9-.3L7 1.5z"/></svg></span>
+          </div>
+        </div>
+      </header>
+
+      <div class="scroll">
+
+        <!-- ═══ ACCUEIL ═══ -->
+        <div class="pane on" id="pane-accueil">
+          <div class="tiles">
+            <div class="tile"><div class="v">3 128</div><div class="l">mots aujourd'hui</div><div class="d up">↑ 18 % vs hier</div></div>
+            <div class="tile"><div class="v">27</div><div class="l">dictées</div><div class="d">comme hier</div></div>
+            <div class="tile"><div class="v">142</div><div class="l">mots / min</div><div class="d up">record semaine</div></div>
+            <div class="tile"><div class="v">96 %</div><div class="l">en local</div><div class="d">1 dictée cloud</div></div>
+          </div>
+
+          <div class="gtitle">Activité</div>
+          <div class="group">
+            <div class="chartwrap">
+              <div class="h"><b>Mots par heure</b><span>aujourd'hui</span></div>
+              <svg id="chart" role="img" aria-label="Mots dictés par heure aujourd'hui"></svg>
+              <div class="chart-tip" id="chartTip"><b></b><div></div></div>
+            </div>
+            <details class="dtable"><summary>Voir les données</summary><table id="chartTable"></table></details>
+          </div>
+
+          <div class="gtitle">Récentes</div>
+          <div class="group">
+            <div class="hrow">
+              <span class="play">▸</span>
+              <div class="txt"><div class="t">Peux-tu regarder le bug d'injection sur Sonoma et me dire si le fallback presse-papiers…</div><div class="m">14:27 · 42 mots · 2,1 s</div></div>
+              <span class="tag local">LOCAL</span>
+            </div>
+            <div class="hrow">
+              <span class="play">▸</span>
+              <div class="txt"><div class="t">Réunion de mardi : valider la maquette, relancer le fournisseur, préparer la démo de…</div><div class="m">11:03 · 118 mots · 3,8 s</div></div>
+              <span class="tag cloud">POLI</span>
+            </div>
+            <div class="hrow">
+              <span class="play">▸</span>
+              <div class="txt"><div class="t">git commit -m fix restore clipboard after paste on macOS</div><div class="m">09:41 · 9 mots · 0,8 s</div></div>
+              <span class="tag local">LOCAL</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- ═══ HISTORIQUE ═══ -->
+        <div class="pane" id="pane-historique">
+          <div class="gtitle">Aujourd'hui</div>
+          <div class="group">
+            <div class="hrow"><span class="play">▸</span><div class="txt"><div class="t">Peux-tu regarder le bug d'injection sur Sonoma et me dire si le fallback presse-papiers se déclenche…</div><div class="m">14:27 · 42 mots · Cursor</div></div><span class="tag local">LOCAL</span></div>
+            <div class="hrow"><span class="play">▸</span><div class="txt"><div class="t">Réunion de mardi : valider la maquette, relancer le fournisseur, préparer la démo de vendredi.</div><div class="m">11:03 · 118 mots · Mail</div></div><span class="tag cloud">POLI</span></div>
+            <div class="hrow"><span class="play">▸</span><div class="txt"><div class="t">git commit -m fix restore clipboard after paste on macOS</div><div class="m">09:41 · 9 mots · Terminal</div></div><span class="tag local">LOCAL</span></div>
+          </div>
+          <div class="gtitle">Hier</div>
+          <div class="group">
+            <div class="hrow"><span class="play">▸</span><div class="txt"><div class="t">Ajoute une section limitations dans le README avec les prérequis macOS 26 et la liste des puces…</div><div class="m">18:12 · 64 mots · Cursor</div></div><span class="tag local">LOCAL</span></div>
+            <div class="hrow"><span class="play">▸</span><div class="txt"><div class="t">Bonjour, merci pour votre retour. Nous allons corriger le problème de latence sur la prochaine…</div><div class="m">16:40 · 87 mots · Mail</div></div><span class="tag cloud">POLI</span></div>
+            <div class="hrow"><span class="play">▸</span><div class="txt"><div class="t">Idée : et si la pill se collait au bord de l'écran quand on la déplace, comme la Flow Bar…</div><div class="m">10:15 · 31 mots · Notes</div></div><span class="tag local">LOCAL</span></div>
+          </div>
+        </div>
+
+        <!-- ═══ RACCOURCIS ═══ -->
+        <div class="pane" id="pane-raccourcis">
+          <div class="gtitle">Raccourci principal</div>
+          <div class="group">
+            <div class="row"><div class="lab"><div class="t">Dicter</div><div class="s">Insère le texte brut dans l'app active</div></div><div class="end"><span class="keycap">⌥ Espace</span></div></div>
+            <div class="row"><div class="lab"><div class="t">Dicter et polir</div><div class="s">Reformule avant l'insertion</div></div><div class="end"><span class="keycap">⌥ ⇧ Espace</span></div></div>
+            <div class="row"><div class="lab"><div class="t">Déclenchement</div></div><div class="end"><div class="seg"><span class="sel">Maintenir</span><span>Basculer</span><span>Double appui</span></div></div></div>
+          </div>
+          <div class="gtitle">Profils</div>
+          <div class="group">
+            <div class="row has-ico">
+              <div class="ico" style="background:linear-gradient(135deg,#35C3E0,#8B7CF6)"><svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="#fff" stroke-width="1.5" stroke-linecap="round"><path d="M1.5 6.5h1.4l1.1-2.8 1.7 5.6 1.4-4.2 1 1.4h3.4"/></svg></div>
+              <div class="lab"><div class="t">Vibe coding</div><div class="s">Ponctuation code · dictionnaire technique · cible Cursor</div></div>
+              <div class="end"><span class="val">⌥␣</span><span class="chev">›</span></div>
+            </div>
+            <div class="row has-ico">
+              <div class="ico" style="background:var(--orange)"><svg width="13" height="13" viewBox="0 0 13 13" fill="#fff"><path d="M2 2.5h9a.8.8 0 0 1 .8.8v5.4a.8.8 0 0 1-.8.8H7l-2.6 2v-2H2a.8.8 0 0 1-.8-.8V3.3a.8.8 0 0 1 .8-.8z"/></svg></div>
+              <div class="lab"><div class="t">Messages</div><div class="s">Ton naturel · emoji autorisés</div></div>
+              <div class="end"><span class="val">⌥M</span><span class="chev">›</span></div>
+            </div>
+            <div class="row has-ico">
+              <div class="ico" style="background:#5E5CE6"><svg width="13" height="13" viewBox="0 0 13 13" fill="#fff"><rect x="2" y="1.5" width="9" height="10" rx="1.2" opacity=".5"/><rect x="3.6" y="3.5" width="5.8" height="1.1" rx=".5"/><rect x="3.6" y="5.7" width="5.8" height="1.1" rx=".5"/><rect x="3.6" y="7.9" width="3.6" height="1.1" rx=".5"/></svg></div>
+              <div class="lab"><div class="t">Rédaction</div><div class="s">Polissage « Concis » · paragraphes</div></div>
+              <div class="end"><span class="val">⌥R</span><span class="chev">›</span></div>
+            </div>
+          </div>
+          <div style="display:flex; justify-content:flex-end; padding: 10px 2px;"><button class="pushbtn">Ajouter un profil…</button></div>
+        </div>
+
+        <!-- ═══ MODÈLES ═══ -->
+        <div class="pane" id="pane-modeles">
+          <div class="gtitle">Transcription</div>
+          <div class="group">
+            <div class="row">
+              <span class="radio on"></span>
+              <div class="lab"><div class="t">SpeechAnalyzer <span class="tag sys">SYSTÈME</span></div><div class="s">Moteur Apple sur la puce neuronale · aucun téléchargement · ≈ 0,4 s</div></div>
+            </div>
+            <div class="row">
+              <span class="radio"></span>
+              <div class="lab"><div class="t">Qwen3-ASR 0,6B</div><div class="s">Multilingue embarqué · 880 Mo · Metal · ≈ 1,8 s</div></div>
+              <div class="end"><span class="val">Téléchargé</span></div>
+            </div>
+            <div class="row">
+              <span class="radio"></span>
+              <div class="lab"><div class="t">Whisper large-v3</div><div class="s">Précision maximale · 3,1 Go · ≈ 4 s</div></div>
+              <div class="end"><div class="progress"><div class="p"></div></div><span class="val">64 %</span></div>
+            </div>
+          </div>
+          <div class="gtitle">Polissage</div>
+          <div class="group">
+            <div class="row"><div class="lab"><div class="t">Moteur</div></div><div class="end"><div class="popup">LFM 1,2B (local)<span class="chevbox"><svg width="8" height="9" viewBox="0 0 8 9" fill="#fff"><path d="M4 0.5 6.5 3.4h-5L4 0.5zM4 8.5 1.5 5.6h5L4 8.5z"/></svg></span></div></div></div>
+            <div class="row"><div class="lab"><div class="t">Style par défaut</div></div><div class="end"><div class="seg"><span>Fidèle</span><span class="sel">Concis</span><span>Soutenu</span></div></div></div>
+            <div class="row"><div class="lab"><div class="t">Aperçu avant insertion</div><div class="s">Affiche le texte poli dans la pill</div></div><div class="end"><div class="switch on"></div></div></div>
+          </div>
+        </div>
+
+        <!-- ═══ RÉGLAGES ═══ -->
+        <div class="pane" id="pane-reglages">
+          <div class="gtitle">Autorisations</div>
+          <div class="group">
+            <div class="row has-ico">
+              <div class="ico" style="background:var(--red)"><svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="#fff" stroke-width="1.4" stroke-linecap="round"><rect x="4.6" y="1.2" width="3.8" height="6.4" rx="1.9" fill="#fff" stroke="none"/><path d="M2.8 6a3.9 3.9 0 0 0 7.4 0M6.5 9.9v1.9"/></svg></div>
+              <div class="lab"><div class="t">Microphone</div></div>
+              <div class="end"><span class="val" style="color:var(--green)">Autorisé</span></div>
+            </div>
+            <div class="row has-ico">
+              <div class="ico" style="background:#5E5CE6"><svg width="13" height="13" viewBox="0 0 13 13" fill="#fff"><circle cx="6.5" cy="4" r="2.2"/><path d="M1.8 11.4c.7-2.6 2.6-3.9 4.7-3.9s4 1.3 4.7 3.9"/></svg></div>
+              <div class="lab"><div class="t">Accessibilité</div><div class="s">Insertion dans l'app cible sans la réactiver</div></div>
+              <div class="end"><span class="val" style="color:var(--green)">Autorisé</span></div>
+            </div>
+            <div class="row has-ico">
+              <div class="ico" style="background:#8E8E93"><svg width="13" height="13" viewBox="0 0 13 13" fill="#fff"><rect x="1.5" y="2.5" width="10" height="7" rx="1"/><rect x="4.5" y="10.2" width="4" height="1.2" rx=".6"/></svg></div>
+              <div class="lab"><div class="t">Surveillance du clavier</div><div class="s">Raccourcis globaux</div></div>
+              <div class="end"><span class="val" style="color:var(--green)">Autorisé</span></div>
+            </div>
+          </div>
+          <div class="gtitle">Comportement</div>
+          <div class="group">
+            <div class="row"><div class="lab"><div class="t">Ouvrir à la connexion</div></div><div class="end"><div class="switch on"></div></div></div>
+            <div class="row"><div class="lab"><div class="t">Son de confirmation</div><div class="s">Bip discret en début et fin de dictée</div></div><div class="end"><div class="switch on"></div></div></div>
+            <div class="row"><div class="lab"><div class="t">Sensibilité du silence</div><div class="s">Coupe après la pause détectée</div></div><div class="end"><div class="slider"><div class="fill"></div><div class="knob"></div></div><span class="val">0,6 s</span></div></div>
+            <div class="row"><div class="lab"><div class="t">Position de la pill</div></div><div class="end"><div class="popup">Bas, centrée<span class="chevbox"><svg width="8" height="9" viewBox="0 0 8 9" fill="#fff"><path d="M4 0.5 6.5 3.4h-5L4 0.5zM4 8.5 1.5 5.6h5L4 8.5z"/></svg></span></div></div></div>
+          </div>
+          <div class="gtitle">Historique</div>
+          <div class="group">
+            <div class="row"><div class="lab"><div class="t">Conserver le texte</div></div><div class="end"><div class="popup">90 jours<span class="chevbox"><svg width="8" height="9" viewBox="0 0 8 9" fill="#fff"><path d="M4 0.5 6.5 3.4h-5L4 0.5zM4 8.5 1.5 5.6h5L4 8.5z"/></svg></span></div></div></div>
+            <div class="row"><div class="lab"><div class="t">Conserver l'audio</div></div><div class="end"><div class="popup">30 jours<span class="chevbox"><svg width="8" height="9" viewBox="0 0 8 9" fill="#fff"><path d="M4 0.5 6.5 3.4h-5L4 0.5zM4 8.5 1.5 5.6h5L4 8.5z"/></svg></span></div></div></div>
+            <div class="row"><div class="lab"><div class="t">Effacer l'historique…</div></div><div class="end"><button class="pushbtn">Effacer…</button></div></div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+  </div>
+
+  <!-- ═══ Aperçu live (état polissage) ═══ -->
+  <div class="hud-preview hidden" id="hudPreview">
+    <span>Peux-tu regarder le bug d'injection sur Sonoma et me dire si le fallback presse-papiers</span>
+    <span class="provisional"> se déclenche bien quand le champ cible…</span>
+    <div class="bar"><span class="k">⏎</span>Insérer<span class="k">⌘Z</span>Brut<span class="k">esc</span>Annuler<span style="margin-left:auto; font-family:var(--mono);">2,1 s</span></div>
+  </div>
+
+  <!-- ═══ Pill ═══ -->
+  <div class="hud" id="hud" data-state="recording" title="Cliquer pour changer d'état">
+    <span class="s-idle"><span class="dot"></span><span class="wave"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="hint">⌥ Espace</span></span>
+    <span class="s-rec"><span class="dot"></span><span class="wave"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="time">00:07</span></span>
+    <span class="s-pol"><span class="wave"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="shimmer">Polissage…</span></span>
+  </div>
+
+  <!-- ═══ Dock ═══ -->
+  <div class="dock">
+    <span class="app running"><svg viewBox="0 0 46 46"><rect width="46" height="46" rx="12" fill="#1E9EEB"/><path d="M23 4C13 4 8 12 8 22c0 9 5 17 15 17V4z" fill="#4FC3F7"/><circle cx="16" cy="19" r="2" fill="#123"/><circle cx="30" cy="19" r="2" fill="#123"/><path d="M14 29c5 4 13 4 18 0" stroke="#123" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg></span>
+    <span class="app"><svg viewBox="0 0 46 46"><rect width="46" height="46" rx="12" fill="url(#saf)"/><defs><linearGradient id="saf" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3FA9F5"/><stop offset="1" stop-color="#1668E3"/></linearGradient></defs><circle cx="23" cy="23" r="15" fill="#fff"/><path d="M31 15l-5.5 7L15 31l5.5-7L31 15z" fill="#FF4B55"/><path d="M20.5 24 15 31l7-5.5-1.5-1.5z" fill="#E0E4EA"/></svg></span>
+    <span class="app"><svg viewBox="0 0 46 46"><rect width="46" height="46" rx="12" fill="url(#mail)"/><defs><linearGradient id="mail" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5CC6FA"/><stop offset="1" stop-color="#1D77EF"/></linearGradient></defs><rect x="8" y="13" width="30" height="20" rx="3" fill="#fff"/><path d="M8 15l15 11 15-11" stroke="#B9C4D4" stroke-width="1.6" fill="none"/></svg></span>
+    <span class="app"><svg viewBox="0 0 46 46"><rect width="46" height="46" rx="12" fill="#1c1c1e"/><path d="M12 30c3-8 8-14 11-14s2 6 5 6 4-3 6-3" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round"/></svg></span>
+    <span class="app running"><svg viewBox="0 0 46 46"><rect width="46" height="46" rx="12" fill="url(#vf)"/><defs><linearGradient id="vf" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#35C3E0"/><stop offset="1" stop-color="#8B7CF6"/></linearGradient></defs><path d="M8 23c3.5 0 3.5-9 7-9s3.5 18 7 18 3.5-15 7-15 3.5 6 9 6" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round"/></svg></span>
+    <span class="dsep"></span>
+    <span class="app"><svg viewBox="0 0 46 46"><rect width="46" height="46" rx="12" fill="rgba(255,255,255,.16)"/><path d="M15 16h16l-1.6 19a2.5 2.5 0 0 1-2.5 2.3h-7.8a2.5 2.5 0 0 1-2.5-2.3L15 16zM13 13h20M19 13l1-2.5h6l1 2.5" stroke="rgba(255,255,255,.75)" stroke-width="1.7" fill="none" stroke-linecap="round"/></svg></span>
+  </div>
+
+  <div class="help">
+    Cliquer la pill : repos → enregistrement → polissage + aperçu<br>
+    Soleil dans la barre de menus : clair / sombre · Icône onde : menu
+  </div>
+</div>
+
+<script>
+/* ---------- thème ---------- */
+const themeBtn = document.getElementById('themeBtn');
+themeBtn.addEventListener('click', () => {
+  const b = document.body;
+  b.dataset.theme = b.dataset.theme === 'dark' ? 'light' : 'dark';
+  document.documentElement.dataset.theme = b.dataset.theme;
+  drawChart();
+});
+document.documentElement.dataset.theme = 'dark';
+
+/* ---------- menu barre de menus ---------- */
+const vfExtra = document.getElementById('vfExtra'), vfMenu = document.getElementById('vfMenu');
+vfExtra.addEventListener('click', e => {
+  e.stopPropagation();
+  vfMenu.classList.toggle('hidden');
+  vfExtra.classList.toggle('open', !vfMenu.classList.contains('hidden'));
+});
+document.addEventListener('click', () => { vfMenu.classList.add('hidden'); vfExtra.classList.remove('open'); });
+vfMenu.addEventListener('click', e => e.stopPropagation());
+
+/* ---------- navigation sidebar ---------- */
+const nav = document.getElementById('nav');
+nav.querySelectorAll('.item').forEach(it => it.addEventListener('click', () => {
+  nav.querySelectorAll('.item').forEach(x => x.classList.remove('sel'));
+  it.classList.add('sel');
+  document.querySelectorAll('.pane').forEach(p => p.classList.remove('on'));
+  document.getElementById('pane-' + it.dataset.pane).classList.add('on');
+  document.getElementById('paneTitle').textContent = it.dataset.title;
+  document.getElementById('histSearch').style.display = it.dataset.pane === 'historique' ? 'flex' : 'none';
+  if (it.dataset.pane === 'accueil') requestAnimationFrame(drawChart);
+}));
+
+/* ---------- pill : cycle d'états ---------- */
+const hud = document.getElementById('hud'), hudPreview = document.getElementById('hudPreview');
+const states = ['idle','recording','polishing'];
+hud.addEventListener('click', () => {
+  const next = states[(states.indexOf(hud.dataset.state) + 1) % states.length];
+  hud.dataset.state = next;
+  hudPreview.classList.toggle('hidden', next !== 'polishing');
+});
+
+/* ---------- switches ---------- */
+document.querySelectorAll('.switch').forEach(s => s.addEventListener('click', () => s.classList.toggle('on')));
+
+/* ---------- graphique d'activité ---------- */
+const HOURS = [0,0,0,0,0,0,0,12,85,240,410,380,150,90,310,520,460,290,180,60,25,0,0,0];
+const svg = document.getElementById('chart'), tip = document.getElementById('chartTip');
+const cssv = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+function drawChart(){
+  const W = svg.clientWidth || 560, H = 120;
+  const padL = 6, padR = 6, padT = 12, padB = 18;
+  const max = Math.max(...HOURS) * 1.15;
+  const x = i => padL + i * (W - padL - padR) / 23;
+  const y = v => padT + (1 - v / max) * (H - padT - padB);
+  const line = cssv('--chart-line'), grid = cssv('--chart-grid'), ink3 = cssv('--label-3');
+
+  let path = '', area = `M ${x(0)} ${y(0)}`;
+  HOURS.forEach((v,i) => { path += (i? ' L':'M') + ` ${x(i)} ${y(v)}`; area += ` L ${x(i)} ${y(v)}`; });
+  area += ` L ${x(23)} ${y(0)} Z`;
+  const peak = HOURS.indexOf(Math.max(...HOURS));
+
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.innerHTML = `
+    <defs><linearGradient id="ag" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="${line}" stop-opacity=".2"/><stop offset="1" stop-color="${line}" stop-opacity="0"/>
+    </linearGradient></defs>
+    ${[.33,.66,1].map(f => `<line x1="${padL}" x2="${W-padR}" y1="${y(max*f/1.15)}" y2="${y(max*f/1.15)}" stroke="${grid}" stroke-width="1"/>`).join('')}
+    <path d="${area}" fill="url(#ag)"/>
+    <path d="${path}" fill="none" stroke="${line}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+    <circle cx="${x(peak)}" cy="${y(HOURS[peak])}" r="3" fill="${line}"/>
+    <text x="${x(peak)}" y="${y(HOURS[peak])-7}" text-anchor="middle" font-size="10" font-weight="600" fill="${cssv('--label')}">${HOURS[peak]}</text>
+    ${[0,6,12,18,23].map(h => `<text x="${x(h)}" y="${H-4}" text-anchor="middle" font-size="9.5" fill="${ink3}">${h} h</text>`).join('')}
+    <line id="xh" y1="${padT}" y2="${H-padB}" stroke="${ink3}" stroke-width="1" stroke-dasharray="3 3" visibility="hidden"/>
+    <circle id="hd" r="3.5" fill="${line}" stroke="${cssv('--group-bg')}" stroke-width="2" visibility="hidden"/>`;
+
+  svg.onmousemove = e => {
+    const r = svg.getBoundingClientRect();
+    const i = Math.max(0, Math.min(23, Math.round(((e.clientX - r.left) * (W/r.width) - padL) / ((W-padL-padR)/23))));
+    svg.querySelector('#xh').setAttribute('x1', x(i)); svg.querySelector('#xh').setAttribute('x2', x(i));
+    svg.querySelector('#xh').setAttribute('visibility','visible');
+    const hd = svg.querySelector('#hd');
+    hd.setAttribute('cx', x(i)); hd.setAttribute('cy', y(HOURS[i])); hd.setAttribute('visibility','visible');
+    tip.style.display = 'block';
+    tip.querySelector('b').textContent = HOURS[i] + ' mots';
+    tip.querySelector('div:last-child').textContent = i + ' h – ' + (i+1) + ' h';
+    const wrap = svg.closest('.chartwrap').getBoundingClientRect();
+    tip.style.left = Math.min(e.clientX - wrap.left + 12, wrap.width - 90) + 'px';
+    tip.style.top = (e.clientY - wrap.top - 10) + 'px';
+  };
+  svg.onmouseleave = () => {
+    tip.style.display = 'none';
+    svg.querySelector('#xh').setAttribute('visibility','hidden');
+    svg.querySelector('#hd').setAttribute('visibility','hidden');
+  };
+}
+drawChart();
+addEventListener('resize', drawChart);
+document.getElementById('chartTable').innerHTML =
+  '<tr><th>Heure</th>' + HOURS.map((_,i)=>`<td>${i}</td>`).join('') + '</tr>' +
+  '<tr><th>Mots</th>' + HOURS.map(v=>`<td>${v}</td>`).join('') + '</tr>';
+</script>
+</body>
+</html>

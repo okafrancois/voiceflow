@@ -1,0 +1,162 @@
+name: Release Native macOS App
+
+# Construit, signe, notarise et publie VoiceFlow (version native Swift) sur la
+# release GitHub, puis met à jour le flux que l'app interroge pour proposer la
+# mise à jour.
+#
+# Secrets requis — les mêmes que « Release Desktop App » :
+#   APPLE_CERTIFICATE          — .p12 Developer ID Application, encodé en base64
+#   APPLE_CERTIFICATE_PASSWORD — mot de passe d'export du .p12
+#   APPLE_SIGNING_IDENTITY     — « Developer ID Application: Nom (TEAMID) »
+#   APPLE_API_ISSUER           — identifiant d'émetteur App Store Connect
+#   APPLE_API_KEY              — identifiant de la clé App Store Connect
+#   APPLE_API_KEY_P8           — contenu du fichier .p8
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag de la release à alimenter (ex. v1.3.0)"
+        required: true
+
+concurrency:
+  group: release-native-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    # L'app exige le SDK macOS 26 (SpeechAnalyzer, Foundation Models,
+    # NSGlassEffectView). Sur un runner plus ancien, la compilation échoue.
+    runs-on: macos-26
+    timeout-minutes: 60
+
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Vérifier les secrets
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: |
+          for name in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY \
+                      APPLE_API_ISSUER APPLE_API_KEY APPLE_API_KEY_P8; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Secret manquant : $name"
+              exit 1
+            fi
+          done
+
+      - name: Vérifier le SDK macOS
+        run: |
+          SDK=$(xcrun --show-sdk-version --sdk macosx)
+          echo "SDK macOS : $SDK · Xcode : $(xcodebuild -version | head -1)"
+          if [ "${SDK%%.*}" -lt 26 ]; then
+            echo "::error::SDK macOS $SDK trop ancien — il en faut 26 ou plus."
+            exit 1
+          fi
+
+      - name: Importer le certificat de signature
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          CERT_PATH=$RUNNER_TEMP/certificate.p12
+          KEYCHAIN_PATH=$RUNNER_TEMP/signing.keychain-db
+          KEYCHAIN_PASSWORD=$(uuidgen)
+          echo -n "$APPLE_CERTIFICATE" | base64 --decode -o "$CERT_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERT_PATH" -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -t cert -f pkcs12 -k "$KEYCHAIN_PATH" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+
+      - name: Cache des dépendances Swift
+        uses: actions/cache@v4
+        with:
+          path: voiceflow-native/VoiceFlow/.build
+          key: spm-${{ runner.os }}-${{ hashFiles('voiceflow-native/VoiceFlow/Package.resolved') }}
+          restore-keys: spm-${{ runner.os }}-
+
+      - name: Fixer la version depuis le tag
+        run: |
+          VERSION="${TAG##*v}"
+          PLIST=voiceflow-native/VoiceFlow/Info.plist
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${{ github.run_number }}" "$PLIST"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Générer l'icône
+        run: |
+          cd voiceflow-native
+          swift tools/make-icon.swift /tmp/VoiceFlow.iconset
+          iconutil -c icns /tmp/VoiceFlow.iconset -o VoiceFlow/AppIcon.icns
+
+      - name: Compiler et signer
+        env:
+          DEV_ID: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          cd voiceflow-native
+          ./build.sh release
+          codesign --verify --strict --verbose=2 dist/VoiceFlow.app
+
+      - name: Construire le DMG
+        run: |
+          cd voiceflow-native
+          DMG="dist/VoiceFlow-$VERSION.dmg"
+          hdiutil create -volname "VoiceFlow" -srcfolder dist/VoiceFlow.app \
+            -ov -format UDZO "$DMG"
+          codesign --force --sign "$DEV_ID" "$DMG"
+          echo "DMG=voiceflow-native/$DMG" >> "$GITHUB_ENV"
+        env:
+          DEV_ID: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+
+      - name: Notariser et agrafer
+        env:
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: |
+          KEY_PATH=$RUNNER_TEMP/AuthKey.p8
+          printf '%s' "$APPLE_API_KEY_P8" > "$KEY_PATH"
+          xcrun notarytool submit "$DMG" \
+            --key "$KEY_PATH" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" \
+            --wait --timeout 30m
+          xcrun stapler staple "$DMG"
+          xcrun stapler validate "$DMG"
+          rm -f "$KEY_PATH"
+
+      - name: Écrire le flux de mise à jour
+        run: |
+          # L'app interroge ce fichier ; l'URL « latest » reste stable d'une
+          # release à l'autre.
+          NOTES=$(gh release view "$TAG" --json body --jq .body 2>/dev/null || echo "")
+          jq -n \
+            --arg version "$VERSION" \
+            --arg notes "$NOTES" \
+            --arg url "https://github.com/${{ github.repository }}/releases/download/$TAG/VoiceFlow-$VERSION.dmg" \
+            '{version: $version, notes: $notes, url: $url}' > appcast.json
+          cat appcast.json
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Publier sur la release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" "$DMG" appcast.json --clobber
+
+      - name: Vérifier la signature du produit publié
+        run: |
+          spctl --assess --type open --context context:primary-signature -v "$DMG"
