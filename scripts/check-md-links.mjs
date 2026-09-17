@@ -15,6 +15,7 @@ const DOCS_ROOT = resolve(PROJECT_ROOT, "docs");
 const MARKDOWN_EXTENSIONS = new Set([".md", ".markdown"]);
 const IGNORED_DIRECTORIES = new Set([
   ".git",
+  ".build",
   ".next",
   ".playwright-mcp",
   ".turbo",
