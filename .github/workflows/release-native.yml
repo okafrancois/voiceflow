@@ -13,16 +13,23 @@ name: Release Native macOS App
 #   APPLE_API_KEY_P8           — contenu du fichier .p8
 
 on:
+  # Pousser un tag suffit : la release est créée si elle n'existe pas.
+  push:
+    tags:
+      - 'native-v*'
   release:
     types: [published]
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag de la release à alimenter (ex. v1.3.0)"
+        description: "Tag de la release à alimenter (ex. native-v0.1.0)"
         required: true
 
+permissions:
+  contents: write
+
 concurrency:
-  group: release-native-${{ github.event.release.tag_name || inputs.tag }}
+  group: release-native-${{ github.event.release.tag_name || inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
@@ -33,7 +40,7 @@ jobs:
     timeout-minutes: 60
 
     env:
-      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      TAG: ${{ github.event.release.tag_name || inputs.tag || github.ref_name }}
 
     steps:
       - uses: actions/checkout@v4
@@ -142,7 +149,7 @@ jobs:
         run: |
           # L'app interroge ce fichier ; l'URL « latest » reste stable d'une
           # release à l'autre.
-          NOTES=$(gh release view "$TAG" --json body --jq .body 2>/dev/null || echo "")
+          NOTES=$(gh release view "$TAG" --json body --jq .body 2>/dev/null || echo "Version native macOS $VERSION.")
           jq -n \
             --arg version "$VERSION" \
             --arg notes "$NOTES" \
@@ -155,7 +162,13 @@ jobs:
       - name: Publier sur la release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$TAG" "$DMG" appcast.json --clobber
+        run: |
+          # Créer la release si le tag a été poussé sans passer par l'interface.
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --title "VoiceFlow natif ${VERSION}" \
+              --notes "Version native macOS ${VERSION}." --target "$GITHUB_SHA"
+          fi
+          gh release upload "$TAG" "$DMG" appcast.json --clobber
 
       - name: Vérifier la signature du produit publié
         run: |

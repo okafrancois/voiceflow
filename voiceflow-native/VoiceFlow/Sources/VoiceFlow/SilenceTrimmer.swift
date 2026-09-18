@@ -20,6 +20,16 @@ struct SilenceTrimmer {
     /// Durée de silence conservée à l'intérieur d'une pause longue.
     var keptPause: TimeInterval = 0.35
 
+    init(threshold: Float = 0.06,
+         hangover: TimeInterval = 0.45,
+         keptPause: TimeInterval = 0.35,
+         failOpenAfter: TimeInterval = 1.5) {
+        self.threshold = threshold
+        self.hangover = hangover
+        self.keptPause = keptPause
+        self.failOpenAfter = failOpenAfter
+    }
+
     private(set) var hasHeardSpeech = false
     private var silenceStart: Date?
     private var lastSpeech = Date.distantPast
