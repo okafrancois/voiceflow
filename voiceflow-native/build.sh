@@ -29,7 +29,7 @@ IDENTITY="${DEV_ID:-$(security find-identity -v -p codesigning 2>/dev/null \
 	| grep "Developer ID Application" | head -1 | awk '{print $2}')}"
 
 if [[ -n "$IDENTITY" ]]; then
-	codesign --force --options runtime --timestamp=none \
+	codesign --force --options runtime --timestamp \
 		--entitlements "$ROOT/voiceflow.entitlements" \
 		--sign "$IDENTITY" "$APP"
 	echo "signé : $IDENTITY"

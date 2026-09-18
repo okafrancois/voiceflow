@@ -11,7 +11,7 @@ type E2EPage = TauriFixtures['tauriPage'];
 async function openSettingsModal(tauriPage: E2EPage) {
   await openRouteWithOnboarding(tauriPage, '/');
 
-  await expect(tauriPage.locator('[data-testid="dashboard-page"]')).toBeVisible({
+  await expect(tauriPage.locator('[data-testid="dictation-home"]')).toBeVisible({
     timeout: 15000,
   });
   const settingsButton = tauriPage.locator('[data-testid="open-settings-modal"]');

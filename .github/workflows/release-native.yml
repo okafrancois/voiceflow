@@ -138,9 +138,20 @@ jobs:
         run: |
           KEY_PATH=$RUNNER_TEMP/AuthKey.p8
           printf '%s' "$APPLE_API_KEY_P8" > "$KEY_PATH"
-          xcrun notarytool submit "$DMG" \
+          # Récupérer le journal en cas de refus : sans lui, « Invalid » ne
+          # dit rien de la cause.
+          SUBMISSION=$(xcrun notarytool submit "$DMG" \
             --key "$KEY_PATH" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" \
-            --wait --timeout 30m
+            --wait --timeout 30m --output-format json | tee /dev/stderr | jq -r .id)
+          STATUS=$(xcrun notarytool info "$SUBMISSION" \
+            --key "$KEY_PATH" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" \
+            --output-format json | jq -r .status)
+          if [ "$STATUS" != "Accepted" ]; then
+            echo "::error::Notarisation refusée ($STATUS) — journal :"
+            xcrun notarytool log "$SUBMISSION" \
+              --key "$KEY_PATH" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER"
+            exit 1
+          fi
           xcrun stapler staple "$DMG"
           xcrun stapler validate "$DMG"
           rm -f "$KEY_PATH"

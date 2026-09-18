@@ -13,6 +13,9 @@ const deprecatedSidebarRoutes = [
   "/permission",
   "/logs",
   "/changelog",
+  "/polish-templates",
+  "/workflows",
+  "/quality",
 ];
 
 test("Sidebar exposes only current primary navigation", async ({
@@ -26,12 +29,14 @@ test("Sidebar exposes only current primary navigation", async ({
   await expect(sidebar).toBeVisible({ timeout: 15000 });
 
   for (const label of [
-    "Dashboard",
+    "Dictation",
+    "Statistics",
     "History",
     "Dictionary",
-    "Polish Templates",
-    "Workflows",
-    "Quality",
+    "Snippets",
+    "Styles",
+    "Vibe coding",
+    "Advanced",
     "Settings",
     "About",
   ]) {
@@ -45,11 +50,13 @@ test("Sidebar exposes only current primary navigation", async ({
   );
   for (const route of [
     "/",
+    "/statistics",
     "/history",
     "/dictionary",
-    "/polish-templates",
-    "/workflows",
-    "/quality",
+    "/snippets",
+    "/styles",
+    "/vibe-coding",
+    "/advanced",
     "/about",
   ]) {
     expect(sidebarHrefs).toContain(route);
@@ -59,7 +66,7 @@ test("Sidebar exposes only current primary navigation", async ({
   }
 
   await expect(
-    tauriPage.locator('[data-testid="dashboard-page"]'),
+    tauriPage.locator('[data-testid="dictation-home"]'),
   ).toBeVisible();
 
   await sidebar.locator('a[href="/history"]').click();
@@ -74,28 +81,20 @@ test("Sidebar exposes only current primary navigation", async ({
     tauriPage.locator('[data-testid="dictionary-page"]'),
   ).toBeVisible({ timeout: 10000 });
 
-  await sidebar.locator('a[href="/polish-templates"]').click();
-  const templatesPage = tauriPage.locator(
-    '[data-testid="polish-templates-page"]',
-  );
-  await expect(templatesPage).toBeVisible({ timeout: 10000 });
-  await expect(templatesPage.getByText("Create Template")).toBeVisible();
+  await sidebar.locator('a[href="/snippets"]').click();
+  await expect(tauriPage.locator('[data-testid="snippets-page"]')).toBeVisible({
+    timeout: 10000,
+  });
 
-  await sidebar.locator('a[href="/workflows"]').click();
-  const workflowPage = tauriPage.locator('[data-testid="workflow-page"]');
-  await expect(workflowPage).toBeVisible({ timeout: 10000 });
-  await expect(
-    workflowPage.locator('[role="tab"]').filter({ hasText: "Profiles" }),
-  ).toBeVisible();
+  await sidebar.locator('a[href="/styles"]').click();
+  await expect(tauriPage.locator('[data-testid="styles-page"]')).toBeVisible({
+    timeout: 10000,
+  });
 
-  await sidebar.locator('a[href="/quality"]').click();
-  const qualityPage = tauriPage.locator(
-    '[data-testid="platform-quality-page"]',
-  );
-  await expect(qualityPage).toBeVisible({ timeout: 10000 });
-  await expect(
-    qualityPage.getByText("Setup diagnostics", { exact: true }),
-  ).toBeVisible();
+  await sidebar.locator('a[href="/advanced"]').click();
+  await expect(tauriPage.locator('[data-testid="advanced-page"]')).toBeVisible({
+    timeout: 10000,
+  });
 
   await sidebar.locator('[data-testid="nav-about"]').click();
   const aboutPage = tauriPage.locator('[data-testid="about-page"]');
@@ -111,7 +110,7 @@ test("Sidebar exposes only current primary navigation", async ({
   await expect(tauriPage.locator("h1")).toContainText("Changelog");
 
   await sidebar.locator('a[href="/"]').click();
-  await expect(tauriPage.locator('[data-testid="dashboard-page"]')).toBeVisible(
+  await expect(tauriPage.locator('[data-testid="dictation-home"]')).toBeVisible(
     { timeout: 10000 },
   );
 });
