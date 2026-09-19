@@ -23,6 +23,10 @@ final class TranscriptionSession {
     private let analyzerFormat: AVAudioFormat
     private var converter: AVAudioConverter?
     private var resultsTask: Task<String, Error>?
+    private var loggedFormats = false
+    private var fedFrames = 0
+    private var emptyConversions = 0
+    private var conversionErrors = 0
 
     /// Locales couvertes par SpeechAnalyzer sur cette machine.
     static func supportedLocales() async -> [Locale] {
@@ -107,15 +111,32 @@ final class TranscriptionSession {
     /// l'analyseur et le pousse dans la file.
     func feed(_ buffer: AVAudioPCMBuffer) {
         do {
+            if !loggedFormats {
+                loggedFormats = true
+                Diagnostics.log(
+                    "formats · entrée \(buffer.format.sampleRate) Hz "
+                    + "\(buffer.format.channelCount) canal(aux) · "
+                    + "analyseur \(analyzerFormat.sampleRate) Hz "
+                    + "\(analyzerFormat.channelCount) canal(aux)")
+            }
             let converted = try convert(buffer)
+            guard converted.frameLength > 0 else {
+                emptyConversions += 1
+                return
+            }
+            fedFrames += Int(converted.frameLength)
             inputContinuation.yield(AnalyzerInput(buffer: converted))
         } catch {
+            conversionErrors += 1
             log.error("audio conversion failed: \(error)")
         }
     }
 
     /// Clôt le flux, attend la fin de l'analyse et rend le texte final.
     func finish() async throws -> String {
+        Diagnostics.log(
+            "moteur Apple · \(fedFrames) échantillons transmis · "
+            + "\(emptyConversions) conversions vides · \(conversionErrors) erreurs")
         inputContinuation.finish()
         try await analyzer.finalizeAndFinishThroughEndOfInput()
         guard let resultsTask else { return "" }

@@ -277,3 +277,4 @@
 "Journal de diagnostic" = "Diagnostic log";
 "Ouvrir le journal" = "Open the log";
 "Ce que l'app a fait à chaque dictée : audio capté, durée, erreurs." = "What the app did on each dictation: captured audio, duration, errors.";
+"Aucune parole reconnue alors que du son a été capté. Désactivez la réduction de bruit dans Entrée audio : elle perturbe la capture sur certaines configurations." = "No speech recognised although sound was captured. Turn off noise reduction in Audio input: it disturbs capture on some setups.";

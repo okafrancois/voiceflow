@@ -277,3 +277,4 @@
 "Journal de diagnostic" = "Journal de diagnostic";
 "Ouvrir le journal" = "Ouvrir le journal";
 "Ce que l'app a fait à chaque dictée : audio capté, durée, erreurs." = "Ce que l'app a fait à chaque dictée : audio capté, durée, erreurs.";
+"Aucune parole reconnue alors que du son a été capté. Désactivez la réduction de bruit dans Entrée audio : elle perturbe la capture sur certaines configurations." = "Aucune parole reconnue alors que du son a été capté. Désactivez la réduction de bruit dans Entrée audio : elle perturbe la capture sur certaines configurations.";
