@@ -67,10 +67,10 @@ final class AudioRecorder {
             onBuffer(buffer)
         }
         onStopped = { [weak self] in
-            log.info("""
-                audio: \(passed) blocs transmis, \(dropped) coupés, \
-                crête \(self?.peakLevel ?? 0)
-                """)
+            Diagnostics.log(
+                "audio · \(passed) blocs transmis, \(dropped) coupés · "
+                + "crête \(String(format: "%.3f", self?.peakLevel ?? 0)) · "
+                + "bruit \(options.noiseReduction) · silence \(trimSilence)")
         }
 
         engine.prepare()

@@ -274,3 +274,6 @@
 "%d %% des dictées" = "%d%% of dictations";
 "Aucun son capté. Vérifiez que le micro choisi est le bon et qu'il n'est pas coupé." = "No sound captured. Check that the selected microphone is the right one and is not muted.";
 "Aucun son capté : VoiceFlow n'a pas l'autorisation micro. Réglages Système › Confidentialité › Microphone." = "No sound captured: VoiceFlow lacks microphone permission. System Settings › Privacy › Microphone.";
+"Journal de diagnostic" = "Diagnostic log";
+"Ouvrir le journal" = "Open the log";
+"Ce que l'app a fait à chaque dictée : audio capté, durée, erreurs." = "What the app did on each dictation: captured audio, duration, errors.";

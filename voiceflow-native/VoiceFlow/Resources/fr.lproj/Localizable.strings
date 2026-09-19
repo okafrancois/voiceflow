@@ -274,3 +274,6 @@
 "%d %% des dictées" = "%d %% des dictées";
 "Aucun son capté. Vérifiez que le micro choisi est le bon et qu'il n'est pas coupé." = "Aucun son capté. Vérifiez que le micro choisi est le bon et qu'il n'est pas coupé.";
 "Aucun son capté : VoiceFlow n'a pas l'autorisation micro. Réglages Système › Confidentialité › Microphone." = "Aucun son capté : VoiceFlow n'a pas l'autorisation micro. Réglages Système › Confidentialité › Microphone.";
+"Journal de diagnostic" = "Journal de diagnostic";
+"Ouvrir le journal" = "Ouvrir le journal";
+"Ce que l'app a fait à chaque dictée : audio capté, durée, erreurs." = "Ce que l'app a fait à chaque dictée : audio capté, durée, erreurs.";

@@ -910,6 +910,14 @@ struct SettingsPage: View {
                         .monospacedDigit()
                 }
                 divider
+                row("Journal de diagnostic",
+                    help: "Ce que l'app a fait à chaque dictée : audio capté, durée, erreurs.") {
+                    Button("Ouvrir le journal") {
+                        NSWorkspace.shared.open(Diagnostics.fileURL)
+                    }
+                    .buttonStyle(VFButtonStyle())
+                }
+                divider
                 row("Dossier de l'app") {
                     Button(L.t("Révéler dans le Finder")) {
                         NSWorkspace.shared.activateFileViewerSelecting(

@@ -388,18 +388,23 @@ final class AppState: ObservableObject {
         lastError = nil
         volatileTranscript = ""
         pendingPolish = polishEnabled
-        if polishEnabled {
-            // Chargement du modèle Apple Intelligence pendant que l'utilisateur
-            // parle : la latence de polissage se paie pendant la dictée.
-            polisher.prewarm(template: PolishCatalog.resolved(polishTemplateID))
-        }
 
-        // Capturer la cible AVANT tout : le champ qui a le focus au moment
-        // où l'utilisateur déclenche la dictée est celui où insérer.
-        capturedTarget = CapturedTextTarget(captureAccessibility: insertInOriginalField)
-
+        // Retour immédiat d'abord. Le préchargement du modèle et la capture
+        // d'accessibilité sont synchrones et peuvent bloquer plusieurs
+        // secondes — la capture interroge une autre application —, ce qui
+        // retardait l'apparition de la pill.
         phase = .recording
         playSound(start: true)
+        Diagnostics.log("dictée démarrée · moteur \(engineChoice.rawValue) · langue \(dictationLocaleID) · polissage \(polishEnabled)")
+
+        // La pill ne prend pas le focus : capturer juste après reste correct.
+        capturedTarget = CapturedTextTarget(captureAccessibility: insertInOriginalField)
+        if polishEnabled {
+            let template = PolishCatalog.resolved(polishTemplateID)
+            Task.detached(priority: .utility) { [polisher] in
+                polisher.prewarm(template: template)
+            }
+        }
         Task {
             do {
                 let isAuto = dictationLocaleID == Self.autoLocaleID
@@ -461,6 +466,7 @@ final class AppState: ObservableObject {
         // Silence absolu : inutile d'interroger le moteur, et surtout il faut
         // le dire — macOS ne signale pas une autorisation micro manquante,
         // il livre simplement des blocs vides.
+        Diagnostics.log("prise terminée · \(audioDurationMs) ms · crête \(String(format: "%.3f", peak))")
         guard peak > 0.001 else {
             self.engine = nil
             phase = .idle
@@ -484,7 +490,8 @@ final class AppState: ObservableObject {
             guard !trimmed.isEmpty else {
                 // Silence complet plutôt qu'échec : le dire, sinon l'app a
                 // l'air de tourner dans le vide.
-                lastError = trimSilence
+                Diagnostics.log("transcription vide (coupe du silence : \(trimSilence))")
+            lastError = trimSilence
                     ? L.t("Aucune parole reconnue. Si cela se répète, baissez la sensibilité de la coupe du silence, ou désactivez-la.")
                     : L.t("Aucune parole reconnue.")
                 log.info("empty transcription (trimSilence=\(self.trimSilence))")
@@ -515,6 +522,7 @@ final class AppState: ObservableObject {
                 }
                 phase = .idle
             }
+            Diagnostics.log("transcrit \(trimmed.count) caractères en \(sttDurationMs) ms")
             lastTranscript = final
             insert(final)
             CorrectionWatcher.watch(inserted: final, in: capturedTarget?.accessibility)
@@ -532,6 +540,7 @@ final class AppState: ObservableObject {
         } catch {
             self.engine = nil
             phase = .idle
+            Diagnostics.log("échec transcription : \(error.localizedDescription)")
             lastError = "Transcription échouée : \(error.localizedDescription)"
             log.error("transcription failed: \(error)")
         }
@@ -638,8 +647,8 @@ final class AppState: ObservableObject {
         // sans réactiver l'app) ; sinon injection dans le focus courant.
         if let target = capturedTarget {
             do {
-                let method = try target.insertBackground(text)
-                log.info("inserted via \(String(describing: method))")
+                _ = try target.insertBackground(text)
+                Diagnostics.log("inséré dans le champ d'origine")
                 return
             } catch {
                 log.info("background insert unavailable (\(error.localizedDescription)), falling back")
