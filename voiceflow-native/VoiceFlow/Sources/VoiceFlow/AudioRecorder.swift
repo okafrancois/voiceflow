@@ -22,8 +22,9 @@ final class AudioRecorder {
         var deviceID: AudioDeviceID = AudioDevices.systemDefaultID
         var noiseReduction = true
         var trimSilence = true
-        /// Sensibilité de la coupe du silence (0…1) : plus haut, plus sévère.
-        var silenceThreshold: Float = 0.12
+        /// Sensibilité de la coupe du silence : écart exigé au-dessus du
+        /// plancher de bruit. Plus haut, plus sévère.
+        var silenceMargin: Float = 0.05
     }
 
     func start(
@@ -46,7 +47,7 @@ final class AudioRecorder {
             log.warning("voice processing unavailable: \(error.localizedDescription)")
         }
 
-        trimmer = SilenceTrimmer(threshold: options.silenceThreshold)
+        trimmer = SilenceTrimmer(margin: options.silenceMargin)
         let trimSilence = options.trimSilence
 
         // Le format doit être relu après le changement de périphérique.
@@ -67,9 +68,13 @@ final class AudioRecorder {
             onBuffer(buffer)
         }
         onStopped = { [weak self] in
+            let total = max(1, passed + dropped)
             Diagnostics.log(
-                "audio · \(passed) blocs transmis, \(dropped) coupés · "
+                "audio · \(passed) blocs transmis, \(dropped) coupés "
+                + "(\(dropped * 100 / total) %) · "
                 + "crête \(String(format: "%.3f", self?.peakLevel ?? 0)) · "
+                + "plancher \(String(format: "%.3f", self?.trimmer.noiseFloor ?? 0)) · "
+                + "seuil \(String(format: "%.3f", self?.trimmer.gate ?? 0)) · "
                 + "bruit \(options.noiseReduction) · silence \(trimSilence)")
         }
 

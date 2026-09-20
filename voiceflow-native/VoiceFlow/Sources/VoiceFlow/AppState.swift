@@ -192,8 +192,11 @@ final class AppState: ObservableObject {
         didSet { UserDefaults.standard.set(trimSilence, forKey: "trimSilence") }
     }
 
-    @Published var silenceThreshold = UserDefaults.standard.object(forKey: "silenceThreshold") as? Double ?? 0.06 {
-        didSet { UserDefaults.standard.set(silenceThreshold, forKey: "silenceThreshold") }
+    /// Écart exigé au-dessus du plancher de bruit. Clé distincte de l'ancien
+    /// `silenceThreshold`, qui était un seuil absolu : les valeurs enregistrées
+    /// alors n'ont pas le même sens et ne doivent pas être reprises.
+    @Published var silenceMargin = UserDefaults.standard.object(forKey: "silenceMargin") as? Double ?? 0.05 {
+        didSet { UserDefaults.standard.set(silenceMargin, forKey: "silenceMargin") }
     }
 
     /// Sons de confirmation au début et à la fin de la dictée.
@@ -410,12 +413,14 @@ final class AppState: ObservableObject {
                 let isAuto = dictationLocaleID == Self.autoLocaleID
                 let engine: DictationEngine
                 if let whisperModel = engineChoice.whisperModel {
-                    engine = try WhisperEngine(
-                        model: whisperModel,
-                        language: isAuto
+                    // Un modèle anglais seul ne sait rien détecter d'autre :
+                    // lui laisser deviner la langue produirait du charabia.
+                    let language: String? = engineChoice.isEnglishOnly
+                        ? "en"
+                        : (isAuto
                             ? nil
-                            : Locale(identifier: dictationLocaleID).language.languageCode?.identifier
-                    )
+                            : Locale(identifier: dictationLocaleID).language.languageCode?.identifier)
+                    engine = try WhisperEngine(model: whisperModel, language: language)
                 } else {
                     // Le moteur système exige une langue explicite.
                     let locale = Locale(identifier: isAuto ? "fr-FR" : dictationLocaleID)
@@ -431,7 +436,7 @@ final class AppState: ObservableObject {
                         deviceID: inputDeviceID,
                         noiseReduction: noiseReduction,
                         trimSilence: trimSilence,
-                        silenceThreshold: Float(silenceThreshold)),
+                        silenceMargin: Float(silenceMargin)),
                     onBuffer: { buffer in
                         engine.feed(buffer)
                     },

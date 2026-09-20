@@ -2,88 +2,47 @@
 
 All notable changes to the desktop application will be documented in this file.
 
-## v1.2.3 (2026-09-13)
-
-### Fixes
-
-- Restore the six built-in polish profile prompts and shared provider instructions from v1.2.1 to remove the aggressive list formatting introduced in v1.2.2.
-- Retain the transcription self-correction and output safety improvements from v1.2.2.
-
-### Notes
-
-- This is a conservative prompt rollback. Automatic list and paragraph formatting returns to its earlier, limited behavior. Structured Notes retains its historical list-oriented style.
-- Add real-model regression checks for prose, alongside the retained stricter structure suite for future improvements.
-- Verified 15 ordinary-input cases on each of LFM2 2.6B and Qwen3 4B. The published universal app passed signature and notarization validation; the updater serves 1.2.3.
-
-## v1.2.2 (2026-09-09)
-
-### Fixes
-
-- Give all six polish profiles explicit rewriting and plain-text layout rules
-- Turn spoken enumerations into lists and separate unrelated topics
-- Resolve explicit weekday and numeric self-corrections before polishing
-- Enable bounded reasoning for Qwen3 4B and clarify the editing task for LFM
-- Preserve valid lists and repeated-sentence cleanup in output validation
-- Reject added questions, assistant replies and lost explicit corrections
-- Share one example-free default prompt across local model families
-
-### Notes
-
-- Validated eleven French profile cases on each of LFM2 2.6B and Qwen3 4B
-- Qwen3 4B prioritizes instruction-following with a bounded reasoning phase;
-  polishing can take longer than in previous versions.
-- Output validation uses bounded heuristics. The original transcription remains
-  available when a model response is rejected.
-
-## v1.2.1 (2026-09-05)
-
-### Fixes
-
-- Restore a smooth daily activity curve with a subtle area fill
-- Preserve period selection, exact daily values and the accessible data table
-
-## v1.2.0 (2026-09-05)
-
-### Features
-
-- Restore Home usage summaries and recent transcription history
-- Add retained-history statistics with selectable periods and local/cloud totals
-- Add direct Snippets and Styles editors with app-only styles
-- Edit dictionary recognition aliases
-- Add opt-in Vibe coding with a VS Code-compatible editor adapter
-- Add a reproducible signed local development installation build
-
-### Fixes and simplification
-
-- Share transcription rewriting and output-preservation rules
-- Keep processing local by default and developer integrations opt-in
-- Preserve recovery actions while removing unsafe cross-app Undo and direct
-  streaming insertion
-- Keep select menus usable inside settings dialogs
-
-### Notes
-
-- The editor adapter shares bounded filename and symbol metadata, not source
-  file contents. Context follows the selected local or cloud processing engine.
-- Automatic @file tagging is not included.
-
-## v1.1.5 (2026-09-04)
+## Unreleased
 
 ### Bug Fixes
 
-- Preserve the dictation language and reject destructive Polish output
+- Update e2e specs to the current navigation (75ec152)
 
-## v1.1.4 (2026-09-04)
+## v1.2.3 (2026-09-13)
+
+### Bug Fixes
+
+- Restore conservative polish prompts in v1.2.3 (2134d9e)
+
+## v1.2.2 (2026-09-09)
+
+### Bug Fixes
+
+- Improve polish profiles in v1.2.2 (dfa62e9)
+- Restore smooth activity chart in v1.2.1 (e004d80)
+
+## v1.2.1 (2026-09-05)
+
+### Features
+
+- Release v1.2.0 with statistics and Vibe coding (bbc347a)
+- Unify dictation polish settings (e879c34)
+
+### Bug Fixes
+
+- Restore smooth activity chart in v1.2.1 (e004d80)
+- Preserve transcript language and content (b3d420a)
+
+## v1.1.5 (2026-09-04)
 
 ### Features
 
 - Unify dictation polish settings (e879c34)
-
-## v1.1.3 (2026-09-04)
-
-### Features
-
 - Preserve original dictation target (8bdc63a)
+
+### Bug Fixes
+
+- Preserve transcript language and content (b3d420a)
 
 ## v1.1.2 (2026-08-25)
 
@@ -91,17 +50,20 @@ All notable changes to the desktop application will be documented in this file.
 
 - Paste latest transcription from the tray (fc2ab9f)
 
-## v1.1.1 (2026-08-24)
-
 ### Bug Fixes
 
 - Bundle universal developer CLI (e4925eb)
 
-## v1.1.0 (2026-08-24)
+## v1.1.1 (2026-08-24)
 
 ### Features
 
 - Add contextual voice workflows (ae8d826)
+
+### Bug Fixes
+
+- Bundle universal developer CLI (e4925eb)
+- Prevent long recordings from being truncated (ced1d10)
 
 ## v1.0.7 (2026-08-23)
 

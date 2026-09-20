@@ -748,9 +748,9 @@ struct SettingsPage: View {
                     row("Sensibilité",
                         help: "Plus haut, plus sévère : convient à un environnement bruyant.") {
                         HStack(spacing: 10) {
-                            Slider(value: $state.silenceThreshold, in: 0.04...0.3)
+                            Slider(value: $state.silenceMargin, in: 0.02...0.15)
                                 .frame(width: 160)
-                            Text(String(format: "%.2f", state.silenceThreshold))
+                            Text(String(format: "%.2f", state.silenceMargin))
                                 .font(.system(size: 12))
                                 .foregroundStyle(VF.labelMuted)
                                 .monospacedDigit()
