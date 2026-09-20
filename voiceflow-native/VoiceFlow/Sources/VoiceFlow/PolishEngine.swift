@@ -1,5 +1,6 @@
 import Foundation
 import FoundationModels
+import NaturalLanguage
 
 /// Un style de polissage, prompt système résolu (valeur d'origine ou version
 /// modifiée par l'utilisateur).
@@ -35,13 +36,15 @@ enum PolishCatalog {
 
     /// Le texte dicté, emballé pour qu'il ne puisse pas se lire comme une
     /// consigne.
+    ///
+    /// Rien d'autre que les marqueurs : toute phrase anglaise ajoutée ici,
+    /// avant comme après, faisait traduire la dictée en anglais. La consigne
+    /// de réécriture vit donc entièrement dans le prompt système.
     static func userTurn(for text: String) -> String {
         """
         \(openMarker)
         \(text)
         \(closeMarker)
-
-        Rewrite the transcript between the markers as instructed: fix speech-to-text errors, punctuation and sentence structure, drop filler words and false starts. Keep every point it makes. Output the rewritten transcript only.
         """
     }
 
@@ -143,12 +146,37 @@ enum PolishGuard {
         let ratio = Double(wordCount(polished)) / Double(rawWords)
         return ratio < floor(forTemplate: templateID)
     }
+
+    /// La détection de langue ne devient fiable qu'à partir d'une poignée de
+    /// mots : mesuré, six mots donnent une certitude de 0,99, trois mots font
+    /// passer « OK, petit test » pour du polonais. En dessous, ne rien dire
+    /// plutôt que rejeter à tort.
+    static func language(of text: String) -> NLLanguage? {
+        guard wordCount(text) >= 6 else { return nil }
+        let recognizer = NLLanguageRecognizer()
+        recognizer.processString(text)
+        guard let best = recognizer.languageHypotheses(withMaximum: 1)
+            .max(by: { $0.value < $1.value }), best.value >= 0.8
+        else { return nil }
+        return best.key
+    }
+
+    /// Vrai quand la sortie a changé de langue. `expected` vient de la langue
+    /// de dictée choisie ; en détection automatique, du texte brut lui-même.
+    static func changesLanguage(raw: String, polished: String, expected: NLLanguage?) -> Bool {
+        guard let source = expected ?? language(of: raw),
+              let result = language(of: polished)
+        else { return false }
+        return result != source
+    }
 }
 
 protocol PolishEngine {
     /// Réduit la latence perçue en chargeant le modèle pendant la dictée.
     func prewarm(template: PolishTemplate)
-    func polish(_ text: String, template: PolishTemplate) async throws -> String
+    /// `locale` est l'identifiant de langue de dictée, `nil` en détection
+    /// automatique.
+    func polish(_ text: String, template: PolishTemplate, locale: String?) async throws -> String
 }
 
 /// Moteur de polissage local : Foundation Models (Apple Intelligence),
@@ -157,6 +185,8 @@ final class FoundationModelsPolisher: PolishEngine {
     enum PolishError: LocalizedError {
         case unavailable(String)
         case contentLost
+        case languageChanged
+        case refused
 
         var errorDescription: String? {
             switch self {
@@ -164,6 +194,10 @@ final class FoundationModelsPolisher: PolishEngine {
                 "Apple Intelligence indisponible (\(reason)) — activer dans Réglages Système › Apple Intelligence"
             case .contentLost:
                 "le modèle a répondu au texte au lieu de le reformuler"
+            case .languageChanged:
+                "le modèle a traduit le texte au lieu de le reformuler"
+            case .refused:
+                "Apple Intelligence a refusé ce texte (filtre de contenu)"
             }
         }
     }
@@ -192,37 +226,60 @@ final class FoundationModelsPolisher: PolishEngine {
         prewarmedTemplateID = template.id
     }
 
-    func polish(_ text: String, template: PolishTemplate) async throws -> String {
+    func polish(_ text: String, template: PolishTemplate, locale: String?) async throws -> String {
         try Self.checkAvailability()
+        let expected = locale.flatMap { Locale(identifier: $0).language.languageCode }
+            .map { NLLanguage($0.identifier) }
 
         let first = try await run(text, template: template, session: takePrewarmed(for: template))
-        guard PolishGuard.destroysContent(raw: text, polished: first, templateID: template.id) else {
-            return first
-        }
-
-        // Une session neuve et un second tirage suffisent le plus souvent :
-        // tomber directement sur le texte brut priverait l'utilisateur du
-        // polissage pour une sortie malheureuse.
-        Diagnostics.log("polissage rejeté (\(PolishGuard.wordCount(text)) mots → "
-            + "\(PolishGuard.wordCount(first))), nouvelle tentative")
-        let retry = try await run(
-            text, template: template,
-            session: LanguageModelSession(instructions: template.systemPrompt))
-        guard PolishGuard.destroysContent(raw: text, polished: retry, templateID: template.id) else {
+        if let verdict = reject(raw: text, polished: first, template: template, expected: expected) {
+            // Une session neuve et un second tirage suffisent le plus souvent :
+            // tomber directement sur le texte brut priverait l'utilisateur du
+            // polissage pour une sortie malheureuse.
+            Diagnostics.log("polissage rejeté (\(verdict.reason)), nouvelle tentative")
+            let retry = try await run(
+                text, template: template,
+                session: LanguageModelSession(instructions: template.systemPrompt))
+            if let second = reject(raw: text, polished: retry, template: template, expected: expected) {
+                Diagnostics.log("polissage abandonné (\(second.reason)), texte brut conservé")
+                throw second.error
+            }
             return retry
         }
+        return first
+    }
 
-        Diagnostics.log("polissage abandonné (\(PolishGuard.wordCount(text)) mots → "
-            + "\(PolishGuard.wordCount(retry))), texte brut conservé")
-        throw PolishError.contentLost
+    /// Ce qui disqualifie une sortie, et de quoi le journaliser.
+    private func reject(
+        raw: String, polished: String, template: PolishTemplate, expected: NLLanguage?
+    ) -> (error: PolishError, reason: String)? {
+        if PolishGuard.destroysContent(raw: raw, polished: polished, templateID: template.id) {
+            return (.contentLost,
+                    "\(PolishGuard.wordCount(raw)) mots → \(PolishGuard.wordCount(polished))")
+        }
+        if PolishGuard.changesLanguage(raw: raw, polished: polished, expected: expected) {
+            let source = expected ?? PolishGuard.language(of: raw)
+            return (.languageChanged,
+                    "langue \(source?.rawValue ?? "?") → "
+                        + "\(PolishGuard.language(of: polished)?.rawValue ?? "?")")
+        }
+        return nil
     }
 
     private func run(
         _ text: String, template: PolishTemplate, session: LanguageModelSession
     ) async throws -> String {
-        let response = try await session.respond(
-            to: PolishCatalog.userTurn(for: text), options: Self.options)
-        return PolishCatalog.unwrap(response.content)
+        do {
+            let response = try await session.respond(
+                to: PolishCatalog.userTurn(for: text), options: Self.options)
+            return PolishCatalog.unwrap(response.content)
+        } catch let error as LanguageModelSession.GenerationError {
+            // Le filtre de contenu d'Apple se déclenche sur des dictées
+            // anodines ; son message brut n'apprend rien à l'utilisateur.
+            guard case .guardrailViolation = error else { throw error }
+            Diagnostics.log("polissage refusé par le filtre de contenu Apple")
+            throw PolishError.refused
+        }
     }
 
     /// La session préchauffée ne sert qu'une fois : réutilisée, elle garderait

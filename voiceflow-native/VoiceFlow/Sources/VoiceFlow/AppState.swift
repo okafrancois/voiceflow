@@ -522,7 +522,8 @@ final class AppState: ObservableObject {
                     .templateID(forBundleID: capturedTarget?.bundleID) ?? polishTemplateID
                 do {
                     final = try await polisher.polish(
-                        corrected, template: PolishCatalog.resolved(templateID))
+                        corrected, template: PolishCatalog.resolved(templateID),
+                        locale: dictationLocaleID == Self.autoLocaleID ? nil : dictationLocaleID)
                     polishDurationMs = Int(-polishStart.timeIntervalSinceNow * 1000)
                     log.info("polished (\(templateID))")
                 } catch {
