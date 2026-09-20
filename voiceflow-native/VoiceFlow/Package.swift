@@ -7,13 +7,15 @@ let package = Package(
         .macOS("26.0")
     ],
     dependencies: [
-        .package(url: "https://github.com/argmaxinc/WhisperKit.git", from: "0.9.0")
+        .package(url: "https://github.com/argmaxinc/WhisperKit.git", from: "0.9.0"),
+        .package(url: "https://github.com/k2-fsa/sherpa-onnx", from: "1.13.8")
     ],
     targets: [
         .executableTarget(
             name: "VoiceFlow",
             dependencies: [
-                .product(name: "WhisperKit", package: "WhisperKit")
+                .product(name: "WhisperKit", package: "WhisperKit"),
+                .product(name: "sherpa-onnx", package: "sherpa-onnx")
             ],
             path: "Sources/VoiceFlow",
             swiftSettings: [

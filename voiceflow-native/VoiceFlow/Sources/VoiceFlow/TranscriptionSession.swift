@@ -21,7 +21,7 @@ final class TranscriptionSession {
     private let inputStream: AsyncStream<AnalyzerInput>
     private let inputContinuation: AsyncStream<AnalyzerInput>.Continuation
     private let analyzerFormat: AVAudioFormat
-    private var converter: AVAudioConverter?
+    private let resampler: AudioResampler
     private var resultsTask: Task<String, Error>?
     private var loggedFormats = false
     private var fedFrames = 0
@@ -83,6 +83,7 @@ final class TranscriptionSession {
             throw SessionError.noAudioFormat
         }
         analyzerFormat = format
+        resampler = AudioResampler(to: format)
 
         analyzer = SpeechAnalyzer(modules: [transcriber])
         (inputStream, inputContinuation) = AsyncStream.makeStream(of: AnalyzerInput.self)
@@ -119,7 +120,7 @@ final class TranscriptionSession {
                     + "analyseur \(analyzerFormat.sampleRate) Hz "
                     + "\(analyzerFormat.channelCount) canal(aux)")
             }
-            let converted = try convert(buffer)
+            let converted = try resampler.convert(buffer)
             guard converted.frameLength > 0 else {
                 emptyConversions += 1
                 return
@@ -141,40 +142,5 @@ final class TranscriptionSession {
         try await analyzer.finalizeAndFinishThroughEndOfInput()
         guard let resultsTask else { return "" }
         return try await resultsTask.value
-    }
-
-    private func convert(_ buffer: AVAudioPCMBuffer) throws -> AVAudioPCMBuffer {
-        if buffer.format == analyzerFormat {
-            return buffer
-        }
-        if converter == nil || converter?.inputFormat != buffer.format {
-            converter = AVAudioConverter(from: buffer.format, to: analyzerFormat)
-            converter?.primeMethod = .none
-        }
-        guard let converter else {
-            throw SessionError.noAudioFormat
-        }
-
-        let ratio = analyzerFormat.sampleRate / buffer.format.sampleRate
-        let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 16
-        guard let output = AVAudioPCMBuffer(pcmFormat: analyzerFormat, frameCapacity: capacity) else {
-            throw SessionError.noAudioFormat
-        }
-
-        var fed = false
-        var conversionError: NSError?
-        converter.convert(to: output, error: &conversionError) { _, status in
-            if fed {
-                status.pointee = .noDataNow
-                return nil
-            }
-            fed = true
-            status.pointee = .haveData
-            return buffer
-        }
-        if let conversionError {
-            throw conversionError
-        }
-        return output
     }
 }

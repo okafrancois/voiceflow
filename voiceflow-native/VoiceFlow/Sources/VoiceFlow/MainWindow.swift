@@ -247,7 +247,7 @@ struct DictationPage: View {
             }
             Spacer(minLength: 12)
             HStack(spacing: 14) {
-                Text(state.engineChoice.isWhisper ? "Transcription Whisper" : "Transcription Apple")
+                Text(state.engineChoice.shortLabel)
                     .font(.system(size: 13))
                     .foregroundStyle(VF.labelMuted)
                 VFKeycap(text: state.dictateShortcut.display)

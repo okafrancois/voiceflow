@@ -7,12 +7,10 @@ import WhisperKit
 /// Hugging Face au premier usage puis mis en cache par WhisperKit.
 final class WhisperEngine: DictationEngine {
     enum EngineError: LocalizedError {
-        case audioFormatUnavailable
         case emptyRecording
 
         var errorDescription: String? {
             switch self {
-            case .audioFormatUnavailable: "Format audio 16 kHz indisponible"
             case .emptyRecording: "Aucun audio capturé"
             }
         }
@@ -22,25 +20,19 @@ final class WhisperEngine: DictationEngine {
     /// Code langue Whisper ("fr", "en", …) ; nil = détection automatique.
     private let language: String?
 
-    private let targetFormat: AVAudioFormat
-    private var converter: AVAudioConverter?
+    private let resampler: AudioResampler
     private var samples: [Float] = []
     private let lock = NSLock()
 
     init(model: String, language: String?) throws {
         self.model = model
         self.language = language
-        guard let format = AVAudioFormat(
-            commonFormat: .pcmFormatFloat32, sampleRate: 16000, channels: 1, interleaved: false
-        ) else {
-            throw EngineError.audioFormatUnavailable
-        }
-        targetFormat = format
+        resampler = AudioResampler(to: try AudioResampler.standard16k())
     }
 
     func feed(_ buffer: AVAudioPCMBuffer) {
         do {
-            let converted = try convert(buffer)
+            let converted = try resampler.convert(buffer)
             guard let channel = converted.floatChannelData?[0] else { return }
             let frames = Int(converted.frameLength)
             lock.lock()
@@ -68,35 +60,6 @@ final class WhisperEngine: DictationEngine {
         let results = try await kit.transcribe(audioArray: audio, decodeOptions: options)
         return results.map(\.text).joined(separator: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private func convert(_ buffer: AVAudioPCMBuffer) throws -> AVAudioPCMBuffer {
-        if buffer.format == targetFormat { return buffer }
-        if converter == nil || converter?.inputFormat != buffer.format {
-            converter = AVAudioConverter(from: buffer.format, to: targetFormat)
-            converter?.primeMethod = .none
-        }
-        guard let converter else { throw EngineError.audioFormatUnavailable }
-
-        let ratio = targetFormat.sampleRate / buffer.format.sampleRate
-        let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 16
-        guard let output = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: capacity) else {
-            throw EngineError.audioFormatUnavailable
-        }
-
-        var fed = false
-        var conversionError: NSError?
-        converter.convert(to: output, error: &conversionError) { _, status in
-            if fed {
-                status.pointee = .noDataNow
-                return nil
-            }
-            fed = true
-            status.pointee = .haveData
-            return buffer
-        }
-        if let conversionError { throw conversionError }
-        return output
     }
 }
 

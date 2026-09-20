@@ -251,7 +251,7 @@ final class AppState: ObservableObject {
 
     /// Détection automatique choisie alors que le moteur ne sait pas la faire.
     var autoLanguageUnavailable: Bool {
-        dictationLocaleID == Self.autoLocaleID && !engineChoice.isWhisper
+        dictationLocaleID == Self.autoLocaleID && !engineChoice.detectsLanguage
     }
 
     /// Quelque chose bloque la dictée (permission manquante) ?
@@ -421,6 +421,12 @@ final class AppState: ObservableObject {
                             ? nil
                             : Locale(identifier: dictationLocaleID).language.languageCode?.identifier)
                     engine = try WhisperEngine(model: whisperModel, language: language)
+                } else if let sherpa = engineChoice.sherpaModel {
+                    engine = try SherpaEngine(
+                        model: sherpa,
+                        language: isAuto
+                            ? nil
+                            : Locale(identifier: dictationLocaleID).language.languageCode?.identifier)
                 } else {
                     // Le moteur système exige une langue explicite.
                     let locale = Locale(identifier: isAuto ? "fr-FR" : dictationLocaleID)
@@ -535,8 +541,8 @@ final class AppState: ObservableObject {
             HistoryStore.shared.insert(
                 rawText: trimmed, finalText: final,
                 appName: capturedTarget?.appName,
-                engine: engineChoice.isWhisper ? "whisper" : "apple",
-                model: engineChoice.whisperModel,
+                engine: engineChoice.historyEngine,
+                model: engineChoice.historyModel,
                 language: dictationLocaleID,
                 audioDurationMs: audioDurationMs, sttDurationMs: sttDurationMs,
                 polishDurationMs: polishDurationMs,

@@ -294,3 +294,12 @@
 "≈ 1,5 Go" = "≈ 1.5 GB";
 "≈ 1,5 Go · anglais uniquement" = "≈ 1.5 GB · English only";
 "≈ 3 Go · génération précédente" = "≈ 3 GB · previous generation";
+"SenseVoice Small" = "SenseVoice Small";
+"Qwen3-ASR 0.6B" = "Qwen3-ASR 0.6B";
+"Transcription SenseVoice" = "SenseVoice transcription";
+"Transcription Qwen3-ASR" = "Qwen3-ASR transcription";
+"≈ 240 Mo · rapide · chinois, cantonais, japonais, coréen, anglais" = "≈ 240 MB · fast · Chinese, Cantonese, Japanese, Korean, English";
+"≈ 985 Mo · multilingue · ponctuation soignée" = "≈ 985 MB · multilingual · careful punctuation";
+"Pressez une combinaison…" = "Press a shortcut…";
+"poli" = "polished";
+"·" = "·";

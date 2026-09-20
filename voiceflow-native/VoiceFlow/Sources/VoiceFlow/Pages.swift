@@ -630,6 +630,7 @@ struct PromptEditor: View {
 struct SettingsPage: View {
     @ObservedObject var state: AppState
     @ObservedObject private var models = WhisperModelStore.shared
+    @ObservedObject private var sherpaModels = SherpaModelStore.shared
     @ObservedObject private var updates = UpdateChecker.shared
 
     var body: some View {
@@ -682,7 +683,7 @@ struct SettingsPage: View {
 
                     Rectangle().fill(VF.divider).frame(height: 1)
                     engineRow(.apple)
-                    ForEach(EngineChoice.whisperChoices) { choice in
+                    ForEach(EngineChoice.downloadableChoices) { choice in
                         Rectangle().fill(VF.divider).frame(height: 1)
                         engineRow(choice)
                     }
@@ -947,15 +948,48 @@ struct SettingsPage: View {
         .onAppear { state.refreshPermissions() }
     }
 
+    /// Ce qu'il y a à afficher à droite d'une ligne de moteur. Les deux
+    /// familles téléchargeables ont chacune leur magasin ; la ligne, elle,
+    /// n'a pas à savoir laquelle.
+    private struct DownloadState {
+        var needsModel = false
+        var downloaded = false
+        var fraction: Double?
+        var start: () -> Void = {}
+        var remove: () -> Void = {}
+    }
+
+    private func downloadState(_ choice: EngineChoice) -> DownloadState {
+        if let variant = choice.whisperModel {
+            return DownloadState(
+                needsModel: true,
+                downloaded: models.isDownloaded(variant),
+                fraction: models.downloading.flatMap { $0.variant == variant ? $0.fraction : nil },
+                start: { Task { try? await models.ensureAvailable(variant) } },
+                remove: { models.forget(variant) })
+        }
+        if let model = choice.sherpaModel {
+            return DownloadState(
+                needsModel: true,
+                downloaded: sherpaModels.isDownloaded(model),
+                fraction: sherpaModels.downloading.flatMap {
+                    $0.model == model.id ? $0.fraction : nil
+                },
+                start: { Task { try? await sherpaModels.ensureAvailable(model) } },
+                remove: { sherpaModels.forget(model) })
+        }
+        return DownloadState()
+    }
+
+    private var anyDownloadRunning: Bool {
+        models.downloading != nil || sherpaModels.downloading != nil
+    }
+
     /// Une ligne par moteur : sélection, taille, état de téléchargement.
     @ViewBuilder
     private func engineRow(_ choice: EngineChoice) -> some View {
         let selected = state.engineChoiceID == choice.rawValue
-        let variant = choice.whisperModel
-        let downloaded = variant.map { models.isDownloaded($0) } ?? true
-        let inProgress = variant.flatMap { name in
-            models.downloading.flatMap { $0.variant == name ? $0.fraction : nil }
-        }
+        let download = downloadState(choice)
 
         HStack(spacing: 12) {
             Image(systemName: selected ? "checkmark.circle.fill" : "circle")
@@ -973,7 +1007,7 @@ struct SettingsPage: View {
 
             Spacer()
 
-            if let fraction = inProgress {
+            if let fraction = download.fraction {
                 HStack(spacing: 8) {
                     ProgressView(value: fraction).frame(width: 110)
                     Text("\(Int(fraction * 100)) %")
@@ -981,14 +1015,12 @@ struct SettingsPage: View {
                         .foregroundStyle(VF.labelMuted)
                         .monospacedDigit()
                 }
-            } else if let variant, downloaded {
+            } else if download.needsModel, download.downloaded {
                 HStack(spacing: 10) {
                     Text(L.t("Téléchargé"))
                         .font(.system(size: 12))
                         .foregroundStyle(VF.green)
-                    Button {
-                        models.forget(variant)
-                    } label: {
+                    Button(action: download.remove) {
                         Image(systemName: "trash")
                             .font(.system(size: 12))
                             .foregroundStyle(VF.labelMuted)
@@ -996,12 +1028,10 @@ struct SettingsPage: View {
                     .buttonStyle(.plain)
                     .help("Supprimer le modèle de l'appareil")
                 }
-            } else if let variant {
-                Button(L.t("Télécharger")) {
-                    Task { try? await models.ensureAvailable(variant) }
-                }
-                .buttonStyle(VFButtonStyle())
-                .disabled(models.downloading != nil)
+            } else if download.needsModel {
+                Button(L.t("Télécharger"), action: download.start)
+                    .buttonStyle(VFButtonStyle())
+                    .disabled(anyDownloadRunning)
             }
         }
         .padding(.horizontal, 20)
@@ -1011,8 +1041,8 @@ struct SettingsPage: View {
     }
 
     private var languageHelp: String {
-        state.engineChoice.isWhisper
-            ? "La détection automatique laisse Whisper reconnaître la langue parlée."
+        state.engineChoice.detectsLanguage
+            ? "La détection automatique laisse le moteur reconnaître la langue parlée."
             : "Le moteur d'Apple transcrit dans la langue choisie ; il ne la détecte pas."
     }
 
