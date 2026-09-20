@@ -528,7 +528,7 @@ final class AppState: ObservableObject {
                 } catch {
                     // Le polissage ne doit jamais faire perdre la dictée :
                     // on insère le texte brut et on signale l'échec.
-                    lastError = "Polissage échoué, texte brut inséré : \(error.localizedDescription)"
+                    lastError = "Polissage ignoré, texte brut inséré : \(error.localizedDescription)"
                     log.error("polish failed: \(error)")
                 }
                 phase = .idle

@@ -86,8 +86,11 @@ final class VocabularyStore: ObservableObject {
         entries = payload.entries
         snippets = payload.snippets
         appRules = payload.appRules
-        customPrompts = payload.customPrompts
+        customPrompts = payload.customPrompts.mapValues {
+            PolishCatalog.upgraded($0) ?? $0
+        }
         loading = false
+        if customPrompts != payload.customPrompts { save() }
     }
 
     private func save() {
