@@ -17,6 +17,7 @@ enum InjectionError: LocalizedError {
     case noCapturedTarget
     case attributeNotWritable(String)
     case axRejected(String, AXError)
+    case writeIgnored
     case keyboardAndClipboardFailed
     case clipboardPasteFailed
 
@@ -28,6 +29,8 @@ enum InjectionError: LocalizedError {
             "Le champ d'origine n'est pas modifiable (\(attribute))"
         case .axRejected(let attribute, let code):
             "Le champ d'origine a refusé l'insertion (\(attribute), erreur \(code.rawValue))"
+        case .writeIgnored:
+            "Le champ d'origine a accepté l'écriture sans rien insérer"
         case .keyboardAndClipboardFailed:
             "Injection clavier et presse-papiers échouées"
         case .clipboardPasteFailed:
@@ -72,10 +75,36 @@ struct AccessibilityTarget {
     }
 
     func insert(_ text: String) throws {
+        let before = readValue()
         if let selectedRange {
             try setRange(element, kAXSelectedTextRangeAttribute, selectedRange)
         }
         try setString(element, kAXSelectedTextAttribute, text)
+
+        // Chromium/Electron déclarent l'attribut modifiable et renvoient
+        // .success sans rien insérer : relire le champ pour s'en assurer.
+        // L'écriture y est asynchrone, d'où quelques relectures espacées.
+        for attempt in 0..<Self.verifyAttempts {
+            if Self.verdict(before: before, after: readValue()) != .ignored { return }
+            if attempt < Self.verifyAttempts - 1 {
+                usleep(Self.verifyDelayUs)
+            }
+        }
+        throw InjectionError.writeIgnored
+    }
+
+    enum Verdict {
+        case landed, ignored, unknown
+    }
+
+    private static let verifyAttempts = 6
+    private static let verifyDelayUs: UInt32 = 50_000
+
+    /// Contenu inchangé après l'écriture : le champ l'a ignorée. Contenu
+    /// illisible : impossible de trancher, on fait confiance au succès AX.
+    static func verdict(before: String?, after: String?) -> Verdict {
+        guard let before, let after else { return .unknown }
+        return before == after ? .ignored : .landed
     }
 
     // Helpers AX

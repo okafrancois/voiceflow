@@ -23,6 +23,12 @@ let package = Package(
                 // concurrence stricte une fois le squelette stabilisé.
                 .swiftLanguageMode(.v5)
             ]
+        ),
+        .testTarget(
+            name: "VoiceFlowTests",
+            dependencies: ["VoiceFlow"],
+            path: "Tests/VoiceFlowTests",
+            swiftSettings: [.swiftLanguageMode(.v5)]
         )
     ]
 )

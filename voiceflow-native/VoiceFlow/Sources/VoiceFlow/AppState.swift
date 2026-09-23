@@ -649,27 +649,31 @@ final class AppState: ObservableObject {
         audioLevels.append(level)
     }
 
+    /// « Coller » vise le champ qui a le focus maintenant, pas celui de la
+    /// dictée précédente : l'utilisateur a pu changer de champ ou d'app.
     func reinsertLast() {
         guard !lastTranscript.isEmpty else { return }
-        insert(lastTranscript)
+        insert(lastTranscript, intoCapturedTarget: false)
     }
 
-    private func insert(_ text: String) {
+    private func insert(_ text: String, intoCapturedTarget: Bool = true) {
         // Priorité à la cible accessibilité capturée au démarrage (insertion
         // sans réactiver l'app) ; sinon injection dans le focus courant.
-        if let target = capturedTarget {
+        if intoCapturedTarget, let target = capturedTarget {
             do {
                 _ = try target.insertBackground(text)
                 Diagnostics.log("inséré dans le champ d'origine")
                 return
+            } catch InjectionError.noCapturedTarget {
+                log.info("no captured field, injecting into the current focus")
             } catch {
-                log.info("background insert unavailable (\(error.localizedDescription)), falling back")
+                Diagnostics.log("champ d'origine indisponible (\(error.localizedDescription)), repli sur le focus courant")
             }
         }
         DispatchQueue.global(qos: .userInitiated).async {
             do {
                 let method = try TextInjector.insert(text)
-                log.info("inserted via \(String(describing: method))")
+                Diagnostics.log("inséré via \(String(describing: method))")
             } catch {
                 Task { @MainActor in
                     self.lastError = "Insertion échouée : \(error.localizedDescription)"
