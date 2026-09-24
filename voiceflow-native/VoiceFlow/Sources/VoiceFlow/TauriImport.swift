@@ -1,10 +1,10 @@
 import Foundation
 
-/// Reprise des données de l'app Tauri : historique, dictionnaire, extraits.
+/// Import of data from the Tauri app: history, dictionary, snippets.
 ///
-/// Le dictionnaire Tauri tient dans un seul texte (`custom_dictionary` des
-/// réglages) : une entrée par ligne, virgule ou point-virgule, sous la forme
-/// `terme | variante | variante` ou `entendu -> terme`
+/// The Tauri dictionary fits in a single text field (settings'
+/// `custom_dictionary`): one entry per line, comma or semicolon
+/// separated, in the form `term | variant | variant` or `heard -> term`
 /// (`src-tauri/src/correction_learning/hotwords.rs`).
 enum TauriImport {
     static var dataDirectory: URL {
@@ -25,8 +25,8 @@ enum TauriImport {
             .filter { !$0.isEmpty }
     }
 
-    /// Entrées qui remplacent quelque chose : un terme avec au moins une
-    /// variante, ou une flèche.
+    /// Entries that replace something: a term with at least one
+    /// variant, or an arrow.
     static func parseDictionary(_ content: String) -> [DictionaryEntry] {
         entries(of: content).compactMap { line in
             for arrow in ["->", "=>", "→"] {
@@ -47,14 +47,14 @@ enum TauriImport {
         }
     }
 
-    /// Terme seul importé : sensible à la casse et identique à lui-même, il
-    /// ne réécrit jamais rien (« Go » laisse « let's go » tranquille) mais
-    /// figure parmi les indices donnés au moteur.
+    /// Standalone imported term: case-sensitive and identical to itself, it
+    /// never rewrites anything (« Go » leaves « let's go » alone) but is
+    /// included among the hints given to the engine.
     static func hintEntry(_ term: String) -> DictionaryEntry {
         DictionaryEntry(heard: term, replacement: term, caseSensitive: true)
     }
 
-    /// Termes seuls : rien à remplacer, mais le moteur doit les connaître.
+    /// Standalone terms: nothing to replace, but the engine must know them.
     static func parseHints(_ content: String) -> [String] {
         entries(of: content).compactMap { line in
             guard !["->", "=>", "→"].contains(where: line.contains) else { return nil }
@@ -78,8 +78,8 @@ enum TauriImport {
         let voice_snippets: [VoiceSnippet]?
     }
 
-    /// Importe tout ce qui est disponible. Relançable : rien n'est ajouté
-    /// deux fois.
+    /// Imports everything available. Re-runnable: nothing gets added
+    /// twice.
     @MainActor
     static func importAll() throws -> Report {
         var report = Report()
@@ -99,8 +99,8 @@ enum TauriImport {
                 entries.append(entry)
                 report.dictionary += 1
             }
-            // Les termes seuls deviennent des entrées sans variante : ils
-            // n'écrivent rien de plus, mais nourrissent la reconnaissance.
+            // Standalone terms become entries with no variant: they
+            // don't rewrite anything extra, but feed recognition.
             let withEntries = Set(entries.map { $0.replacement.lowercased() })
             for hint in parseHints(dictionary) where !withEntries.contains(hint.lowercased()) {
                 entries.append(hintEntry(hint))

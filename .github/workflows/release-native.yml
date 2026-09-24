@@ -1,19 +1,19 @@
 name: Release Native macOS App
 
-# Construit, signe, notarise et publie VoiceFlow (version native Swift) sur la
-# release GitHub, puis met à jour le flux que l'app interroge pour proposer la
-# mise à jour.
+# Builds, signs, notarizes and publishes VoiceFlow (native Swift version) to
+# the GitHub release, then updates the feed the app queries to offer the
+# update.
 #
-# Secrets requis — les mêmes que « Release Desktop App » :
-#   APPLE_CERTIFICATE          — .p12 Developer ID Application, encodé en base64
-#   APPLE_CERTIFICATE_PASSWORD — mot de passe d'export du .p12
-#   APPLE_SIGNING_IDENTITY     — « Developer ID Application: Nom (TEAMID) »
-#   APPLE_API_ISSUER           — identifiant d'émetteur App Store Connect
-#   APPLE_API_KEY              — identifiant de la clé App Store Connect
-#   APPLE_API_KEY_P8           — contenu du fichier .p8
+# Required secrets — the same as "Release Desktop App":
+#   APPLE_CERTIFICATE          — .p12 Developer ID Application, base64-encoded
+#   APPLE_CERTIFICATE_PASSWORD — .p12 export password
+#   APPLE_SIGNING_IDENTITY     — "Developer ID Application: Name (TEAMID)"
+#   APPLE_API_ISSUER           — App Store Connect issuer ID
+#   APPLE_API_KEY              — App Store Connect key ID
+#   APPLE_API_KEY_P8           — contents of the .p8 file
 
 on:
-  # Pousser un tag suffit : la release est créée si elle n'existe pas.
+  # Pushing a tag is enough: the release is created if it doesn't exist.
   push:
     tags:
       - 'native-v*'
@@ -22,7 +22,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag de la release à alimenter (ex. native-v0.1.0)"
+        description: "Tag of the release to feed (e.g. native-v0.1.0)"
         required: true
 
 permissions:
@@ -34,8 +34,8 @@ concurrency:
 
 jobs:
   build:
-    # L'app exige le SDK macOS 26 (SpeechAnalyzer, Foundation Models,
-    # NSGlassEffectView). Sur un runner plus ancien, la compilation échoue.
+    # The app requires the macOS 26 SDK (SpeechAnalyzer, Foundation Models,
+    # NSGlassEffectView). On an older runner, the build fails.
     runs-on: macos-26
     timeout-minutes: 60
 
@@ -45,7 +45,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Vérifier les secrets
+      - name: Check secrets
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -57,21 +57,21 @@ jobs:
           for name in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY \
                       APPLE_API_ISSUER APPLE_API_KEY APPLE_API_KEY_P8; do
             if [ -z "${!name}" ]; then
-              echo "::error::Secret manquant : $name"
+              echo "::error::Missing secret: $name"
               exit 1
             fi
           done
 
-      - name: Vérifier le SDK macOS
+      - name: Check macOS SDK
         run: |
           SDK=$(xcrun --show-sdk-version --sdk macosx)
-          echo "SDK macOS : $SDK · Xcode : $(xcodebuild -version | head -1)"
+          echo "macOS SDK: $SDK · Xcode: $(xcodebuild -version | head -1)"
           if [ "${SDK%%.*}" -lt 26 ]; then
-            echo "::error::SDK macOS $SDK trop ancien — il en faut 26 ou plus."
+            echo "::error::macOS SDK $SDK too old — 26 or later is required."
             exit 1
           fi
 
-      - name: Importer le certificat de signature
+      - name: Import signing certificate
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -90,14 +90,14 @@ jobs:
           security list-keychain -d user -s "$KEYCHAIN_PATH"
           security find-identity -v -p codesigning "$KEYCHAIN_PATH"
 
-      - name: Cache des dépendances Swift
+      - name: Cache Swift dependencies
         uses: actions/cache@v4
         with:
           path: voiceflow-native/VoiceFlow/.build
           key: spm-${{ runner.os }}-${{ hashFiles('voiceflow-native/VoiceFlow/Package.resolved') }}
           restore-keys: spm-${{ runner.os }}-
 
-      - name: Fixer la version depuis le tag
+      - name: Set version from tag
         run: |
           VERSION="${TAG##*v}"
           PLIST=voiceflow-native/VoiceFlow/Info.plist
@@ -105,13 +105,13 @@ jobs:
           /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${{ github.run_number }}" "$PLIST"
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
 
-      - name: Générer l'icône
+      - name: Generate the icon
         run: |
           cd voiceflow-native
           swift tools/make-icon.swift /tmp/VoiceFlow.iconset
           iconutil -c icns /tmp/VoiceFlow.iconset -o VoiceFlow/AppIcon.icns
 
-      - name: Compiler et signer
+      - name: Build and sign
         env:
           DEV_ID: ${{ secrets.APPLE_SIGNING_IDENTITY }}
         run: |
@@ -119,7 +119,7 @@ jobs:
           ./build.sh release
           codesign --verify --strict --verbose=2 dist/VoiceFlow.app
 
-      - name: Construire le DMG
+      - name: Build the DMG
         run: |
           cd voiceflow-native
           DMG="dist/VoiceFlow-$VERSION.dmg"
@@ -130,7 +130,7 @@ jobs:
         env:
           DEV_ID: ${{ secrets.APPLE_SIGNING_IDENTITY }}
 
-      - name: Notariser et agrafer
+      - name: Notarize and staple
         env:
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
@@ -138,8 +138,8 @@ jobs:
         run: |
           KEY_PATH=$RUNNER_TEMP/AuthKey.p8
           printf '%s' "$APPLE_API_KEY_P8" > "$KEY_PATH"
-          # Récupérer le journal en cas de refus : sans lui, « Invalid » ne
-          # dit rien de la cause.
+          # Fetch the log on rejection: without it, "Invalid" says
+          # nothing about the cause.
           SUBMISSION=$(xcrun notarytool submit "$DMG" \
             --key "$KEY_PATH" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" \
             --wait --timeout 30m --output-format json | tee /dev/stderr | jq -r .id)
@@ -147,7 +147,7 @@ jobs:
             --key "$KEY_PATH" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" \
             --output-format json | jq -r .status)
           if [ "$STATUS" != "Accepted" ]; then
-            echo "::error::Notarisation refusée ($STATUS) — journal :"
+            echo "::error::Notarization rejected ($STATUS) — log:"
             xcrun notarytool log "$SUBMISSION" \
               --key "$KEY_PATH" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER"
             exit 1
@@ -156,11 +156,11 @@ jobs:
           xcrun stapler validate "$DMG"
           rm -f "$KEY_PATH"
 
-      - name: Écrire le flux de mise à jour
+      - name: Write the update feed
         run: |
-          # L'app interroge ce fichier ; l'URL « latest » reste stable d'une
-          # release à l'autre.
-          NOTES=$(gh release view "$TAG" --json body --jq .body 2>/dev/null || echo "Version native macOS $VERSION.")
+          # The app queries this file; the "latest" URL stays stable from
+          # one release to the next.
+          NOTES=$(gh release view "$TAG" --json body --jq .body 2>/dev/null || echo "Native macOS version $VERSION.")
           jq -n \
             --arg version "$VERSION" \
             --arg notes "$NOTES" \
@@ -170,17 +170,17 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
-      - name: Publier sur la release
+      - name: Publish to the release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Créer la release si le tag a été poussé sans passer par l'interface.
+          # Create the release if the tag was pushed without going through the UI.
           if ! gh release view "$TAG" >/dev/null 2>&1; then
-            gh release create "$TAG" --title "VoiceFlow natif ${VERSION}" \
-              --notes "Version native macOS ${VERSION}." --target "$GITHUB_SHA"
+            gh release create "$TAG" --title "VoiceFlow native ${VERSION}" \
+              --notes "Native macOS version ${VERSION}." --target "$GITHUB_SHA"
           fi
           gh release upload "$TAG" "$DMG" appcast.json --clobber
 
-      - name: Vérifier la signature du produit publié
+      - name: Verify the published product's signature
         run: |
           spctl --assess --type open --context context:primary-signature -v "$DMG"

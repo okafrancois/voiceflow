@@ -1,8 +1,8 @@
 import AVFoundation
 import Speech
 
-/// Une dictée = une session : SpeechAnalyzer + SpeechTranscriber (API macOS 26),
-/// entièrement sur l'appareil.
+/// One dictation = one session: SpeechAnalyzer + SpeechTranscriber
+/// (macOS 26 API), entirely on-device.
 final class TranscriptionSession: @unchecked Sendable {
     enum SessionError: LocalizedError {
         case unsupportedLocale
@@ -28,12 +28,12 @@ final class TranscriptionSession: @unchecked Sendable {
     private var emptyConversions = 0
     private var conversionErrors = 0
 
-    /// Locales couvertes par SpeechAnalyzer sur cette machine.
+    /// Locales covered by SpeechAnalyzer on this machine.
     static func supportedLocales() async -> [Locale] {
         await SpeechTranscriber.supportedLocales
     }
 
-    /// Résout une locale demandée vers la locale supportée correspondante.
+    /// Resolves a requested locale to the corresponding supported locale.
     static func resolve(_ requested: Locale) async throws -> Locale {
         let supported = await SpeechTranscriber.supportedLocales
         if let exact = supported.first(where: {
@@ -49,7 +49,7 @@ final class TranscriptionSession: @unchecked Sendable {
         throw SessionError.unsupportedLocale
     }
 
-    /// Télécharge le modèle de la locale demandée si nécessaire.
+    /// Downloads the requested locale's model if needed.
     static func prepareAssets(for requested: Locale) async throws {
         let locale = try await resolve(requested)
         let transcriber = SpeechTranscriber(
@@ -106,8 +106,8 @@ final class TranscriptionSession: @unchecked Sendable {
             return finalText
         }
 
-        // Termes du dictionnaire : le modèle les privilégie quand l'audio
-        // hésite entre plusieurs graphies.
+        // Dictionary terms: the model favors them when the audio is
+        // ambiguous between several spellings.
         if !hints.isEmpty {
             let context = AnalysisContext()
             context.contextualStrings[.general] = hints
@@ -121,17 +121,17 @@ final class TranscriptionSession: @unchecked Sendable {
         try await analyzer.start(inputSequence: inputStream)
     }
 
-    /// Reçoit un buffer au format du micro, le convertit au format de
-    /// l'analyseur et le pousse dans la file.
+    /// Receives a buffer in the microphone's format, converts it to the
+    /// analyzer's format, and pushes it onto the queue.
     func feed(_ buffer: AVAudioPCMBuffer) {
         do {
             if !loggedFormats {
                 loggedFormats = true
                 Diagnostics.log(
-                    "formats · entrée \(buffer.format.sampleRate) Hz "
-                    + "\(buffer.format.channelCount) canal(aux) · "
-                    + "analyseur \(analyzerFormat.sampleRate) Hz "
-                    + "\(analyzerFormat.channelCount) canal(aux)")
+                    "formats · input \(buffer.format.sampleRate) Hz "
+                    + "\(buffer.format.channelCount) channel(s) · "
+                    + "analyzer \(analyzerFormat.sampleRate) Hz "
+                    + "\(analyzerFormat.channelCount) channel(s)")
             }
             let converted = try resampler.convert(buffer)
             guard converted.frameLength > 0 else {
@@ -146,18 +146,19 @@ final class TranscriptionSession: @unchecked Sendable {
         }
     }
 
-    /// Dictée annulée : couper l'analyse sans attendre de résultat.
+    /// Dictation cancelled: cut the analysis without waiting for a result.
     func cancel() async {
         inputContinuation.finish()
         await analyzer.cancelAndFinishNow()
         resultsTask?.cancel()
     }
 
-    /// Clôt le flux, attend la fin de l'analyse et rend le texte final.
+    /// Closes the stream, waits for the analysis to finish, and returns
+    /// the final text.
     func finish() async throws -> String {
         Diagnostics.log(
-            "moteur Apple · \(fedFrames) échantillons transmis · "
-            + "\(emptyConversions) conversions vides · \(conversionErrors) erreurs")
+            "Apple engine · \(fedFrames) samples fed · "
+            + "\(emptyConversions) empty conversions · \(conversionErrors) errors")
         inputContinuation.finish()
         try await analyzer.finalizeAndFinishThroughEndOfInput()
         guard let resultsTask else { return "" }

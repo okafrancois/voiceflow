@@ -2,14 +2,14 @@ import AppKit
 import Combine
 import SwiftUI
 
-/// Panneau flottant de la pill.
+/// Floating panel for the pill.
 ///
-/// Le verre vient de `NSGlassEffectView` (AppKit, macOS 26+) et non du
-/// modificateur SwiftUI : dans un panneau borderless à fond transparent,
-/// `glassEffect` ne récupère pas l'arrière-plan de la fenêtre et retombe sur
-/// un matériau plat. La vue AppKit, elle, composite au niveau du serveur de
-/// fenêtres — c'est le vrai matériau système, qui suit les réglages
-/// d'apparence et de transparence.
+/// The glass comes from `NSGlassEffectView` (AppKit, macOS 26+), not the
+/// SwiftUI modifier: in a borderless panel with a transparent background,
+/// `glassEffect` can't pick up the window's backdrop and falls back to a
+/// flat material. The AppKit view, on the other hand, composites at the
+/// window server level — it's the real system material, which follows the
+/// appearance and transparency settings.
 @MainActor
 final class PillController {
     static let shared = PillController()
@@ -20,9 +20,9 @@ final class PillController {
     private var cancellables = Set<AnyCancellable>()
 
     private static let centerKey = "pillCenter"
-    /// Aucune dictée en cours.
+    /// No dictation in progress.
     private var isHidden = true
-    /// Taille du contenu, remontée par la vue : elle grandit avec un message.
+    /// Content size, reported by the view: it grows with a message.
     private var contentSize: NSSize?
     private var noticeTask: Task<Void, Never>?
 
@@ -55,7 +55,7 @@ final class PillController {
         self.glassView = glass
         self.hostingView = hosting
 
-        // `$notice` émet avant l'affectation : lire la valeur transmise.
+        // `$notice` emits before the assignment: read the value it carries.
         state.$notice
             .receive(on: RunLoop.main)
             .sink { [weak self] notice in self?.noticeChanged(notice) }
@@ -64,21 +64,21 @@ final class PillController {
         applyAppearance()
     }
 
-    /// Applique teinte, opacité, taille et position choisies dans les réglages.
+    /// Applies the tint, opacity, size and position chosen in settings.
     func applyAppearance() {
         guard let panel, let glassView else { return }
         let state = AppState.shared
         glassView.tintColor = NSColor(hex: state.pillTint.hex)
             .withAlphaComponent(state.pillOpacity)
         resize()
-        // Repositionner tout de suite si un ancrage est choisi.
+        // Reposition right away if an anchor is chosen.
         if state.pillPosition != .free {
             place(panel, center: storedCenter())
         }
         refreshVisibility()
     }
 
-    /// La pill peut être toujours visible, visible pendant la dictée, ou jamais.
+    /// The pill can be always visible, visible during dictation, or never.
     private func refreshVisibility() {
         guard let panel else { return }
         switch AppState.shared.pillVisibility {
@@ -103,7 +103,7 @@ final class PillController {
             let wasHidden = isHidden
             isHidden = false
             if wasHidden {
-                // Chaque dictée s'affiche sur l'écran où l'on travaille.
+                // Every dictation appears on the screen where you're working.
                 if AppState.shared.pillPosition != .free {
                     place(panel, center: storedCenter())
                 }
@@ -121,11 +121,11 @@ final class PillController {
         }
     }
 
-    /// Masque la pill si plus rien ne la justifie : ni dictée, ni message,
-    /// ni mode « toujours ».
+    /// Hides the pill if nothing justifies it anymore: no dictation, no
+    /// message, no "always" mode.
     private func hideIfIdle() {
         guard let panel, isHidden, AppState.shared.notice == nil else { return }
-        // En mode « toujours », la pill reste à l'écran au repos.
+        // In "always" mode, the pill stays on screen at rest.
         guard AppState.shared.pillVisibility != .always else {
             panel.alphaValue = 1
             panel.orderFrontRegardless()
@@ -135,8 +135,8 @@ final class PillController {
             context.duration = 0.15
             panel.animator().alphaValue = 0
         } completionHandler: {
-            // Une dictée a pu redémarrer pendant le fondu : ne pas
-            // masquer une pill redevenue utile.
+            // A dictation may have restarted during the fade: don't
+            // hide a pill that has become useful again.
             Task { @MainActor in
                 guard self.isHidden, AppState.shared.notice == nil else { return }
                 panel.orderOut(nil)
@@ -144,8 +144,8 @@ final class PillController {
         }
     }
 
-    /// Un message s'affiche quelques secondes, même au repos : c'est souvent
-    /// là qu'une erreur arrive, fenêtre principale fermée.
+    /// A message shows for a few seconds, even at rest: this is often
+    /// when an error arrives, with the main window closed.
     private func noticeChanged(_ notice: Notice?) {
         noticeTask?.cancel()
         guard let panel, AppState.shared.pillVisibility != .never else { return }
@@ -157,8 +157,8 @@ final class PillController {
             if AppState.shared.pillPosition != .free { place(panel, center: storedCenter()) }
             panel.orderFrontRegardless()
         }
-        // Par l'animateur : un fondu de fermeture lancé juste avant (fin de
-        // dictée) écraserait sinon la valeur et laisserait la pill invisible.
+        // Via the animator: a closing fade started just before (end of
+        // dictation) would otherwise overwrite the value and leave the pill invisible.
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.12
             panel.animator().alphaValue = 1
@@ -171,9 +171,9 @@ final class PillController {
         }
     }
 
-    /// Taille de la pill : celle de l'original, calculée depuis le contenu
-    /// (boîte de points 32 × 16 + marges 12 × 5) plutôt que déduite de la
-    /// mise en page, qui donnait une capsule trop large.
+    /// Pill size: the original's, computed from the content (32 × 16 dot
+    /// box + 12 × 5 margins) rather than derived from the layout, which
+    /// gave a capsule that was too wide.
     private static let baseSize = NSSize(width: 32 + 24, height: 16 + 10)
 
     private var pillSize: NSSize {
@@ -184,7 +184,7 @@ final class PillController {
             height: (Self.baseSize.height * scale).rounded())
     }
 
-    /// La vue remonte sa taille idéale ; le panneau suit.
+    /// The view reports its ideal size; the panel follows.
     func contentSizeChanged(_ size: CGSize) {
         let rounded = NSSize(width: size.width.rounded(.up), height: size.height.rounded(.up))
         guard rounded.width > 0, rounded.height > 0, rounded != contentSize else { return }
@@ -192,16 +192,16 @@ final class PillController {
         resize()
     }
 
-    /// Ajuste la taille du panneau au contenu, en gardant le centre fixe
-    /// pour que la pill grandisse symétriquement — ou collée à son bord
-    /// pour un ancrage latéral.
+    /// Adjusts the panel's size to the content, keeping the center fixed
+    /// so the pill grows symmetrically — or stuck to its edge for a
+    /// lateral anchor.
     private func resize() {
         guard let panel, let glassView else { return }
         let size = pillSize
 
-        // Toujours réappliquer le rayon : il était posé après un `guard` qui
-        // sortait quand la taille ne changeait pas, si bien que la pill
-        // restait un rectangle à coins arrondis au lieu d'une capsule.
+        // Always reapply the radius: it used to be set after a `guard` that
+        // returned early when the size didn't change, so the pill stayed a
+        // rounded rectangle instead of a capsule.
         glassView.cornerRadius = size.height / 2
 
         guard size != panel.frame.size else { return }
@@ -222,7 +222,7 @@ final class PillController {
             display: true)
     }
 
-    /// L'écran sous la souris, à défaut l'écran principal.
+    /// The screen under the mouse, falling back to the main screen.
     private static var activeScreen: NSScreen {
         let mouse = NSEvent.mouseLocation
         return NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) }
@@ -244,9 +244,9 @@ final class PillController {
         return PillPosition.bottomCenter.center(in: frame, size: pillSize)
     }
 
-    /// Appelé à la fin d'un glisser-déposer réel, jamais lors d'un
-    /// repositionnement programmé — nos propres `setFrame` déclenchaient
-    /// `didMove` et faisaient basculer la position en « libre ».
+    /// Called at the end of an actual drag, never during a programmatic
+    /// repositioning — our own `setFrame` calls used to trigger `didMove`
+    /// and flip the position to "free".
     func userDidDrag() {
         guard let panel else { return }
         AppState.shared.pillPositionID = PillPosition.free.rawValue
@@ -255,24 +255,24 @@ final class PillController {
     }
 }
 
-/// Panneau qui ne prend jamais le focus : on dicte dans l'app d'en dessous.
+/// Panel that never takes focus: dictation happens in the app underneath.
 final class PillPanel: NSPanel {
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
 }
 
-/// Glisser n'importe où sur la pill la déplace.
+/// Dragging anywhere on the pill moves it.
 final class DraggableGlassView: NSGlassEffectView {
     override func mouseDown(with event: NSEvent) {
-        // `performDrag` est bloquant : au retour le déplacement est terminé.
+        // `performDrag` is blocking: by the time it returns, the move is done.
         window?.performDrag(with: event)
         Task { @MainActor in PillController.shared.userDidDrag() }
     }
 }
 
-/// Contenu de la pill — port fidèle de `src/components/Pill/AudioDots.tsx`
-/// et du conteneur de `PillWindow.tsx`. Le bouton réglages de l'original
-/// n'est pas repris : il n'a pas sa place ici.
+/// Pill content — a faithful port of `src/components/Pill/AudioDots.tsx`
+/// and the container from `PillWindow.tsx`. The original's settings button
+/// isn't carried over: it doesn't belong here.
 struct PillView: View {
     @ObservedObject var state: AppState
 
@@ -280,8 +280,8 @@ struct PillView: View {
         state.phase == .transcribing || state.phase == .polishing
     }
 
-    /// Texte affiché à côté des points : un message, sinon la transcription
-    /// en direct (moteur d'Apple) si l'option est active.
+    /// Text shown next to the dots: a message, otherwise the live
+    /// transcript (Apple engine) if the option is active.
     private var message: (text: String, color: Color)? {
         if let notice = state.notice {
             return (notice.text, notice.kind == .error
@@ -306,12 +306,12 @@ struct PillView: View {
                     .font(.system(size: 12 * scale, weight: .medium))
                     .foregroundStyle(message.color)
                     .lineLimit(1)
-                    // Les derniers mots dits restent visibles.
+                    // The last words spoken stay visible.
                     .truncationMode(.head)
                     .frame(maxWidth: 340 * scale, alignment: .leading)
             }
         }
-        // Marges de l'original : 0.75rem × 0.3125rem.
+        // Original's margins: 0.75rem × 0.3125rem.
         .padding(.horizontal, 12 * scale)
         .padding(.vertical, 5 * scale)
         .overlay {
@@ -326,7 +326,7 @@ struct PillView: View {
         .onPreferenceChange(PillSizeKey.self) { size in
             PillController.shared.contentSizeChanged(size)
         }
-        // Les clics servent à déplacer la pill : laisser passer vers le verre.
+        // Clicks are used to move the pill: let them pass through to the glass.
         .allowsHitTesting(false)
     }
 }
@@ -338,13 +338,12 @@ private struct PillSizeKey: PreferenceKey {
     }
 }
 
-/// Trois points de 10 × 5 px.
+/// Three 10 × 5 px dots.
 ///
-/// Au repos ils se joignent en une barre unique (coins extérieurs arrondis,
-/// coins intérieurs carrés). À l'enregistrement chacun se contracte en cercle
-/// (scaleX 0,5) autour de son propre ancrage, ce qui fait apparaître les
-/// écarts. Pendant le traitement la géométrie reste celle du repos et c'est
-/// la couleur qui pulse.
+/// At rest they join into a single bar (rounded outer corners, square inner
+/// corners). While recording each one contracts into a circle (scaleX 0.5)
+/// around its own anchor, which reveals the gaps. During processing the
+/// geometry stays the resting one and it's the color that pulses.
 struct AudioDots: View {
     let phase: AppState.Phase
     let level: Float
@@ -356,7 +355,7 @@ struct AudioDots: View {
     private let activeWidth: CGFloat = 5
     private var radius: CGFloat { dotHeight / 2 }
 
-    /// Seuil d'activité vocale, équivalent à AUDIO_ACTIVITY_THRESHOLD (25/100).
+    /// Voice activity threshold, equivalent to AUDIO_ACTIVITY_THRESHOLD (25/100).
     private var hasAudio: Bool { level > 0.25 }
 
     private var isRecording: Bool { phase == .recording }
@@ -378,8 +377,8 @@ struct AudioDots: View {
         }
     }
 
-    /// L'ensemble occupe toujours 30 pt : les points se séparent sans que le
-    /// groupe se décale.
+    /// The group always occupies 30 pt: the dots separate without the
+    /// group shifting.
     private var spacing: CGFloat {
         isRecording ? (idleWidth * 3 - activeWidth * 3) / 2 : 0
     }
@@ -405,8 +404,8 @@ struct AudioDots: View {
         }
     }
 
-    /// Au repos : arrondi seulement sur les bords extérieurs, pour que les
-    /// trois points forment une barre continue.
+    /// At rest: rounded only on the outer edges, so the three dots form
+    /// a continuous bar.
     private func shape(_ index: Int) -> UnevenRoundedRectangle {
         guard !isRecording else {
             return UnevenRoundedRectangle(
@@ -430,8 +429,8 @@ struct AudioDots: View {
     }
 }
 
-/// Halo tournant pendant le traitement — équivalent du BorderBeam « ocean »
-/// de l'original (durée 1 s).
+/// Rotating halo during processing — equivalent of the original's "ocean"
+/// BorderBeam (1 s duration).
 struct BorderBeam: View {
     @State private var angle: Double = 0
 

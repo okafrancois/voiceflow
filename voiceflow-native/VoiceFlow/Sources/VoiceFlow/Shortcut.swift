@@ -1,20 +1,20 @@
 import AppKit
 import Carbon.HIToolbox
 
-/// Un raccourci global : une touche et ses modificateurs.
+/// A global shortcut: a key and its modifiers.
 struct Shortcut: Codable, Equatable {
     var keyCode: UInt16
-    /// Masque `NSEvent.ModifierFlags` restreint aux modificateurs utiles.
+    /// `NSEvent.ModifierFlags` mask restricted to the useful modifiers.
     var modifiers: UInt
 
     static let dictateDefault = Shortcut(keyCode: UInt16(kVK_Space), modifiers: NSEvent.ModifierFlags.option.rawValue)
 
     var flags: NSEvent.ModifierFlags { NSEvent.ModifierFlags(rawValue: modifiers) }
 
-    // MARK: Touches seules
+    // MARK: Standalone keys
 
-    /// Codes des touches modificatrices : elles peuvent servir de raccourci à
-    /// elles seules (Fn, ⌘, ⌥…), comme le double-appui sur Fn.
+    /// Codes of modifier keys: they can be used as a shortcut on their own
+    /// (Fn, ⌘, ⌥…), like double-tapping Fn.
     static let modifierKeyCodes: Set<UInt16> = [54, 55, 56, 57, 58, 59, 60, 61, 62, 63]
 
     static let functionKeyCodes: Set<UInt16> = [
@@ -22,12 +22,12 @@ struct Shortcut: Codable, Equatable {
         105, 107, 113, 106, 64, 79, 80, 90,                       // F13–F20
     ]
 
-    /// Raccourci composé d'une seule touche modificatrice.
+    /// Shortcut made of a single modifier key.
     var isModifierOnly: Bool {
         Self.modifierKeyCodes.contains(keyCode) && flags.isEmpty
     }
 
-    /// Le drapeau correspondant à une touche modificatrice donnée.
+    /// The flag corresponding to a given modifier key.
     static func flag(for keyCode: UInt16) -> NSEvent.ModifierFlags? {
         switch keyCode {
         case 54, 55: .command
@@ -40,49 +40,49 @@ struct Shortcut: Codable, Equatable {
         }
     }
 
-    /// Bits propres à chaque côté du clavier (`NX_DEVICE…KEYMASK`), présents
-    /// dans les drapeaux bruts. Le drapeau générique `.command` reste levé
-    /// tant que l'un *ou* l'autre ⌘ est tenu : ⌘ droite relâché pendant que
-    /// ⌘ gauche est enfoncé passerait sinon pour toujours pressé.
+    /// Bits specific to each side of the keyboard (`NX_DEVICE…KEYMASK`),
+    /// present in the raw flags. The generic `.command` flag stays set as
+    /// long as *either* ⌘ is held: releasing right ⌘ while left ⌘ is still
+    /// down would otherwise look like it's still pressed.
     private static func sideMask(for keyCode: UInt16) -> UInt? {
         switch keyCode {
-        case 59: 0x0001  // ⌃ gauche
-        case 56: 0x0002  // ⇧ gauche
-        case 60: 0x0004  // ⇧ droite
-        case 55: 0x0008  // ⌘ gauche
-        case 54: 0x0010  // ⌘ droite
-        case 58: 0x0020  // ⌥ gauche
-        case 61: 0x0040  // ⌥ droite
-        case 62: 0x2000  // ⌃ droite
+        case 59: 0x0001  // left ⌃
+        case 56: 0x0002  // left ⇧
+        case 60: 0x0004  // right ⇧
+        case 55: 0x0008  // left ⌘
+        case 54: 0x0010  // right ⌘
+        case 58: 0x0020  // left ⌥
+        case 61: 0x0040  // right ⌥
+        case 62: 0x2000  // right ⌃
         default: nil
         }
     }
 
-    /// La touche modificatrice est-elle enfoncée dans cet état de drapeaux ?
+    /// Is the modifier key held down in this flags state?
     static func isPressed(_ keyCode: UInt16, _ flags: NSEvent.ModifierFlags) -> Bool {
         guard let flag = flag(for: keyCode), flags.contains(flag) else { return false }
         guard let side = sideMask(for: keyCode) else { return true }
-        // Événement synthétique sans bits de côté : s'en tenir au générique.
+        // Synthetic event without side bits: stick with the generic flag.
         let anySide: UInt = 0x207F
         guard flags.rawValue & anySide != 0 else { return true }
         return flags.rawValue & side != 0
     }
 
-    /// Fn est avalée quand elle sert de raccourci, sinon macOS ouvre le
-    /// sélecteur d'emoji. Les autres modificateurs doivent passer : ils
-    /// servent en permanence dans d'autres combinaisons.
+    /// Fn is swallowed when it serves as a shortcut, otherwise macOS opens
+    /// the emoji picker. The other modifiers must pass through: they're
+    /// constantly used in other combinations.
     static func shouldSwallow(_ keyCode: UInt16) -> Bool { keyCode == 63 }
 
-    /// Peut-on assigner cette combinaison sans casser la frappe normale ?
-    /// Une lettre seule serait avalée partout ; une touche de fonction ou un
-    /// modificateur seul, non.
+    /// Can this combination be assigned without breaking normal typing? A
+    /// single letter would be swallowed everywhere; a function key or a
+    /// lone modifier, not.
     static func isAssignable(keyCode: UInt16, modifiers: NSEvent.ModifierFlags) -> Bool {
         let relevant = modifiers.intersection([.control, .option, .shift, .command])
         if !relevant.isEmpty { return true }
         return modifierKeyCodes.contains(keyCode) || functionKeyCodes.contains(keyCode)
     }
 
-    /// Rendu type menu macOS : ⌃⌥⇧⌘ puis la touche.
+    /// macOS menu-style rendering: ⌃⌥⇧⌘ then the key.
     var display: String {
         if isModifierOnly {
             switch keyCode {
@@ -108,8 +108,8 @@ struct Shortcut: Codable, Equatable {
     }
 
     func matches(keyCode: UInt16, flags: NSEvent.ModifierFlags) -> Bool {
-        // Un raccourci « touche modificatrice seule » se reconnaît sur les
-        // changements de drapeaux, pas sur les frappes ordinaires.
+        // A "standalone modifier key" shortcut is recognized from flag
+        // changes, not from ordinary key presses.
         guard !isModifierOnly else { return false }
         let relevant: NSEvent.ModifierFlags = [.control, .option, .shift, .command]
         return keyCode == self.keyCode && flags.intersection(relevant) == self.flags.intersection(relevant)
@@ -141,7 +141,7 @@ struct Shortcut: Codable, Equatable {
         case kVK_ANSI_Grave: return "`"
         default: break
         }
-        // Lettre ou chiffre : demander au clavier courant.
+        // Letter or digit: ask the current keyboard.
         guard let source = TISCopyCurrentKeyboardLayoutInputSource()?.takeRetainedValue(),
               let pointer = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData)
         else { return unknownKey(keyCode) }
@@ -163,7 +163,7 @@ struct Shortcut: Codable, Equatable {
     }
 }
 
-/// Comment le raccourci déclenche la dictée.
+/// How the shortcut triggers dictation.
 enum TriggerMode: String, CaseIterable, Identifiable, Codable {
     case hold, toggle, doubleTap
     var id: String { rawValue }
@@ -185,14 +185,14 @@ enum TriggerMode: String, CaseIterable, Identifiable, Codable {
     }
 }
 
-/// Réglages de raccourcis, persistés.
+/// Shortcut settings, persisted.
 enum ShortcutSettings {
     static var dictate: Shortcut {
         get { load("shortcutDictate") ?? .dictateDefault }
         set { store(newValue, "shortcutDictate") }
     }
 
-    /// Raccourci du mode commande ; aucun par défaut.
+    /// Command mode shortcut; none by default.
     static var command: Shortcut? {
         get { load("shortcutCommand") }
         set {

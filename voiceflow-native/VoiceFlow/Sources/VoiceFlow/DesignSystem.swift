@@ -1,8 +1,8 @@
 import AppKit
 import SwiftUI
 
-/// Palette et métriques relevées sur l'app actuelle (capture d'écran +
-/// `src/index.css`). L'app native doit en être indiscernable.
+/// Palette and metrics taken from the current app (screenshot +
+/// `src/index.css`). The native app should be indistinguishable from it.
 enum VF {
     // Surfaces
     static let background = dyn(light: 0xF9F9F9, dark: 0x1B1B1B)
@@ -11,7 +11,7 @@ enum VF {
     static let border = dyn(light: 0xEBEBEB, dark: 0x343434)
     static let divider = dyn(light: 0xF0F0F0, dark: 0x2C2C2C)
 
-    // Texte
+    // Text
     static let label = dyn(light: 0x0A0A0A, dark: 0xEDEDED)
     static let labelMuted = dyn(light: 0x737373, dark: 0x8F8F8F)
     static let labelFaint = dyn(light: 0xA3A3A3, dark: 0x6E6E6E)
@@ -26,7 +26,7 @@ enum VF {
         colors: [Color(nsColor: NSColor(hex: 0x35C3E0)), Color(nsColor: NSColor(hex: 0x8B7CF6))],
         startPoint: .topLeading, endPoint: .bottomTrailing)
 
-    // Métriques
+    // Metrics
     static let sidebarWidth: CGFloat = 248
     static let contentPadding: CGFloat = 40
     static let cardRadius: CGFloat = 18
@@ -50,9 +50,9 @@ extension NSColor {
     }
 }
 
-// MARK: - Blocs
+// MARK: - Building blocks
 
-/// Conteneur bordé : le motif visuel dominant de l'app.
+/// Bordered container: the app's dominant visual motif.
 struct VFCard<Content: View>: View {
     var padding: CGFloat = 20
     @ViewBuilder var content: Content
@@ -68,7 +68,7 @@ struct VFCard<Content: View>: View {
     }
 }
 
-/// Titre de page : grand titre + sous-titre gris.
+/// Page title: large title + gray subtitle.
 struct VFPageHeader: View {
     let title: String
     let subtitle: String
@@ -86,7 +86,7 @@ struct VFPageHeader: View {
     }
 }
 
-/// En-tête de section : libellé à gauche, lien souligné à droite.
+/// Section header: label on the left, underlined link on the right.
 struct VFSectionHeader: View {
     let title: String
     var linkTitle: String?
@@ -111,7 +111,7 @@ struct VFSectionHeader: View {
     }
 }
 
-/// Carte de métrique : libellé au-dessus, grand nombre en dessous.
+/// Metric card: label above, large number below.
 struct VFMetric: View {
     let label: String
     let value: String
@@ -138,7 +138,7 @@ struct VFMetric: View {
     }
 }
 
-/// Touche affichée en capsule, comme le badge « Fn » de la bande d'état.
+/// Key shown as a capsule, like the "Fn" badge in the status band.
 struct VFKeycap: View {
     let text: String
 
@@ -153,7 +153,7 @@ struct VFKeycap: View {
     }
 }
 
-/// Bouton plein, coins pleinement arrondis.
+/// Filled button, fully rounded corners.
 struct VFButtonStyle: ButtonStyle {
     var prominent = false
 
@@ -174,7 +174,7 @@ struct VFButtonStyle: ButtonStyle {
     }
 }
 
-/// Icône de l'app.
+/// App icon.
 struct VFLogo: View {
     var size: CGFloat = 36
 

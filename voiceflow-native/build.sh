@@ -1,6 +1,6 @@
 #!/bin/zsh
-# Assemble VoiceFlow.app à partir du package SwiftPM.
-# Usage : ./build.sh [release]   (debug par défaut)
+# Assembles VoiceFlow.app from the SwiftPM package.
+# Usage: ./build.sh [release]   (debug by default)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
@@ -21,10 +21,10 @@ cp AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 cp Resources/*.wav "$APP/Contents/Resources/"
 cp -R Resources/fr.lproj Resources/en.lproj "$APP/Contents/Resources/"
 
-# Signer avec le Developer ID si le certificat est présent : son empreinte
-# est stable, donc macOS conserve les autorisations d'un build à l'autre.
-# Sinon, signature ad hoc — mais il faudra réaccorder l'accessibilité à
-# chaque recompilation.
+# Sign with the Developer ID if the certificate is present: its fingerprint
+# is stable, so macOS keeps the permissions across builds.
+# Otherwise, ad hoc signature — but accessibility will need to be
+# re-granted after every rebuild.
 IDENTITY="${DEV_ID:-$(security find-identity -v -p codesigning 2>/dev/null \
 	| grep "Developer ID Application" | head -1 | awk '{print $2}')}"
 
@@ -32,11 +32,11 @@ if [[ -n "$IDENTITY" ]]; then
 	codesign --force --options runtime --timestamp \
 		--entitlements "$ROOT/voiceflow.entitlements" \
 		--sign "$IDENTITY" "$APP"
-	echo "signé : $IDENTITY"
+	echo "signed: $IDENTITY"
 else
 	codesign --force --sign - "$APP"
-	echo "signé ad hoc (autorisations à réaccorder après chaque build)"
+	echo "signed ad hoc (permissions must be re-granted after each build)"
 fi
 
 echo "→ $APP"
-echo "Lancer : open $(cd .. && pwd)/dist/VoiceFlow.app"
+echo "Run: open $(cd .. && pwd)/dist/VoiceFlow.app"

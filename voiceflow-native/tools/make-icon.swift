@@ -1,5 +1,5 @@
-// Génère AppIcon.icns : onde blanche sur dégradé cyan → violet,
-// dans le gabarit d'icône macOS (carré arrondi « squircle »).
+// Generates AppIcon.icns: a white wave on a cyan → purple gradient,
+// within the macOS icon template (rounded "squircle" square).
 import AppKit
 
 func drawIcon(size: CGFloat) -> NSImage {
@@ -7,10 +7,10 @@ func drawIcon(size: CGFloat) -> NSImage {
     image.lockFocus()
     guard let context = NSGraphicsContext.current?.cgContext else { return image }
 
-    // Marge du gabarit macOS : l'art occupe ~80 % du canevas.
+    // macOS template margin: the artwork occupies ~80% of the canvas.
     let inset = size * 0.10
     let rect = CGRect(x: inset, y: inset, width: size - inset * 2, height: size - inset * 2)
-    let radius = rect.width * 0.2237  // rayon « squircle » d'Apple
+    let radius = rect.width * 0.2237  // Apple's "squircle" radius
 
     let path = CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil)
     context.saveGState()
@@ -28,7 +28,7 @@ func drawIcon(size: CGFloat) -> NSImage {
         end: CGPoint(x: rect.maxX, y: rect.minY), options: [])
     context.restoreGState()
 
-    // L'onde : une ligne continue, la signature de l'app.
+    // The wave: a continuous line, the app's signature.
     let width = rect.width
     let midY = rect.midY
     let wave = CGMutablePath()

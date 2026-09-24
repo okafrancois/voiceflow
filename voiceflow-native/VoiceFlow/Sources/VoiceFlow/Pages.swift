@@ -1,14 +1,14 @@
 import SwiftUI
 
-// MARK: - Historique
+// MARK: - History
 
 struct HistoryPage: View {
     @ObservedObject var state: AppState
     @State private var search = ""
-    /// Moteur filtré ; `nil` = tous.
+    /// Filtered engine; `nil` = all.
     @State private var engine: String?
 
-    /// Les moteurs présents dans l'historique, quels qu'ils soient.
+    /// The engines present in the history, whichever they are.
     private var engines: [String] {
         Array(Set(state.entries.map(\.sttEngine))).sorted()
     }
@@ -85,7 +85,7 @@ struct HistoryPage: View {
     }
 }
 
-/// Champ de recherche arrondi, comme celui de l'app actuelle.
+/// Rounded search field, like the one in the current app.
 struct VFSearchField: View {
     @Binding var text: String
 
@@ -105,7 +105,7 @@ struct VFSearchField: View {
     }
 }
 
-// MARK: - Dictionnaire
+// MARK: - Dictionary
 
 struct DictionaryPage: View {
     @ObservedObject private var store = VocabularyStore.shared
@@ -300,7 +300,7 @@ struct DictionaryPage: View {
     }
 }
 
-/// Champ de saisie arrondi, assorti au reste.
+/// Rounded input field, matching the rest.
 struct VFTextField: View {
     let placeholder: String
     @Binding var text: String
@@ -318,7 +318,7 @@ struct VFTextField: View {
     }
 }
 
-// MARK: - Extraits
+// MARK: - Snippets
 
 struct SnippetsPage: View {
     @ObservedObject private var store = VocabularyStore.shared
@@ -547,7 +547,7 @@ struct StylesPage: View {
                     .font(.system(size: 14))
                     .foregroundStyle(VF.label)
 
-                // Le badge dit d'un coup d'œil si le prompt est celui d'origine.
+                // The badge shows at a glance whether the prompt is the original one.
                 Text(template.isCustomized ? L.t("modifié") : L.t("système"))
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(template.isCustomized ? VF.amber : VF.labelFaint)
@@ -586,8 +586,8 @@ struct StylesPage: View {
     }
 }
 
-/// Éditeur du prompt système d'un style : texte intégral, modifiable,
-/// avec retour à la valeur d'origine.
+/// Editor for a style's system prompt: full text, editable,
+/// with a way back to the original value.
 struct PromptEditor: View {
     let templateID: String
     @ObservedObject private var store = VocabularyStore.shared
@@ -647,7 +647,7 @@ struct PromptEditor: View {
     }
 }
 
-// MARK: - Réglages
+// MARK: - Settings
 
 struct SettingsPage: View {
     @ObservedObject var state: AppState
@@ -662,8 +662,8 @@ struct SettingsPage: View {
             settingsCard("Dictée") {
                 row("Langue", help: languageHelp) {
                     Picker("", selection: $state.dictationLocaleID) {
-                        // Toujours proposée : la masquer selon le moteur
-                        // laissait croire à une option manquante.
+                        // Always offered: hiding it based on the engine
+                        // made it look like an option was missing.
                         Text(state.displayName(for: AppState.autoLocaleID))
                             .tag(AppState.autoLocaleID)
                         Divider()
@@ -1009,9 +1009,9 @@ struct SettingsPage: View {
         .onAppear { state.refreshPermissions() }
     }
 
-    /// Ce qu'il y a à afficher à droite d'une ligne de moteur. Les deux
-    /// familles téléchargeables ont chacune leur magasin ; la ligne, elle,
-    /// n'a pas à savoir laquelle.
+    /// What to display on the right side of an engine row. The two
+    /// downloadable families each have their own store; the row itself
+    /// doesn't need to know which one.
     private struct DownloadState {
         var needsModel = false
         var downloaded = false
@@ -1046,7 +1046,7 @@ struct SettingsPage: View {
         models.downloading != nil || sherpaModels.downloading != nil
     }
 
-    /// Une ligne par moteur : sélection, taille, état de téléchargement.
+    /// One row per engine: selection, size, download state.
     @ViewBuilder
     private func engineRow(_ choice: EngineChoice) -> some View {
         let selected = state.engineChoiceID == choice.rawValue
@@ -1185,7 +1185,7 @@ struct SettingsPage: View {
     }
 }
 
-// MARK: - À propos
+// MARK: - About
 
 struct AboutPage: View {
     var body: some View {

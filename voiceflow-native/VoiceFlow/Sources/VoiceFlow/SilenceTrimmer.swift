@@ -1,31 +1,29 @@
 import AVFoundation
 
-/// Coupe du silence : on ne transmet au moteur que ce qui porte de la voix.
-/// Les silences de début et de fin disparaissent, les pauses longues sont
-/// raccourcies.
+/// Silence trimming: only what carries voice is forwarded to the engine.
+/// Leading and trailing silence disappears, long pauses are shortened.
 ///
-/// Le seuil n'est pas absolu — il ne peut pas l'être. Le niveau de sortie
-/// dépend du micro, de la distance et du gain d'entrée : un seuil qui convient
-/// à un casque proche taille en pleine phrase sur un micro intégré. On suit
-/// donc le plancher de bruit de la prise et on ouvre la porte à un écart fixe
-/// au-dessus de lui.
+/// The threshold isn't absolute — it can't be. Output level depends on the
+/// microphone, the distance, and the input gain: a threshold that fits a
+/// close headset clips mid-sentence on a built-in mic. So we track the
+/// take's noise floor and open the gate at a fixed margin above it.
 ///
-/// Le réglage est volontairement asymétrique : laisser passer du silence ne
-/// coûte qu'un peu de calcul, couper de la parole coûte des mots. Une pause
-/// plus courte que `hangover + keptPause` passe donc toujours en entier.
+/// The tuning is deliberately asymmetric: letting silence through only
+/// costs a bit of compute, cutting speech costs words. A pause shorter
+/// than `hangover + keptPause` therefore always passes through whole.
 struct SilenceTrimmer {
-    /// Écart au-dessus du plancher de bruit à partir duquel on considère qu'il
-    /// y a de la voix. Exprimé dans l'échelle de niveau normalisée, où 1
-    /// couvre 50 dB : 0,05 vaut donc environ 2,5 dB.
+    /// Margin above the noise floor beyond which we consider it voice.
+    /// Expressed on the normalized level scale, where 1 covers 50 dB:
+    /// 0.05 is therefore about 2.5 dB.
     var margin: Float = 0.05
 
-    /// Délai au-delà duquel, faute d'avoir rien entendu, on laisse tout
-    /// passer : mieux vaut transcrire du silence que perdre une dictée
-    /// entière parce que le micro est plus sourd que prévu.
+    /// Delay beyond which, having heard nothing, we let everything
+    /// through: better to transcribe silence than lose an entire
+    /// dictation because the mic is quieter than expected.
     var failOpenAfter: TimeInterval = 1.5
-    /// Durée conservée après le passage sous le seuil.
+    /// Duration kept after dropping below the threshold.
     var hangover: TimeInterval = 1.2
-    /// Durée de silence conservée à l'intérieur d'une pause longue.
+    /// Duration of silence kept inside a long pause.
     var keptPause: TimeInterval = 0.6
 
     init(margin: Float = 0.05,
@@ -39,18 +37,18 @@ struct SilenceTrimmer {
     }
 
     private(set) var hasHeardSpeech = false
-    /// Plancher de bruit estimé, pour le journal de diagnostic.
+    /// Estimated noise floor, for the diagnostic log.
     private(set) var noiseFloor: Float = 0
     private var calibrated = false
     private var silenceStart: Date?
     private var lastSpeech = Date.distantPast
     private var started: Date?
 
-    /// Seuil effectif du moment : jamais sous un plancher absolu, pour ne pas
-    /// transmettre du silence numérique quand l'entrée est muette.
+    /// Current effective threshold: never below an absolute floor, so we
+    /// don't forward digital silence when the input is muted.
     var gate: Float { max(0.02, noiseFloor + margin) }
 
-    /// Faut-il transmettre ce bloc au moteur de transcription ?
+    /// Should this block be forwarded to the transcription engine?
     mutating func shouldPass(level: Float, now: Date = Date()) -> Bool {
         if started == nil { started = now }
 
@@ -64,9 +62,9 @@ struct SilenceTrimmer {
             return true
         }
 
-        // Rien entendu depuis le début : on jette le silence initial, mais
-        // pas indéfiniment — sinon un seuil mal calibré ferait disparaître
-        // toute la dictée.
+        // Nothing heard since the start: we drop the initial silence, but
+        // not indefinitely — otherwise a poorly calibrated threshold would
+        // make the whole dictation disappear.
         guard hasHeardSpeech else {
             guard let started, now.timeIntervalSince(started) > failOpenAfter else {
                 return false
@@ -76,20 +74,20 @@ struct SilenceTrimmer {
             return true
         }
 
-        // Traîne après la parole : on laisse passer. C'est elle qui garantit
-        // qu'une respiration, une hésitation ou une consonne sourde ne coupe
-        // jamais la phrase en deux.
+        // Tail after speech: we let it through. This is what guarantees
+        // that a breath, a hesitation, or a voiceless consonant never
+        // splits the sentence in two.
         if now.timeIntervalSince(lastSpeech) < hangover { return true }
 
-        // Pause longue : on en garde un court fragment pour la respiration,
-        // puis on coupe jusqu'à la reprise.
+        // Long pause: we keep a short fragment of it for the breath,
+        // then cut until speech resumes.
         if silenceStart == nil { silenceStart = now }
         guard let start = silenceStart else { return false }
         return now.timeIntervalSince(start) < keptPause
     }
 
-    /// Le plancher descend vite vers le niveau courant et remonte très
-    /// lentement : il se cale sur les creux de la prise, jamais sur la voix.
+    /// The floor drops quickly toward the current level and rises very
+    /// slowly: it settles on the take's quiet spots, never on the voice.
     private mutating func updateNoiseFloor(with level: Float, isSpeech: Bool) {
         guard calibrated else {
             noiseFloor = level
@@ -101,8 +99,8 @@ struct SilenceTrimmer {
         } else if !isSpeech {
             noiseFloor += (level - noiseFloor) * 0.05
         } else {
-            // Pendant la parole le plancher ne bouge quasiment pas, sinon la
-            // porte se refermerait sur celui qui parle fort.
+            // During speech the floor barely moves, otherwise the gate
+            // would close on someone speaking loudly.
             noiseFloor += (level - noiseFloor) * 0.0015
         }
     }

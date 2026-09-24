@@ -19,9 +19,9 @@ let package = Package(
             ],
             path: "Sources/VoiceFlow",
             swiftSettings: [
-                // Concurrence stricte : les accès partagés entre le fil audio,
-                // le fil du raccourci et l'interface sont vérifiés à la
-                // compilation.
+                // Strict concurrency: shared access between the audio thread,
+                // the hotkey thread and the UI is checked at
+                // compile time.
                 .swiftLanguageMode(.v6)
             ]
         ),

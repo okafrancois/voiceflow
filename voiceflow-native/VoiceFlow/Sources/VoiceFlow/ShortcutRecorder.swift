@@ -1,12 +1,12 @@
 import AppKit
 import SwiftUI
 
-/// Champ d'enregistrement de raccourci : cliquer, puis presser la
-/// combinaison voulue. Échap annule.
+/// Shortcut recording field: click, then press the desired
+/// combination. Escape cancels.
 struct ShortcutRecorder: View {
     @ObservedObject var state: AppState
     let keyPath: ReferenceWritableKeyPath<AppState, Shortcut?>
-    /// Le raccourci peut être retiré (mode commande).
+    /// The shortcut can be removed (command mode).
     var clearable = false
     @State private var recording = false
     @State private var monitors: [Any] = []
@@ -50,18 +50,18 @@ struct ShortcutRecorder: View {
 
     private func start() {
         recording = true
-        // Filet de sécurité : une capture oubliée avalerait une frappe ailleurs.
+        // Safety net: a forgotten capture would swallow a keystroke elsewhere.
         DispatchQueue.main.asyncAfter(deadline: .now() + 15) {
             if recording { stop() }
         }
-        // Le tap global voit tout, y compris les combinaisons que l'app
-        // intercepte normalement.
+        // The global tap sees everything, including combinations the app
+        // normally intercepts.
         state.captureShortcut(into: keyPath) { recording = false }
         guard !state.hotkeyTapActive else { return }
 
-        // Sans autorisation Accessibilité, pas de tap : on se rabat sur une
-        // écoute locale. Elle doit couvrir les frappes *et* les modificateurs,
-        // sinon une touche seule comme Fn ne serait jamais capturée.
+        // Without Accessibility permission, no tap: fall back to a local
+        // listener. It must cover both keystrokes *and* modifiers, otherwise
+        // a standalone key like Fn would never be captured.
         var pendingModifier: UInt16?
         let keys = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             guard event.keyCode != 53 else { stop(); return nil }
@@ -77,7 +77,7 @@ struct ShortcutRecorder: View {
         let modifiers = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { event in
             guard Shortcut.modifierKeyCodes.contains(event.keyCode) else { return event }
             if Shortcut.isPressed(event.keyCode, event.modifierFlags) {
-                // Peut-être le début d'une combinaison : on attend le relâchement.
+                // Might be the start of a combination: wait for release.
                 pendingModifier = event.keyCode
                 return event
             }

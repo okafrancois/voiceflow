@@ -2,7 +2,7 @@ import Foundation
 import NaturalLanguage
 import SQLite3
 
-/// Une dictée enregistrée.
+/// A recorded dictation.
 struct HistoryEntry: Identifiable, Hashable {
     let id: String
     let createdAt: Date
@@ -19,15 +19,16 @@ struct HistoryEntry: Identifiable, Hashable {
     let wordCount: Int
 }
 
-/// Compte les mots d'une dictée, y compris dans les langues écrites sans
-/// espaces (chinois, japonais) que SenseVoice et Qwen3-ASR transcrivent :
-/// découper sur les espaces y comptait une phrase entière pour un mot.
+/// Counts the words of a dictation, including in languages written
+/// without spaces (Chinese, Japanese) that SenseVoice and Qwen3-ASR
+/// transcribe: splitting on spaces there counted a whole sentence as one
+/// word.
 enum WordCounter {
     static func count(_ text: String) -> Int {
         let needsSegmentation = text.unicodeScalars.contains {
             (0x3040...0x30FF).contains($0.value)      // kana
-                || (0x3400...0x9FFF).contains($0.value)   // idéogrammes CJC
-                || (0xAC00...0xD7AF).contains($0.value)   // hangûl
+                || (0x3400...0x9FFF).contains($0.value)   // CJK ideographs
+                || (0xAC00...0xD7AF).contains($0.value)   // hangul
         }
         guard needsSegmentation else {
             return text.split(whereSeparator: { $0.isWhitespace }).count
@@ -38,30 +39,30 @@ enum WordCounter {
     }
 }
 
-/// Statistiques du jour affichées sur l'accueil.
+/// Today's statistics shown on the home screen.
 struct DayStats {
     var words = 0
     var dictations = 0
     var polished = 0
     var speakingSeconds = 0
 
-    /// Mots par minute de parole.
+    /// Words per minute of speech.
     var wordsPerMinute: Int {
         guard speakingSeconds > 0 else { return 0 }
         return Int(Double(words) / (Double(speakingSeconds) / 60))
     }
 }
 
-/// Historique local en SQLite.
+/// Local SQLite history.
 ///
-/// Le schéma reprend celui de l'app Tauri
-/// (`apps/desktop/src-tauri/src/history/store.rs`) pour rester compatible :
-/// une base existante peut être copiée ou importée telle quelle. Les
-/// colonnes propres à l'app native (`app_name`, `word_count`) s'ajoutent par
-/// migration, suivie dans la table `native_meta`.
+/// The schema mirrors the Tauri app's
+/// (`apps/desktop/src-tauri/src/history/store.rs`) to stay compatible: an
+/// existing database can be copied or imported as-is. Columns specific to
+/// the native app (`app_name`, `word_count`) are added through
+/// migrations, tracked in the `native_meta` table.
 ///
-/// Toute lecture et écriture de la connexion passe par `queue` : c'est elle
-/// qui rend le partage entre fils sûr.
+/// All reads and writes to the connection go through `queue`: that's
+/// what makes sharing across threads safe.
 final class HistoryStore: @unchecked Sendable {
     static let shared = HistoryStore(
         path: URL.applicationSupportDirectory
@@ -117,9 +118,9 @@ final class HistoryStore: @unchecked Sendable {
 
     // MARK: - Migrations
 
-    /// Version du schéma natif, rangée à part : `PRAGMA user_version`
-    /// appartient à l'app Tauri (4 aujourd'hui), et une base copiée depuis
-    /// elle sautait nos migrations.
+    /// Native schema version, stored separately: `PRAGMA user_version`
+    /// belongs to the Tauri app (4 today), and a database copied from it
+    /// would skip our migrations.
     private func nativeVersion() -> Int {
         exec("CREATE TABLE IF NOT EXISTS native_meta (key TEXT PRIMARY KEY, value INTEGER NOT NULL)")
         var statement: OpaquePointer?
@@ -136,17 +137,16 @@ final class HistoryStore: @unchecked Sendable {
     }
 
     private func migrate() {
-        // Les colonnes propres à l'app native sont vérifiées à chaque
-        // ouverture, quelle que soit la version : sans elles, chaque
-        // insertion échouerait.
+        // Columns specific to the native app are checked on every open,
+        // regardless of version: without them, every insert would fail.
         let columnsReady = ensureColumn("app_name", type: "TEXT")
             && ensureColumn("word_count", type: "INTEGER")
         guard columnsReady else { return }
 
         if nativeVersion() < 1 {
-            // v1 — le nom de l'app avait été rangé dans `source_path`, qui
-            // désigne chez Tauri le fichier audio importé. Il retrouve sa
-            // colonne ; un vrai chemin reste où il est.
+            // v1 — the app name used to be stored in `source_path`,
+            // which in Tauri designates the imported audio file. It gets
+            // its own column back; a real path stays where it is.
             if exec("""
                 UPDATE transcription_history
                 SET app_name = source_path, source_path = NULL
@@ -156,12 +156,12 @@ final class HistoryStore: @unchecked Sendable {
                 setNativeVersion(1)
             }
         }
-        // Nombre de mots des entrées qui n'en ont pas encore (anciennes,
-        // importées) : les statistiques se calculent en SQL.
+        // Word count for entries that don't have one yet (old, imported
+        // ones): statistics are computed in SQL.
         backfillWordCounts()
     }
 
-    /// Ajoute la colonne si elle manque ; faux si elle reste absente.
+    /// Adds the column if missing; false if it's still absent.
     private func ensureColumn(_ name: String, type: String) -> Bool {
         guard !columnExists(name) else { return true }
         return exec("ALTER TABLE transcription_history ADD COLUMN \(name) \(type)")
@@ -216,7 +216,7 @@ final class HistoryStore: @unchecked Sendable {
         return true
     }
 
-    // MARK: - Écriture
+    // MARK: - Writing
 
     func insert(
         rawText: String, finalText: String,
@@ -238,7 +238,7 @@ final class HistoryStore: @unchecked Sendable {
             guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
                 let message = String(cString: sqlite3_errmsg(self.db))
                 log.error("history insert prepare failed: \(message)")
-                Diagnostics.log("historique : enregistrement impossible (\(message))")
+                Diagnostics.log("history: unable to record (\(message))")
                 return
             }
             defer { sqlite3_finalize(statement) }
@@ -281,7 +281,7 @@ final class HistoryStore: @unchecked Sendable {
         }
     }
 
-    /// Supprime les entrées plus vieilles que `days` jours.
+    /// Deletes entries older than `days` days.
     func deleteOlderThan(days: Int) {
         queue.sync {
             let cutoff = Date().addingTimeInterval(-Double(days) * 86400).timeIntervalSince1970 * 1000
@@ -297,12 +297,12 @@ final class HistoryStore: @unchecked Sendable {
     }
 
     func deleteAll() {
-        queue.sync { exec("DELETE FROM transcription_history") }
+        queue.sync { _ = exec("DELETE FROM transcription_history") }
     }
 
-    /// Reprend l'historique de l'app Tauri. Les entrées déjà présentes (même
-    /// identifiant) sont ignorées : l'import peut se relancer sans doublon.
-    /// Rend le nombre d'entrées ajoutées.
+    /// Picks up history from the Tauri app. Entries already present (same
+    /// identifier) are ignored: the import can be re-run without
+    /// duplicates. Returns the number of entries added.
     func importTauriHistory(from path: String) throws -> Int {
         try queue.sync {
             var attach: OpaquePointer?
@@ -355,7 +355,7 @@ final class HistoryStore: @unchecked Sendable {
         }
     }
 
-    // MARK: - Lecture
+    // MARK: - Reading
 
     func recent(limit: Int = 200) -> [HistoryEntry] {
         queue.sync {
@@ -394,8 +394,8 @@ final class HistoryStore: @unchecked Sendable {
         }
     }
 
-    /// Résumé d'usage sur une période, comme le bandeau « 7 derniers jours »
-    /// de l'app actuelle.
+    /// Usage summary over a period, like the "last 7 days" banner in the
+    /// current app.
     struct Usage {
         var words = 0
         var dictations = 0
@@ -413,11 +413,11 @@ final class HistoryStore: @unchecked Sendable {
         let dictations: Int
     }
 
-    /// Jour local d'une entrée, calculé par SQLite.
+    /// Local day of an entry, computed by SQLite.
     private static let localDay = "date(created_at / 1000, 'unixepoch', 'localtime')"
 
-    /// `days == nil` : tout l'historique. Calculé en SQL : aucune limite sur
-    /// le nombre d'entrées prises en compte.
+    /// `days == nil`: the whole history. Computed in SQL: no limit on
+    /// the number of entries considered.
     func usage(days: Int?) -> (usage: Usage, daily: [DayPoint]) {
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())
@@ -449,7 +449,7 @@ final class HistoryStore: @unchecked Sendable {
             }
             usage.activeDays = perDay.count
 
-            // Série continue, jours vides compris, pour que la courbe ne saute pas.
+            // Continuous series, empty days included, so the curve doesn't jump.
             var daily: [DayPoint] = []
             var cursor = from ?? perDay.keys.min() ?? today
             while cursor <= today {
@@ -461,7 +461,7 @@ final class HistoryStore: @unchecked Sendable {
         }
     }
 
-    /// Statistiques du jour + mots par heure pour la courbe d'activité.
+    /// Today's statistics + words per hour for the activity curve.
     func todayStats() -> (stats: DayStats, hourly: [Int]) {
         let startOfDay = Int64(Calendar.current.startOfDay(for: Date()).timeIntervalSince1970 * 1000)
         return queue.sync {
@@ -485,8 +485,8 @@ final class HistoryStore: @unchecked Sendable {
         }
     }
 
-    /// Tout ce qu'affichent l'accueil et l'historique, lu hors du fil
-    /// principal.
+    /// Everything the home screen and history display, read off the
+    /// main thread.
     struct Snapshot {
         var entries: [HistoryEntry]
         var today: (stats: DayStats, hourly: [Int])

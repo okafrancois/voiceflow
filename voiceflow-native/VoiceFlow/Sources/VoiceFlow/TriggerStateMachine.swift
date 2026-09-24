@@ -1,15 +1,15 @@
 import Foundation
 
-/// Traduit les pressions du raccourci en ordres de dictée, selon le mode.
+/// Translates shortcut presses into dictation commands, based on the mode.
 ///
-/// Sans état système : `HotkeyManager` lui passe les événements, l'horloge
-/// comprise, ce qui permet de tester chaque mode à l'identique.
+/// No system state: `HotkeyManager` passes it the events, clock
+/// included, which makes it possible to test each mode identically.
 ///
-/// Un raccourci à touche modificatrice seule (Fn, ⌘ droite…) sert aussi dans
-/// des combinaisons ordinaires (Fn + ↑, ⌘ + C). En mode maintenir, la dictée
-/// démarre à la pression pour un retour immédiat, et s'annule si une autre
-/// touche suit de près ; dans les autres modes, on n'agit qu'au relâchement,
-/// et seulement si la touche a été pressée seule.
+/// A shortcut using a standalone modifier key (Fn, right ⌘…) is also
+/// used in ordinary combinations (Fn + ↑, ⌘ + C). In hold mode,
+/// dictation starts on press for immediate feedback, and cancels if
+/// another key follows shortly after; in the other modes, action only
+/// happens on release, and only if the key was pressed alone.
 struct TriggerStateMachine {
     enum Action: Equatable {
         case start, stop, cancel
@@ -18,11 +18,11 @@ struct TriggerStateMachine {
     var mode: TriggerMode
     var modifierOnly: Bool
 
-    /// Une autre touche pressée dans ce délai après le début : c'était une
-    /// combinaison, pas une dictée.
+    /// Another key pressed within this delay after the start: it was a
+    /// combination, not a dictation.
     static let chordWindow: TimeInterval = 1.0
     static let doubleTapWindow: TimeInterval = 0.4
-    /// Certains claviers émettent deux événements pour une seule pression.
+    /// Some keyboards emit two events for a single press.
     static let bounceWindow: TimeInterval = 0.08
 
     private(set) var isHeld = false
@@ -74,7 +74,7 @@ struct TriggerStateMachine {
         }
     }
 
-    /// Une touche autre que le raccourci a été pressée.
+    /// A key other than the shortcut was pressed.
     mutating func otherKey(at now: Date) -> Action? {
         guard isHeld, modifierOnly else { return nil }
         chorded = true
@@ -85,14 +85,14 @@ struct TriggerStateMachine {
         return .cancel
     }
 
-    /// L'app est revenue au repos d'elle-même (annulation, erreur, fin du
-    /// traitement) : ce que croyait la machine n'a plus cours.
+    /// The app went back to idle on its own (cancellation, error, end of
+    /// processing): what the machine believed no longer holds.
     mutating func dictationEnded() {
         isActive = false
         lastTapAt = nil
     }
 
-    /// Réglages modifiés : repartir de zéro.
+    /// Settings changed: start over from scratch.
     mutating func reset() {
         isHeld = false
         isActive = false

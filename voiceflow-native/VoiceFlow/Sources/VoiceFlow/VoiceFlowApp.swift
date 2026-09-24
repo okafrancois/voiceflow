@@ -38,7 +38,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-/// Ouvre l'accueil au premier lancement.
+/// Opens onboarding on first launch.
 struct OnboardingLauncher: ViewModifier {
     @ObservedObject var state: AppState
     @Environment(\.openWindow) private var openWindow
@@ -58,8 +58,8 @@ struct MenuContent: View {
     @ObservedObject private var sherpaModels = SherpaModelStore.shared
     @Environment(\.openWindow) private var openWindow
 
-    /// Seuls les moteurs utilisables tout de suite : le système, et les
-    /// modèles déjà téléchargés.
+    /// Only engines usable right away: the system one, and models already
+    /// downloaded.
     private var readyEngines: [EngineChoice] {
         EngineChoice.allCases.filter { choice in
             if let variant = choice.whisperModel { return whisperModels.isDownloaded(variant) }

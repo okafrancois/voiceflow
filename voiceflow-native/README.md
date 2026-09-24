@@ -1,141 +1,141 @@
-# VoiceFlow Native — réécriture macOS (Swift/SwiftUI)
+# VoiceFlow Native — macOS rewrite (Swift/SwiftUI)
 
-Réécriture native de VoiceFlow, ciblant macOS 26+ (Apple Silicon), Liquid Glass.
+Native rewrite of VoiceFlow, targeting macOS 26+ (Apple Silicon), Liquid Glass.
 
-- `index.html` — maquette de design (bureau macOS simulé) : `python3 -m http.server 5849`
-- `VoiceFlow/` — package SwiftPM de l'application
-- `build.sh` — compile et assemble `dist/VoiceFlow.app` (signature ad hoc)
+- `index.html` — design mockup (simulated macOS desktop): `python3 -m http.server 5849`
+- `VoiceFlow/` — SwiftPM package for the application
+- `build.sh` — builds and assembles `dist/VoiceFlow.app` (ad hoc signature)
 
-## Phase 1 — squelette de bout en bout (état actuel)
+## Phase 1 — end-to-end skeleton (current state)
 
-Une seule fonctionnalité, mais réelle : **maintenir ⌥ Espace → dicter → relâcher →
-le texte s'insère dans l'app active.**
+A single feature, but a real one: **hold ⌥ Space → dictate → release →
+the text is inserted into the active app.**
 
-Chaîne : `HotkeyManager` (CGEventTap, avale ⌥ Espace) → `AudioRecorder`
+Chain: `HotkeyManager` (CGEventTap, swallows ⌥ Space) → `AudioRecorder`
 (AVAudioEngine) → `TranscriptionSession` (SpeechAnalyzer/SpeechTranscriber,
-100 % sur l'appareil) → `TextInjector` (port fidèle de
-`apps/desktop/src-tauri/src/text_injector/macos.rs` : cible AX capturée au
-démarrage, sinon frappe simulée ≤ 400 graphèmes, sinon presse-papiers + Cmd+V
-avec sauvegarde/restauration intégrale).
+100% on-device) → `TextInjector` (a faithful port of
+`apps/desktop/src-tauri/src/text_injector/macos.rs`: AX target captured at
+startup, otherwise simulated typing ≤ 400 graphemes, otherwise clipboard + Cmd+V
+with full backup/restore).
 
-### Lancer
+### Run
 
 ```sh
 ./build.sh && open dist/VoiceFlow.app
 ```
 
-Au premier lancement :
-1. accorder le **micro** (boîte système) ;
-2. accorder l'**accessibilité** (invite système → Réglages > Confidentialité) ;
-3. relancer l'app après l'accord accessibilité (le CGEventTap est créé au lancement) ;
-4. le modèle de langue se télécharge en arrière-plan (icône ↓ dans la barre de menus).
+On first launch:
+1. grant **microphone** access (system dialog);
+2. grant **accessibility** access (system prompt → Settings > Privacy);
+3. relaunch the app after granting accessibility (the CGEventTap is created at launch);
+4. the language model downloads in the background (↓ icon in the menu bar).
 
-La signature ad hoc change à chaque build : macOS peut redemander la case
-Accessibilité après recompilation (décocher/recocher dans les Réglages).
+The ad hoc signature changes with every build: macOS may ask for the
+Accessibility checkbox again after a rebuild (uncheck/recheck in Settings).
 
-### À valider (objectifs de la phase)
+### To validate (phase goals)
 
-- [ ] Qualité du **français** de SpeechAnalyzer vs l'app Tauri actuelle
-      (mêmes dictées, comparer). Plan B si décevant : WhisperKit.
-- [ ] Latence fin de dictée → texte inséré.
-- [ ] Parité d'injection : Cursor, Mail, Safari, Terminal, champ Spotlight.
-      Vérifier le mode AX (insertion sans réactivation) et la restauration
-      du presse-papiers.
+- [ ] **French** quality from SpeechAnalyzer vs. the current Tauri app
+      (same dictations, compare). Plan B if disappointing: WhisperKit.
+- [ ] End-of-dictation → inserted-text latency.
+- [ ] Injection parity: Cursor, Mail, Safari, Terminal, Spotlight field.
+      Check AX mode (insertion without reactivation) and clipboard
+      restoration.
 
 ### Interface
 
-Calquée sur l'app Tauri, mesurée sur une capture de l'app réelle
-(`/Applications/Voice Flow.app`) plutôt que devinée :
+Modeled on the Tauri app, measured from a screenshot of the real app
+(`/Applications/Voice Flow.app`) rather than guessed:
 
-- fenêtre sans barre de titre, barre latérale sombre de 248 px pleine hauteur,
-  feux tricolores au-dessus du logo ;
-- logo + « Voice Flow » en serif italique 22, filet de séparation, navigation
-  en pastilles pleinement arrondies (sélection = fond `card` + bordure) ;
-- contenu à 40 px de marge, largeur max 1000 : titre 28 semibold + sous-titre
-  gris, bande d'état bordée à 24 px de rayon, cartes à 18 px ;
-- cartes de métrique : libellé 13 gris **au-dessus**, valeur 36 en dessous ;
-- listes en cartes bordées avec filets internes, lignes dépliables au clic.
+- window with no title bar, dark 248 px full-height sidebar,
+  traffic lights above the logo;
+- logo + "Voice Flow" in italic serif 22, separator line, navigation
+  in fully rounded pills (selection = `card` background + border);
+- content with 40 px margin, max width 1000: 28 semibold title + gray
+  subtitle, status band bordered with 24 px radius, cards at 18 px;
+- metric cards: 13 gray label **above**, 36 value below;
+- lists in bordered cards with internal dividers, rows expand on click.
 
-Palette de `src/index.css` : `#F9F9F9`/`#FFFFFF`/`#EBEBEB` en clair,
-`#1B1B1B`/`#212121`/`#343434` en sombre.
+Palette from `src/index.css`: `#F9F9F9`/`#FFFFFF`/`#EBEBEB` in light,
+`#1B1B1B`/`#212121`/`#343434` in dark.
 
-### Implémenté
+### Implemented
 
-- **Dictée** : SpeechAnalyzer (Apple), Whisper (tiny à large-v3), SenseVoice
-  et Qwen3-ASR ; langue indépendante du système, détection automatique hors
-  moteur Apple. Téléchargement des modèles visible, avec progression,
-  suppression et erreurs affichées. Un seul modèle reste en mémoire,
-  préchargé au lancement et au changement de moteur.
-- **Cycle de dictée** : le micro démarre à la pression, avant que le moteur
-  soit prêt ; l'audio attend dans `EngineFeed`, rien n'est perdu. Échap
-  annule (pendant l'enregistrement : tout est jeté ; pendant le traitement :
-  gardé dans l'historique, rien n'est inséré).
-- **Entrée audio** : choix du micro (CoreAudio), réduction de bruit par le
-  traitement vocal du système (sans baisser le son des autres apps), coupe
-  du silence réglable.
-- **Raccourcis** : dictée personnalisable, touche seule acceptée (Fn, F1–F20),
-  trois modes — maintenir, basculer, double appui. Une touche modificatrice
-  seule utilisée dans une combinaison (Fn + ↑, ⌘ droite + C) ne déclenche
-  rien. Interception sur un fil dédié : l'interface peut ramer sans geler le
-  clavier. Second raccourci facultatif pour le **mode commande** : une
-  consigne dite (« traduis en anglais ») s'applique au texte sélectionné.
-- **Insertion** : champ d'origine mémorisé au déclenchement (désactivable),
-  sinon frappe simulée ou presse-papiers selon la longueur. Espace et
-  majuscule raccordés au texte qui précède le curseur. Presse-papiers rendu
-  après 700 ms, sauf si quelqu'un a copié entre-temps ; la dictée y est
-  marquée éphémère. Dernière insertion retirable depuis le menu.
-- **Polissage** : Apple Intelligence sur l'appareil. Six styles, prompts
-  système visibles et modifiables, retour possible à l'original. Les longues
-  dictées sont polies par morceaux.
-- **Règles par application** : style de polissage et langue de dictée.
-- **Dictionnaire** : saisie manuelle, variantes « aussi entendu », import CSV.
-  Remplacement par mots entiers uniquement. Les termes sont aussi transmis au
-  moteur (prompt Whisper, contexte SpeechAnalyzer). Les corrections faites
-  après insertion deviennent des suggestions, actives une fois acceptées ou
-  vues trois fois.
-- **Commandes vocales** : « à la ligne », « nouveau paragraphe »,
-  « new line »… dites seules entre deux pauses.
-- **Extraits**, **historique SQLite** (schéma Tauri, migrations versionnées),
-  **statistiques** calculées en SQL sur tout l'historique, rétention
-  appliquée en continu.
-- **Import** de l'historique, du dictionnaire et des extraits de l'app Tauri.
-- **Pill** : messages d'erreur et transcription en direct (moteur Apple),
-  sur l'écran sous la souris ; thème, position, taille, couleur, opacité.
-- **Menu de barre** : démarrer/arrêter, annuler, moteur, langue, polissage.
-- **Langue de l'interface** : français et anglais (`Resources/*.lproj`),
-  appliquée immédiatement. `tools/check-strings.py` vérifie qu'aucune clé ne
-  manque en anglais.
-- **Onboarding** au premier lancement, **mises à jour** par flux JSON
-  (`appcast.json`, publié avec chaque release par le workflow
-  `release-native.yml` au push d'un tag `native-v*`).
-- **Confort** : ouverture à la connexion, sons repris de l'app Tauri, icône
-  générée, journal de diagnostic avec rotation.
+- **Dictation**: SpeechAnalyzer (Apple), Whisper (tiny to large-v3), SenseVoice
+  and Qwen3-ASR; language independent of the system, automatic detection outside
+  the Apple engine. Model download visible, with progress, deletion and errors
+  displayed. Only one model stays in memory, preloaded at launch and on
+  engine change.
+- **Dictation cycle**: the microphone starts on press, before the engine
+  is ready; audio waits in `EngineFeed`, nothing is lost. Escape
+  cancels (during recording: everything is discarded; during processing:
+  kept in history, nothing is inserted).
+- **Audio input**: microphone selection (CoreAudio), noise reduction via the
+  system's voice processing (without lowering other apps' volume), adjustable
+  silence trimming.
+- **Shortcuts**: customizable dictation shortcut, single key accepted (Fn, F1–F20),
+  three modes — hold, toggle, double press. A modifier key used
+  alone in a combination (Fn + ↑, right ⌘ + C) triggers
+  nothing. Interception on a dedicated thread: the UI can lag without freezing
+  the keyboard. Optional second shortcut for **command mode**: a
+  spoken instruction ("translate to English") applies to the selected text.
+- **Insertion**: origin field remembered at trigger time (can be disabled),
+  otherwise simulated typing or clipboard depending on length. Space and
+  capitalization connected to the text preceding the cursor. Clipboard restored
+  after 700 ms, unless something was copied in the meantime; the dictation is
+  marked ephemeral there. Last insertion can be removed from the menu.
+- **Polishing**: on-device Apple Intelligence. Six styles, system prompts
+  visible and editable, with the option to revert to the original. Long
+  dictations are polished in chunks.
+- **Per-app rules**: polish style and dictation language.
+- **Dictionary**: manual entry, "also heard" variants, CSV import.
+  Whole-word replacement only. Terms are also passed to the
+  engine (Whisper prompt, SpeechAnalyzer context). Corrections made
+  after insertion become suggestions, active once accepted or
+  seen three times.
+- **Voice commands**: "à la ligne", "nouveau paragraphe",
+  "new line"… said alone between two pauses.
+- **Snippets**, **SQLite history** (Tauri schema, versioned migrations),
+  **statistics** computed in SQL over the whole history, retention
+  applied continuously.
+- **Import** of history, dictionary and snippets from the Tauri app.
+- **Pill**: error messages and live transcript (Apple engine),
+  on the screen under the mouse; theme, position, size, color, opacity.
+- **Menu bar**: start/stop, cancel, engine, language, polishing.
+- **Interface language**: French and English (`Resources/*.lproj`),
+  applied immediately. `tools/check-strings.py` checks that no key is
+  missing in English.
+- **Onboarding** on first launch, **updates** via JSON feed
+  (`appcast.json`, published with each release by the
+  `release-native.yml` workflow when a `native-v*` tag is pushed).
+- **Polish**: launch at login, sounds carried over from the Tauri app, generated
+  icon, diagnostic log with rotation.
 
-### Vérifier
+### Verify
 
 ```sh
 cd VoiceFlow && swift build && swift test && cd .. && tools/check-strings.py
 ```
 
-### Choix assumé : Whisper plutôt que MLX
+### Deliberate choice: Whisper over MLX
 
-Faire tourner les modèles locaux de l'app Tauri (Qwen, Gemma…) via MLX Swift
-est impossible **en même temps que WhisperKit** : les deux dépendent de
-`swift-transformers` dans des versions disjointes (WhisperKit ≤ 1.2,
-mlx-swift-examples ≥ 1.3 sur `main`). Whisper est conservé pour la
-transcription ; le polissage reste sur le modèle du système. Le moteur MLX
-écrit et vérifié attend dans `attente/`, avec la marche à suivre.
+Running the Tauri app's local models (Qwen, Gemma…) via MLX Swift
+is impossible **at the same time as WhisperKit**: both depend on
+`swift-transformers` in disjoint versions (WhisperKit ≤ 1.2,
+mlx-swift-examples ≥ 1.3 on `main`). Whisper is kept for
+transcription; polishing stays on the system model. The MLX engine,
+written and verified, waits in `attente/`, along with the steps to follow.
 
-Note d'outillage : compiler MLX exige la chaîne Metal, installée depuis
-(`xcodebuild -downloadComponent MetalToolchain`, 839 Mo).
+Tooling note: compiling MLX requires the Metal toolchain, installed via
+(`xcodebuild -downloadComponent MetalToolchain`, 839 MB).
 
-### Reste ouvert
+### Still open
 
-- Pont éditeur « vibe coding » et services cloud : écartés volontairement.
-- Conservation de l'audio (et donc relecture, retranscription, traduction
-  depuis l'historique) : écartée volontairement.
-- Streaming du texte poli (le résultat arrive d'un bloc).
-- L'installation automatique des mises à jour demanderait Sparkle et une paire
-  de clés ; aujourd'hui l'app signale la version et ouvre le lien.
-- Moteur par application : écarté, un seul modèle reste chargé et en changer
-  à chaque app coûterait plusieurs secondes par dictée.
+- "Vibe coding" editor bridge and cloud services: deliberately left out.
+- Audio retention (and therefore playback, re-transcription, translation
+  from history): deliberately left out.
+- Streaming of the polished text (the result arrives in one block).
+- Automatic update installation would require Sparkle and a key
+  pair; today the app reports the version and opens the link.
+- Per-app engine: dropped, only one model stays loaded and switching
+  it per app would cost several seconds per dictation.

@@ -1,23 +1,23 @@
-# MLXPolisher — en attente
+# MLXPolisher — on hold
 
-Polissage par modèles locaux (Qwen, Gemma, Llama) via MLX Swift, prêt à
-brancher, mais **non compilable en même temps que WhisperKit** :
+Polishing via local models (Qwen, Gemma, Llama) through MLX Swift, ready to
+plug in, but **not buildable at the same time as WhisperKit**:
 
-| Paquet                      | exige `swift-transformers` |
+| Package                     | requires `swift-transformers` |
 |-----------------------------|----------------------------|
 | WhisperKit ≤ 0.14           | 0.1.8 ..< 0.2.0            |
 | WhisperKit 0.15 → 0.18      | 1.1.2 ..< 1.2.0            |
 | mlx-swift-examples 2.29.1   | 1.0.0 ..< 1.1.0            |
 | mlx-swift-examples `main`   | ≥ 1.3.0                    |
 
-Aucune intersection : il faut choisir entre Whisper pour la transcription et
-MLX pour le polissage, tant qu'un des deux n'aura pas bougé.
+No overlap: you have to choose between Whisper for transcription and
+MLX for polishing, until one of the two moves.
 
-Pour réactiver (sans Whisper) : remettre ce fichier dans `Sources/VoiceFlow/`,
-ajouter au `Package.swift` la dépendance `mlx-swift-examples` (branche `main`)
-avec les produits `MLXLLM` et `MLXLMCommon`, et retirer WhisperKit.
+To re-enable (without Whisper): put this file back in `Sources/VoiceFlow/`,
+add the `mlx-swift-examples` dependency (`main` branch) to `Package.swift`
+with the `MLXLLM` and `MLXLMCommon` products, and remove WhisperKit.
 
-L'API utilisée a été vérifiée sur les sources de la version 2.21.2 :
+The API used was verified against the sources of version 2.21.2:
 `LLMModelFactory.shared.loadContainer(configuration:progressHandler:)`,
 `ModelContainer.perform`, `context.processor.prepare(input: UserInput(messages:))`,
 `generate(input:parameters:context:didGenerate:)` → `GenerateResult.output`.

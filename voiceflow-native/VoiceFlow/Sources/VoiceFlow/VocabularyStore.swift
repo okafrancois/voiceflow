@@ -1,31 +1,31 @@
 import AppKit
 import Foundation
 
-/// Un terme du dictionnaire : ce que la transcription produit → ce qu'il faut
-/// écrire. Appliqué après la transcription, avant le polissage.
+/// A dictionary term: what the transcription produces → what should
+/// be written. Applied after transcription, before polishing.
 struct DictionaryEntry: Codable, Identifiable, Hashable {
     var id = UUID()
-    /// Forme entendue principale.
+    /// Main heard form.
     var heard: String
-    /// Autres graphies produites par la transcription pour le même mot.
+    /// Other spellings produced by the transcription for the same word.
     var variants: [String] = []
     var replacement: String
     var caseSensitive = false
     var useCount = 0
     var lastUsed: Date?
-    /// Vrai quand l'entrée vient d'une correction observée, pas d'une saisie.
+    /// True when the entry comes from an observed correction, not manual entry.
     var learned = false
-    /// Correction observée mais pas encore validée : nombre de fois où elle
-    /// a été vue. `nil` = entrée active. Une correction isolée peut être un
-    /// changement d'avis (« vendredi » → « samedi ») et non une erreur de
-    /// transcription : elle ne s'applique qu'une fois acceptée, ou revue
-    /// plusieurs fois.
+    /// Correction observed but not yet confirmed: number of times it has
+    /// been seen. `nil` = active entry. An isolated correction could be a
+    /// change of mind (« vendredi » → « samedi ») rather than a
+    /// transcription error: it only applies once accepted, or seen
+    /// several times.
     var pendingSightings: Int?
 
     var isActive: Bool { pendingSightings == nil }
 
-    /// Toutes les formes à remplacer, la plus longue d'abord pour éviter
-    /// qu'une forme courte n'entame une forme longue.
+    /// All the forms to replace, longest first to avoid a short form
+    /// cutting into a longer one.
     var allForms: [String] {
         ([heard] + variants)
             .map { $0.trimmingCharacters(in: .whitespaces) }
@@ -43,9 +43,9 @@ struct DictionaryEntry: Codable, Identifiable, Hashable {
         self.pendingSightings = pendingSightings
     }
 
-    /// Décodage tolérant : un champ absent (fichier d'une version plus
-    /// ancienne) prend sa valeur par défaut au lieu de faire échouer tout le
-    /// fichier — ce qui l'aurait vidé à la sauvegarde suivante.
+    /// Tolerant decoding: a missing field (file from an older version)
+    /// takes its default value instead of failing the whole file —
+    /// which would have wiped it out on the next save.
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         id = try values.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
@@ -60,7 +60,7 @@ struct DictionaryEntry: Codable, Identifiable, Hashable {
     }
 }
 
-/// Un extrait : une phrase dictée qui se remplace par un texte plus long.
+/// A snippet: a dictated phrase that gets replaced by a longer text.
 struct Snippet: Codable, Identifiable, Hashable {
     var id = UUID()
     var trigger: String
@@ -81,8 +81,8 @@ struct Snippet: Codable, Identifiable, Hashable {
     }
 }
 
-/// Une règle d'application : style de polissage et langue de dictée à
-/// utiliser selon l'app dans laquelle on dicte. `nil` = réglage général.
+/// An app rule: polish style and dictation language to use depending
+/// on the app being dictated into. `nil` = general setting.
 struct AppRule: Codable, Identifiable, Hashable {
     var id = UUID()
     var bundleID: String
@@ -91,11 +91,11 @@ struct AppRule: Codable, Identifiable, Hashable {
     var localeID: String?
 }
 
-/// Remplacements du dictionnaire et des extraits, sans état ni fichier.
+/// Dictionary and snippet replacements, with no state and no file.
 ///
-/// Un terme ne remplace que des mots entiers : en sous-chaîne, « ia → IA »
-/// écrivait « confIAnce », et une correction apprise « sur → sûr » donnait
-/// « sûrtout ».
+/// A term only replaces whole words: as a substring, « ia → IA »
+/// would write « confIAnce », and a learned correction « sur → sûr » would
+/// give « sûrtout ».
 enum VocabularyMatcher {
     struct Result {
         var text: String
@@ -103,8 +103,8 @@ enum VocabularyMatcher {
         var usedSnippets: Set<UUID> = []
     }
 
-    /// Les extraits d'abord : ils peuvent produire du texte que le
-    /// dictionnaire corrigera ensuite.
+    /// Snippets first: they can produce text that the dictionary will
+    /// then correct.
     static func apply(entries: [DictionaryEntry], snippets: [Snippet], to text: String) -> Result {
         var result = Result(text: text)
 
@@ -121,9 +121,9 @@ enum VocabularyMatcher {
         }
 
         for entry in entries where entry.isActive {
-            // Accents toujours significatifs : « peche → pêche » ne doit pas
-            // réécrire « péché ». Une graphie accentuée différente s'ajoute
-            // comme variante.
+            // Accents always matter: « peche → pêche » must not
+            // rewrite « péché ». A differently accented spelling is added
+            // as a variant.
             let options: String.CompareOptions = entry.caseSensitive ? [] : [.caseInsensitive]
             for form in entry.allForms {
                 let (replaced, count) = replacingWholeWords(
@@ -170,31 +170,31 @@ enum VocabularyMatcher {
     }
 }
 
-/// Dictionnaire, extraits et règles d'application, dans un simple JSON
-/// à côté de la base d'historique.
+/// Dictionary, snippets, and app rules, in a plain JSON file
+/// next to the history database.
 @MainActor
 final class VocabularyStore: ObservableObject {
     static let shared = VocabularyStore()
 
-    /// Nombre d'observations d'une même correction avant qu'elle ne
-    /// s'applique d'elle-même.
+    /// Number of times the same correction must be observed before it
+    /// applies automatically.
     static let sightingsToActivate = 3
 
     @Published var entries: [DictionaryEntry] = [] { didSet { scheduleSave() } }
     @Published var snippets: [Snippet] = [] { didSet { scheduleSave() } }
     @Published var appRules: [AppRule] = [] { didSet { scheduleSave() } }
 
-    /// Prompts de polissage modifiés par l'utilisateur, par identifiant de
-    /// style. Absent = prompt d'origine.
+    /// Polish prompts modified by the user, keyed by style identifier.
+    /// Absent = original prompt.
     @Published var customPrompts: [String: String] = [:] { didSet { scheduleSave() } }
 
-    /// Apprendre automatiquement les corrections faites après insertion.
+    /// Automatically learn corrections made after insertion.
     @Published var learnCorrections = UserDefaults.standard.object(forKey: "learnCorrections") as? Bool ?? true {
         didSet { UserDefaults.standard.set(learnCorrections, forKey: "learnCorrections") }
     }
 
-    /// Transmettre les termes du dictionnaire au moteur de transcription,
-    /// pour qu'il les reconnaisse du premier coup.
+    /// Pass dictionary terms to the transcription engine, so it
+    /// recognizes them right away.
     @Published var biasRecognition = UserDefaults.standard.object(forKey: "biasRecognition") as? Bool ?? true {
         didSet { UserDefaults.standard.set(biasRecognition, forKey: "biasRecognition") }
     }
@@ -213,7 +213,7 @@ final class VocabularyStore: ObservableObject {
             self.customPrompts = customPrompts
         }
 
-        /// Une section absente (fichier plus ancien) n'invalide pas le reste.
+        /// A missing section (older file) doesn't invalidate the rest.
         init(from decoder: Decoder) throws {
             let values = try decoder.container(keyedBy: CodingKeys.self)
             entries = try values.decodeIfPresent([DictionaryEntry].self, forKey: .entries) ?? []
@@ -232,7 +232,7 @@ final class VocabularyStore: ObservableObject {
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         url = directory.appending(path: "vocabulary.json")
         load()
-        // La sauvegarde est différée : la forcer avant de quitter.
+        // Saving is deferred: force it before quitting.
         NotificationCenter.default.addObserver(
             forName: NSApplication.willTerminateNotification, object: nil, queue: .main
         ) { _ in
@@ -240,7 +240,7 @@ final class VocabularyStore: ObservableObject {
         }
     }
 
-    /// Écrit tout de suite ce qui attendait la sauvegarde différée.
+    /// Writes immediately whatever was waiting for the deferred save.
     func flush() {
         guard saveTask != nil else { return }
         saveTask?.cancel()
@@ -254,13 +254,13 @@ final class VocabularyStore: ObservableObject {
         do {
             payload = try JSONDecoder().decode(Payload.self, from: data)
         } catch {
-            // Fichier illisible : le mettre de côté plutôt que de l'écraser
-            // à la prochaine sauvegarde.
+            // Unreadable file: set it aside instead of overwriting it
+            // on the next save.
             let backup = url.deletingPathExtension()
                 .appendingPathExtension("unreadable-\(Int(Date().timeIntervalSince1970)).json")
             try? FileManager.default.copyItem(at: url, to: backup)
             log.error("vocabulary unreadable, kept a copy at \(backup.path): \(error)")
-            Diagnostics.log("dictionnaire illisible, copie conservée : \(backup.lastPathComponent)")
+            Diagnostics.log("dictionary unreadable, kept a copy: \(backup.lastPathComponent)")
             return
         }
         loading = true
@@ -274,8 +274,8 @@ final class VocabularyStore: ObservableObject {
         if customPrompts != payload.customPrompts { save() }
     }
 
-    /// Une dictée touche plusieurs compteurs d'usage : on regroupe les
-    /// écritures au lieu d'en faire une par entrée modifiée.
+    /// A dictation touches several usage counters: writes are batched
+    /// instead of one per modified entry.
     private func scheduleSave() {
         guard !loading else { return }
         saveTask?.cancel()
@@ -299,7 +299,7 @@ final class VocabularyStore: ObservableObject {
         }
     }
 
-    /// Applique les extraits puis le dictionnaire au texte transcrit.
+    /// Applies snippets then the dictionary to the transcribed text.
     func apply(to text: String) -> String {
         let result = VocabularyMatcher.apply(entries: entries, snippets: snippets, to: text)
         guard !result.usedEntries.isEmpty || !result.usedSnippets.isEmpty else { return result.text }
@@ -318,8 +318,8 @@ final class VocabularyStore: ObservableObject {
         return result.text
     }
 
-    /// Les termes à signaler au moteur de transcription : les graphies
-    /// voulues, les plus utilisées d'abord.
+    /// Terms to report to the transcription engine: the intended
+    /// spellings, most used first.
     var recognitionHints: [String] {
         guard biasRecognition else { return [] }
         let terms = entries.filter(\.isActive)
@@ -329,9 +329,8 @@ final class VocabularyStore: ObservableObject {
         return terms.filter { seen.insert($0.lowercased()).inserted }.prefix(64).map { $0 }
     }
 
-    /// Importe un CSV « entendu,correction » (séparateur virgule ou
-    /// point-virgule, une paire par ligne). Renvoie le nombre d'entrées
-    /// ajoutées.
+    /// Imports a "heard,correction" CSV (comma or semicolon separator,
+    /// one pair per line). Returns the number of entries added.
     @discardableResult
     func importCSV(from url: URL) throws -> Int {
         let text = try String(contentsOf: url, encoding: .utf8)
@@ -352,9 +351,9 @@ final class VocabularyStore: ObservableObject {
         return added
     }
 
-    /// Enregistre une correction observée : le mot inséré a été remplacé par
-    /// un autre dans le champ cible. Elle reste une suggestion tant qu'elle
-    /// n'a pas été acceptée ou revue plusieurs fois.
+    /// Records an observed correction: the inserted word was replaced by
+    /// another one in the target field. It remains a suggestion until
+    /// it has been accepted or seen several times.
     func learn(heard: String, replacement: String) {
         let heard = heard.trimmingCharacters(in: .whitespaces)
         let replacement = replacement.trimmingCharacters(in: .whitespaces)
@@ -367,17 +366,17 @@ final class VocabularyStore: ObservableObject {
         }) {
             var entry = entries[index]
             if entry.allForms.contains(where: { $0.caseInsensitiveCompare(heard) == .orderedSame }) {
-                // Déjà connue : une observation de plus pour une suggestion.
+                // Already known: one more sighting for a suggestion.
                 guard let sightings = entry.pendingSightings else { return }
                 entry.pendingSightings = sightings + 1 >= Self.sightingsToActivate ? nil : sightings + 1
                 entries[index] = entry
             } else if !entry.isActive {
-                // Suggestion encore en attente : la nouvelle graphie la rejoint.
+                // Suggestion still pending: the new spelling joins it.
                 entry.variants.append(heard)
                 entries[index] = entry
             } else {
-                // Entrée active : une graphie nouvelle ne s'applique pas
-                // d'office, elle devient sa propre suggestion.
+                // Active entry: a new spelling doesn't apply
+                // automatically, it becomes its own suggestion.
                 entries.append(DictionaryEntry(
                     heard: heard, replacement: replacement, learned: true, pendingSightings: 1))
             }
@@ -393,13 +392,12 @@ final class VocabularyStore: ObservableObject {
         entries[index].pendingSightings = nil
     }
 
-    /// Style de polissage à utiliser pour une application donnée, s'il existe
-    /// une règle.
+    /// Polish style to use for a given application, if a rule exists.
     func templateID(forBundleID bundleID: String?) -> String? {
         rule(for: bundleID)?.templateID
     }
 
-    /// Langue de dictée à utiliser pour une application donnée.
+    /// Dictation language to use for a given application.
     func localeID(forBundleID bundleID: String?) -> String? {
         rule(for: bundleID)?.localeID
     }

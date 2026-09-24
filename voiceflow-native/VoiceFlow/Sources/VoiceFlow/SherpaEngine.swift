@@ -3,25 +3,26 @@ import Foundation
 import SherpaOnnx
 import SherpaOnnxC
 
-/// Les modèles ONNX exécutés par sherpa-onnx : SenseVoice et Qwen3-ASR,
-/// les deux moteurs non-Whisper de l'app Tauri.
+/// The ONNX models run by sherpa-onnx: SenseVoice and Qwen3-ASR, the two
+/// non-Whisper engines from the Tauri app.
 ///
-/// Les fichiers sont téléchargés un par un depuis Hugging Face plutôt que
-/// sous forme d'archive : rien à décompresser, donc aucun processus externe
-/// à lancer depuis une app au durcissement d'exécution.
+/// Files are downloaded one by one from Hugging Face rather than as an
+/// archive: nothing to decompress, so no external process to launch from
+/// a hardened-runtime app.
 struct SherpaModel: Identifiable, Equatable {
     enum Kind: Equatable {
-        /// Un seul fichier de modèle, plus un fichier de jetons.
+        /// A single model file, plus a tokens file.
         case senseVoice
-        /// Frontend convolutif, encodeur, décodeur, et un dossier tokenizer.
+        /// Convolutional frontend, encoder, decoder, and a tokenizer
+        /// folder.
         case qwen3ASR
     }
 
     let id: String
     let kind: Kind
-    /// Dépôt Hugging Face d'où viennent les fichiers.
+    /// Hugging Face repo the files come from.
     let repo: String
-    /// Chemins relatifs à télécharger, dans le dépôt comme sur le disque.
+    /// Relative paths to download, both in the repo and on disk.
     let files: [String]
 
     static let senseVoice = SherpaModel(
@@ -45,8 +46,8 @@ struct SherpaModel: Identifiable, Equatable {
 
     static let all: [SherpaModel] = [.senseVoice, .qwen3ASR]
 
-    /// Langues que le modèle sait vraiment transcrire, en codes BCP-47.
-    /// Proposer le reste donnerait une sortie fausse sans le dire.
+    /// Languages the model can genuinely transcribe, as BCP-47 codes.
+    /// Offering the rest would silently give a wrong output.
     var supportedLanguages: [String] {
         switch kind {
         case .senseVoice: ["zh", "yue", "ja", "ko", "en"]
@@ -59,9 +60,9 @@ struct SherpaModel: Identifiable, Equatable {
     }
 }
 
-/// Moteur sherpa-onnx. Accumule l'audio en 16 kHz mono Float32 pendant
-/// l'enregistrement, décode en une passe à la fin — comme Whisper, et
-/// contrairement au moteur d'Apple qui travaille en continu.
+/// sherpa-onnx engine. Accumulates audio as 16 kHz mono Float32 during
+/// recording, decodes in one pass at the end — like Whisper, and unlike
+/// Apple's engine, which works continuously.
 final class SherpaEngine: DictationEngine, @unchecked Sendable {
     enum EngineError: LocalizedError {
         case emptyRecording
@@ -74,7 +75,7 @@ final class SherpaEngine: DictationEngine, @unchecked Sendable {
     }
 
     private let model: SherpaModel
-    /// Code langue du modèle ("zh", "en", …) ; vide = détection automatique.
+    /// Model language code ("zh", "en", …); empty = automatic detection.
     private let language: String
     private let resampler: AudioResampler
     private var samples: [Float] = []
@@ -86,7 +87,7 @@ final class SherpaEngine: DictationEngine, @unchecked Sendable {
         resampler = AudioResampler(to: try AudioResampler.standard16k())
     }
 
-    /// SenseVoice accepte un indice de langue ; Qwen3-ASR détecte seul.
+    /// SenseVoice accepts a language hint; Qwen3-ASR detects on its own.
     static func languageKey(model: SherpaModel, language: String?) -> String {
         model.kind == .senseVoice ? (language ?? "") : ""
     }
@@ -106,14 +107,14 @@ final class SherpaEngine: DictationEngine, @unchecked Sendable {
 
     func finish() async throws -> String {
         let audio = lock.withLock { samples }
-        Diagnostics.log("moteur \(model.id) · \(audio.count) échantillons transmis")
+        Diagnostics.log("engine \(model.id) · \(audio.count) samples fed")
         guard !audio.isEmpty else { throw EngineError.emptyRecording }
 
         let recognizer = try await SherpaRecognizerCache.shared.recognizer(
             model: model, language: language)
 
-        // Le décodage est bloquant et gourmand : il ne doit pas s'exécuter
-        // sur l'acteur principal, sinon l'interface se fige le temps du calcul.
+        // Decoding is blocking and heavy: it must not run on the main
+        // actor, or the interface would freeze for the duration.
         return try await SherpaRecognizerCache.decoding.run {
             await Task.detached(priority: .userInitiated) {
                 let result = recognizer.decode(samples: audio, sampleRate: 16000)
@@ -123,14 +124,14 @@ final class SherpaEngine: DictationEngine, @unchecked Sendable {
     }
 }
 
-/// Un seul décodage à la fois, par `SherpaRecognizerCache.decoding`.
+/// Only one decoding at a time, via `SherpaRecognizerCache.decoding`.
 extension SherpaOnnxOfflineRecognizer: @retroactive @unchecked Sendable {}
 
-/// Garde les reconnaisseurs chargés : construire celui de Qwen3-ASR prend
-/// plusieurs secondes, on ne le paie qu'une fois par modèle et par session.
+/// Keeps recognizers loaded: building Qwen3-ASR's takes several seconds,
+/// we only pay that cost once per model and per session.
 actor SherpaRecognizerCache {
     static let shared = SherpaRecognizerCache()
-    /// Un décodage à la fois sur le reconnaisseur partagé.
+    /// One decoding at a time on the shared recognizer.
     static let decoding = SerialWork()
 
     private var instances: [String: SherpaOnnxOfflineRecognizer] = [:]
@@ -139,7 +140,7 @@ actor SherpaRecognizerCache {
     func recognizer(
         model: SherpaModel, language: String
     ) async throws -> SherpaOnnxOfflineRecognizer {
-        // La langue fait partie de la clé : elle est figée dans la config.
+        // Language is part of the key: it's baked into the config.
         let key = "\(model.id)|\(language)"
         if let instance = instances[key] { return instance }
         if let task = loading[key] { return try await task.value }
@@ -156,7 +157,7 @@ actor SherpaRecognizerCache {
         loading[key] = task
         defer { loading[key] = nil }
         let recognizer = try await task.value
-        // Un seul reconnaisseur en mémoire, comme pour Whisper.
+        // Only one recognizer in memory, as with Whisper.
         instances = [key: recognizer]
         return recognizer
     }
@@ -166,8 +167,8 @@ actor SherpaRecognizerCache {
             model: model, language: SherpaEngine.languageKey(model: model, language: language))
     }
 
-    /// Le décodage CPU profite des cœurs de performance ; deux fils
-    /// laissaient la plupart d'entre eux inactifs.
+    /// CPU decoding benefits from performance cores; two threads left
+    /// most of them idle.
     private static var threadCount: Int {
         min(6, max(2, ProcessInfo.processInfo.activeProcessorCount / 2))
     }
@@ -192,8 +193,8 @@ actor SherpaRecognizerCache {
                     useInverseTextNormalization: true))
 
         case .qwen3ASR:
-            // Qwen3-ASR n'utilise pas de fichier de jetons : son vocabulaire
-            // vit dans le dossier tokenizer.
+            // Qwen3-ASR doesn't use a tokens file: its vocabulary lives
+            // in the tokenizer folder.
             modelConfig = sherpaOnnxOfflineModelConfig(
                 tokens: "",
                 numThreads: Self.threadCount,
@@ -212,8 +213,8 @@ actor SherpaRecognizerCache {
     }
 }
 
-/// Téléchargement et suivi des modèles sherpa-onnx, à l'image de
-/// `WhisperModelStore` pour les modèles Core ML.
+/// Download and tracking of sherpa-onnx models, mirroring
+/// `WhisperModelStore` for Core ML models.
 @MainActor
 final class SherpaModelStore: ObservableObject {
     static let shared = SherpaModelStore()
@@ -230,11 +231,11 @@ final class SherpaModelStore: ObservableObject {
         }
     }
 
-    /// Identifiant de modèle → dossier local.
+    /// Model identifier → local folder.
     @Published private(set) var folders: [String: String] =
         UserDefaults.standard.dictionary(forKey: "sherpaModelFolders") as? [String: String] ?? [:]
 
-    /// Téléchargement en cours : modèle et avancement (0…1).
+    /// Download in progress: model and progress fraction (0…1).
     @Published var downloading: (model: String, fraction: Double)?
 
     private static var base: URL {
@@ -244,9 +245,9 @@ final class SherpaModelStore: ObservableObject {
         return directory
     }
 
-    /// Présent signifie : tous les fichiers sont sur le disque. On regarde
-    /// l'emplacement par défaut même si les réglages ne s'en souviennent
-    /// plus, pour ne pas retélécharger un gigaoctet déjà là.
+    /// Present means: all files are on disk. We check the default
+    /// location even if settings no longer remember it, so as not to
+    /// re-download a gigabyte that's already there.
     func isDownloaded(_ model: SherpaModel) -> Bool {
         let candidate = folders[model.id].map(URL.init(fileURLWithPath:))
             ?? Self.base.appending(path: model.id)
@@ -263,7 +264,7 @@ final class SherpaModelStore: ObservableObject {
         UserDefaults.standard.set(folders, forKey: "sherpaModelFolders")
     }
 
-    /// Télécharge le modèle s'il manque, en publiant l'avancement.
+    /// Downloads the model if missing, publishing progress.
     @discardableResult
     func ensureAvailable(_ model: SherpaModel) async throws -> URL {
         let destination = Self.base.appending(path: model.id)
@@ -273,9 +274,9 @@ final class SherpaModelStore: ObservableObject {
         defer { downloading = nil }
         log.info("downloading sherpa-onnx model \(model.id)…")
 
-        // Téléchargement dans un dossier temporaire : une interruption ne
-        // doit pas laisser derrière elle un modèle à moitié écrit qui
-        // passerait ensuite pour complet.
+        // Download into a temporary folder: an interruption must not
+        // leave behind a half-written model that would later pass for
+        // complete.
         let staging = Self.base.appending(path: model.id + ".partial")
         try? FileManager.default.removeItem(at: staging)
         try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
@@ -320,8 +321,8 @@ final class SherpaModelStore: ObservableObject {
         (try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? Int64 ?? 0
     }
 
-    /// Taille de chaque fichier, pour une barre de progression honnête :
-    /// le décodeur de Qwen3-ASR pèse à lui seul les trois quarts du modèle.
+    /// Size of each file, for an honest progress bar: Qwen3-ASR's decoder
+    /// alone accounts for three quarters of the model's weight.
     private static func sizes(of model: SherpaModel) async -> [String: Int64] {
         var sizes: [String: Int64] = [:]
         for file in model.files {
@@ -337,8 +338,8 @@ final class SherpaModelStore: ObservableObject {
     }
 }
 
-/// Relaie l'avancement d'un téléchargement : l'API asynchrone d'URLSession
-/// rend le fichier d'un coup, sans rien dire du chemin parcouru.
+/// Relays a download's progress: URLSession's async API hands back the
+/// file all at once, without saying anything about the path taken.
 private final class DownloadProgress: NSObject, URLSessionDownloadDelegate {
     private let onProgress: @Sendable (Int64) -> Void
 
@@ -356,8 +357,8 @@ private final class DownloadProgress: NSObject, URLSessionDownloadDelegate {
         onProgress(totalBytesWritten)
     }
 
-    /// Exigée par le protocole ; l'API asynchrone récupère le fichier
-    /// elle-même, il n'y a rien à faire ici.
+    /// Required by the protocol; the async API retrieves the file
+    /// itself, there's nothing to do here.
     func urlSession(
         _ session: URLSession,
         downloadTask: URLSessionDownloadTask,

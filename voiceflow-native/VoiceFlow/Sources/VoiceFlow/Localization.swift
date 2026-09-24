@@ -1,19 +1,19 @@
 import Foundation
 
-/// Traduction résolue à l'exécution.
+/// Translation resolved at runtime.
 ///
-/// SwiftUI ne localise que les littéraux écrits directement dans le code :
-/// `Text("Réglages")` fonctionne, `Text(variable)` non, et
-/// `LocalizedStringKey(variable)` pas davantage, car les clés sont extraites
-/// à la compilation. Comme la moitié des libellés transitent par des
-/// paramètres de fonction ou des énumérations, tout passe ici.
+/// SwiftUI only localizes literals written directly in the code:
+/// `Text("Réglages")` works, `Text(variable)` doesn't, and
+/// `LocalizedStringKey(variable)` doesn't either, because the keys are
+/// extracted at compile time. Since half the labels pass through function
+/// parameters or enums, everything goes through here.
 ///
-/// Second bénéfice : en choisissant nous-même le catalogue, changer de langue
-/// prend effet immédiatement, sans relancer l'application.
+/// Second benefit: by choosing the catalog ourselves, changing language
+/// takes effect immediately, without restarting the application.
 enum L {
-    /// Catalogue actif. `nil` = celui que macOS a choisi au lancement.
-    /// Lu depuis n'importe quel fil (messages d'erreur des moteurs) : le
-    /// verrou protège l'échange.
+    /// Active catalog. `nil` = the one macOS chose at launch.
+    /// Read from any thread (engine error messages): the lock protects
+    /// the exchange.
     nonisolated(unsafe) private static var storedOverride: Bundle?
     private static let lock = NSLock()
     private static var override: Bundle? {
@@ -21,7 +21,7 @@ enum L {
         set { lock.withLock { storedOverride = newValue } }
     }
 
-    /// Langue forcée par l'utilisateur ; vide pour suivre le système.
+    /// Language forced by the user; empty to follow the system.
     static func setLanguage(_ code: String) {
         guard !code.isEmpty,
               let path = Bundle.main.path(forResource: code, ofType: "lproj"),
@@ -33,7 +33,7 @@ enum L {
         override = bundle
     }
 
-    /// Langue de l'interface, pour formater noms de langues et dates.
+    /// Interface language, used to format language names and dates.
     static var locale: Locale {
         if let code = override?.bundlePath.split(separator: "/").last?
             .replacingOccurrences(of: ".lproj", with: "") {
@@ -42,8 +42,8 @@ enum L {
         return Locale(identifier: Bundle.main.preferredLocalizations.first ?? "fr")
     }
 
-    /// Traduit une clé — le libellé français, qui sert aussi de valeur par
-    /// défaut si la traduction manque.
+    /// Translates a key — the French label, which also serves as the
+    /// default value if the translation is missing.
     static func t(_ key: String) -> String {
         (override ?? .main).localizedString(forKey: key, value: key, table: nil)
     }

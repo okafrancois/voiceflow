@@ -2,8 +2,8 @@ import Foundation
 import MLXLLM
 import MLXLMCommon
 
-/// Modèles de polissage disponibles : celui du système, ou un modèle local
-/// téléchargé, comme le fait l'app actuelle avec Qwen, Gemma et consorts.
+/// Available polish models: the system's, or a downloaded local
+/// model, as the current app does with Qwen, Gemma and the like.
 enum PolishModel: String, CaseIterable, Identifiable {
     case appleIntelligence
     case qwen05B
@@ -33,7 +33,7 @@ enum PolishModel: String, CaseIterable, Identifiable {
         }
     }
 
-    /// Dépôt Hugging Face, repris du registre de MLX Swift — donc vérifié.
+    /// Hugging Face repository, taken from the MLX Swift registry — so verified.
     var repositoryID: String? {
         switch self {
         case .appleIntelligence: nil
@@ -47,8 +47,8 @@ enum PolishModel: String, CaseIterable, Identifiable {
     var isLocalModel: Bool { repositoryID != nil }
 }
 
-/// Polissage par un modèle local via MLX (Apple Silicon). Le modèle est
-/// téléchargé au premier usage puis gardé en mémoire.
+/// Polishing by a local model via MLX (Apple Silicon). The model is
+/// downloaded on first use and then kept in memory.
 final class MLXPolisher: PolishEngine {
     private let repositoryID: String
     private let maxTokens: Int
@@ -59,8 +59,8 @@ final class MLXPolisher: PolishEngine {
     }
 
     func prewarm(template: PolishTemplate) {
-        // Charger pendant que l'utilisateur parle : le téléchargement et la
-        // mise en mémoire se paient avant la fin de la dictée.
+        // Load while the user is speaking: the download and load into
+        // memory are paid for before dictation ends.
         let repositoryID = repositoryID
         Task.detached(priority: .userInitiated) {
             _ = try? await MLXModelCache.shared.container(repositoryID)
@@ -76,7 +76,7 @@ final class MLXPolisher: PolishEngine {
                     ["role": "system", "content": template.systemPrompt],
                     ["role": "user", "content": text],
                 ]))
-            // Température basse : on reformule, on n'invente pas.
+            // Low temperature: we rephrase, we don't invent.
             var parameters = GenerateParameters()
             parameters.temperature = 0.3
             let result = try MLXLMCommon.generate(
@@ -89,15 +89,15 @@ final class MLXPolisher: PolishEngine {
     }
 }
 
-/// Garde les modèles chargés : le chargement coûte plusieurs secondes, on ne
-/// le paie qu'une fois par modèle et par session.
+/// Keeps models loaded: loading costs several seconds, so it's only
+/// paid once per model and per session.
 actor MLXModelCache {
     static let shared = MLXModelCache()
 
     private var containers: [String: ModelContainer] = [:]
     private var loading: [String: Task<ModelContainer, Error>] = [:]
 
-    /// Avancement du téléchargement en cours (0…1), pour l'affichage.
+    /// Progress of the current download (0…1), for display.
     @MainActor static var progress: (model: String, fraction: Double)?
 
     func container(_ repositoryID: String) async throws -> ModelContainer {

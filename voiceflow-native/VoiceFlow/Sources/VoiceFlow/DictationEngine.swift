@@ -1,14 +1,15 @@
 import AVFoundation
 
-/// Un moteur de dictée reçoit les buffers micro pendant l'enregistrement
-/// et rend le texte final à la fin.
+/// A dictation engine receives microphone buffers during recording and
+/// returns the final text at the end.
 ///
-/// Partagé entre fils : l'audio arrive du fil du micro (toujours sous le
-/// verrou d'`EngineFeed`), la fin est demandée depuis l'app.
+/// Shared across threads: audio arrives from the microphone thread
+/// (always under `EngineFeed`'s lock), completion is requested from the
+/// app.
 protocol DictationEngine: AnyObject, Sendable {
     func feed(_ buffer: AVAudioPCMBuffer)
     func finish() async throws -> String
-    /// Dictée abandonnée : libérer ce qui tourne encore.
+    /// Dictation abandoned: release whatever is still running.
     func cancel() async
 }
 
@@ -18,11 +19,11 @@ extension DictationEngine {
 
 extension TranscriptionSession: DictationEngine {}
 
-/// Exécute des travaux asynchrones un par un, dans l'ordre d'arrivée.
+/// Runs asynchronous jobs one by one, in arrival order.
 ///
-/// Une dictée annulée pendant sa transcription laisse la main à la
-/// suivante : deux décodages pourraient alors se croiser sur le même
-/// modèle, que ni WhisperKit ni sherpa-onnx ne garantissent pour cet usage.
+/// A dictation cancelled during its transcription hands off to the next
+/// one: otherwise two decodings could overlap on the same model, which
+/// neither WhisperKit nor sherpa-onnx guarantees for this use case.
 actor SerialWork {
     private var tail: Task<Void, Never>?
 
@@ -37,28 +38,28 @@ actor SerialWork {
     }
 }
 
-/// Relais entre le micro et le moteur.
+/// Relay between the microphone and the engine.
 ///
-/// Le micro démarre dès la pression du raccourci, le moteur peut mettre
-/// plusieurs centaines de millisecondes à être prêt (celui d'Apple interroge
-/// ses modèles installés) : tout ce qui est dit dans cet intervalle est gardé
-/// ici, puis transmis dans l'ordre dès que le moteur arrive.
+/// The microphone starts as soon as the shortcut is pressed, the engine
+/// can take several hundred milliseconds to be ready (Apple's queries its
+/// installed models): anything said in that interval is kept here, then
+/// forwarded in order as soon as the engine arrives.
 ///
-/// Les blocs mis en attente sont copiés : le tap d'`AVAudioEngine` peut
-/// réutiliser sa mémoire une fois le rappel terminé.
+/// Buffered blocks are copied: `AVAudioEngine`'s tap can reuse its memory
+/// once the callback returns.
 final class EngineFeed: @unchecked Sendable {
     private let lock = NSLock()
     private var pending: [AVAudioPCMBuffer] = []
     private var engine: DictationEngine?
 
-    /// Échantillons en attente du moteur, pour le journal.
+    /// Samples still waiting on the engine, for the log.
     var pendingFrames: Int {
         lock.withLock { pending.reduce(0) { $0 + Int($1.frameLength) } }
     }
 
-    /// Appelé depuis le fil audio. Le verrou couvre aussi la transmission au
-    /// moteur : sans lui, un bloc frais pourrait doubler la file vidée par
-    /// `attach`.
+    /// Called from the audio thread. The lock also covers forwarding to
+    /// the engine: without it, a fresh block could duplicate the queue
+    /// drained by `attach`.
     func push(_ buffer: AVAudioPCMBuffer) {
         lock.withLock {
             if let engine {
@@ -93,11 +94,11 @@ final class EngineFeed: @unchecked Sendable {
     }
 }
 
-/// Choix de moteur exposé dans le menu : le moteur système d'Apple, ou un
-/// modèle Whisper (WhisperKit). Conçu pour accueillir d'autres familles de
-/// moteurs plus tard (ajouter un cas + un DictationEngine).
+/// Engine choice exposed in the menu: Apple's system engine, or a
+/// Whisper model (WhisperKit). Designed to accommodate other engine
+/// families later (add a case + a DictationEngine).
 ///
-/// Les `rawValue` sont enregistrés dans les réglages : ne pas les renommer.
+/// `rawValue`s are stored in settings: do not rename them.
 enum EngineChoice: String, CaseIterable, Identifiable {
     case apple = "apple"
     case whisperTiny = "whisper-tiny"
@@ -117,8 +118,8 @@ enum EngineChoice: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    /// Tout ce qui se télécharge : la famille Whisper, du plus léger au
-    /// plus lourd, puis les moteurs ONNX portés de l'app Tauri.
+    /// Everything downloadable: the Whisper family, from lightest to
+    /// heaviest, then the ONNX engines ported from the Tauri app.
     static let downloadableChoices: [EngineChoice] = [
         .whisperTiny, .whisperTinyEN,
         .whisperBase, .whisperBaseEN,
@@ -129,7 +130,7 @@ enum EngineChoice: String, CaseIterable, Identifiable {
         .senseVoice, .qwen3ASR,
     ]
 
-    /// Nom complet : chaque entrée doit se suffire à elle-même dans un menu.
+    /// Full name: each entry must stand on its own in a menu.
     var displayName: String {
         switch self {
         case .apple: L.t("SpeechAnalyzer (Apple)")
@@ -171,7 +172,7 @@ enum EngineChoice: String, CaseIterable, Identifiable {
         }
     }
 
-    /// Variante exacte du dépôt `argmaxinc/whisperkit-coreml`.
+    /// Exact variant from the `argmaxinc/whisperkit-coreml` repo.
     var whisperModel: String? {
         switch self {
         case .apple: nil
@@ -191,7 +192,7 @@ enum EngineChoice: String, CaseIterable, Identifiable {
         }
     }
 
-    /// Modèle ONNX exécuté par sherpa-onnx, le cas échéant.
+    /// ONNX model run by sherpa-onnx, if any.
     var sherpaModel: SherpaModel? {
         switch self {
         case .senseVoice: .senseVoice
@@ -202,11 +203,11 @@ enum EngineChoice: String, CaseIterable, Identifiable {
 
     var isWhisper: Bool { whisperModel != nil }
 
-    /// Le moteur sait-il reconnaître seul la langue parlée ? Celui d'Apple
-    /// ne le fait pas : il transcrit dans la langue qu'on lui donne.
+    /// Can the engine detect the spoken language on its own? Apple's
+    /// cannot: it transcribes in whichever language it's given.
     var detectsLanguage: Bool { self != .apple }
 
-    /// Étiquette courte affichée pendant la transcription.
+    /// Short label shown while transcribing.
     var shortLabel: String {
         switch self {
         case .apple: L.t("Transcription Apple")
@@ -216,7 +217,7 @@ enum EngineChoice: String, CaseIterable, Identifiable {
         }
     }
 
-    /// Noms enregistrés dans l'historique des dictées.
+    /// Names stored in the dictation history.
     var historyEngine: String {
         switch self {
         case .apple: "apple"
@@ -228,7 +229,7 @@ enum EngineChoice: String, CaseIterable, Identifiable {
 
     var historyModel: String? { whisperModel ?? sherpaModel?.id }
 
-    /// Nom affichable d'un moteur tel qu'enregistré dans l'historique.
+    /// Display name of an engine as stored in the history.
     static func historyDisplayName(_ engine: String) -> String {
         switch engine {
         case "apple": "Apple"
@@ -239,25 +240,25 @@ enum EngineChoice: String, CaseIterable, Identifiable {
         }
     }
 
-    /// Modèles entraînés sur l'anglais seul : proposer d'autres langues
-    /// donnerait une transcription silencieusement fausse.
+    /// Models trained on English only: offering other languages would
+    /// give a silently wrong transcription.
     var isEnglishOnly: Bool {
         whisperModel.map { $0.hasSuffix(".en") || $0.hasPrefix("distil-whisper") } ?? false
     }
 
-    /// Le moteur système fournit des résultats provisoires en continu ;
-    /// Whisper transcrit en une passe à la fin de l'enregistrement.
+    /// The system engine streams volatile results continuously; Whisper
+    /// transcribes in one pass at the end of the recording.
     var supportsVolatileResults: Bool { self == .apple }
 }
 
 import WhisperKit
 
 extension EngineChoice {
-    /// Langues proposées pour ce moteur, en identifiants BCP-47.
+    /// Languages offered for this engine, as BCP-47 identifiers.
     ///
-    /// Apple ne transcrit que dans les locales de ses modèles installés ;
-    /// Whisper en couvre une centaine, indépendamment de macOS — sauf les
-    /// variantes anglaises, qui ne couvrent qu'elle.
+    /// Apple only transcribes in the locales of its installed models;
+    /// Whisper covers about a hundred, independently of macOS — except
+    /// for the English variants, which only cover that one language.
     func supportedLocaleIDs(appleLocales: [String]) -> [String] {
         if let sherpa = sherpaModel { return sherpa.supportedLanguages.sorted() }
         guard isWhisper else { return appleLocales }

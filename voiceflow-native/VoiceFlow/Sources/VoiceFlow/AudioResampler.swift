@@ -1,11 +1,11 @@
 import AVFoundation
 
-/// Convertit les blocs du micro vers le format qu'attend un moteur de
-/// transcription. Chaque moteur a le sien : 16 kHz mono pour Whisper et
-/// sherpa-onnx, celui que réclame SpeechAnalyzer pour le moteur d'Apple.
+/// Converts microphone blocks to the format a transcription engine
+/// expects. Each engine has its own: 16 kHz mono for Whisper and
+/// sherpa-onnx, whatever SpeechAnalyzer requires for the Apple engine.
 ///
-/// Le convertisseur est recréé si le format d'entrée change — ce qui arrive
-/// quand l'utilisateur bascule de micro en cours de route.
+/// The converter is recreated if the input format changes — which
+/// happens when the user switches microphones mid-way.
 final class AudioResampler {
     enum ResamplerError: LocalizedError {
         case unavailable
@@ -24,7 +24,7 @@ final class AudioResampler {
         self.target = target
     }
 
-    /// Format 16 kHz mono Float32, commun à Whisper et à sherpa-onnx.
+    /// 16 kHz mono Float32 format, shared by Whisper and sherpa-onnx.
     static func standard16k() throws -> AVAudioFormat {
         guard let format = AVAudioFormat(
             commonFormat: .pcmFormatFloat32, sampleRate: 16000, channels: 1, interleaved: false

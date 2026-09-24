@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// Thème de l'application : suivre le système, ou forcer clair/sombre.
+/// Application theme: follow the system, or force light/dark.
 enum AppTheme: String, CaseIterable, Identifiable {
     case system, light, dark
     var id: String { rawValue }
@@ -28,8 +28,8 @@ enum AppTheme: String, CaseIterable, Identifiable {
     }
 }
 
-/// Ancrage de la pill sur l'écran. Le glisser-déposer reste possible ; choisir
-/// un ancrage y ramène la pill.
+/// Pill anchor on the screen. Drag-and-drop remains possible; choosing
+/// an anchor brings the pill back to it.
 enum PillPosition: String, CaseIterable, Identifiable {
     case topLeft, topCenter, topRight, bottomLeft, bottomCenter, bottomRight, free
     var id: String { rawValue }
@@ -46,7 +46,7 @@ enum PillPosition: String, CaseIterable, Identifiable {
         }
     }
 
-    /// Centre de la pill pour cet ancrage, dans le cadre visible de l'écran.
+    /// Pill center for this anchor, within the screen's visible frame.
     func center(in frame: NSRect, size: NSSize) -> NSPoint {
         let margin: CGFloat = 28
         let x: CGFloat = switch self {
@@ -62,7 +62,7 @@ enum PillPosition: String, CaseIterable, Identifiable {
     }
 }
 
-/// Quand la pill doit-elle être visible ?
+/// When should the pill be visible?
 enum PillVisibility: String, CaseIterable, Identifiable {
     case always, whileActive, never
     var id: String { rawValue }
@@ -76,7 +76,7 @@ enum PillVisibility: String, CaseIterable, Identifiable {
     }
 }
 
-/// Teintes de fond proposées, reprises de l'app actuelle.
+/// Background tints on offer, carried over from the current app.
 enum PillTint: String, CaseIterable, Identifiable {
     case dark, slate, forest, plum, copper
     var id: String { rawValue }

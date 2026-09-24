@@ -1,49 +1,49 @@
 import AppKit
 import CoreGraphics
 
-/// Raccourcis globaux. CGEventTap actif pour avaler la combinaison (elle ne
-/// doit pas partir dans l'app cible) ; repli en écoute passive NSEvent si le
-/// tap échoue, faute d'autorisation Accessibilité.
+/// Global shortcuts. Active CGEventTap to swallow the combination (it
+/// must not leak into the target app); falls back to a passive NSEvent
+/// listener if the tap fails, for lack of Accessibility permission.
 ///
-/// Le tap tourne sur son propre fil. Tant que son rappel n'a pas répondu,
-/// macOS retient *toute* la saisie clavier de la session : posé sur le fil
-/// principal, chaque blocage de l'interface (lecture d'une autre app par
-/// l'accessibilité, base d'historique…) gelait le clavier, puis macOS coupait
-/// le tap et le relâchement de la touche partait dans l'app.
+/// The tap runs on its own thread. Until its callback has responded,
+/// macOS holds back *all* keyboard input for the session: when placed
+/// on the main thread, any UI stall (another app being read via
+/// accessibility, the history database…) froze the keyboard, then macOS
+/// cut the tap and the key release leaked into the app.
 ///
-/// Les ordres (`onStart`, `onStop`, `onCancel`) sont livrés sur le fil
-/// principal.
+/// The commands (`onStart`, `onStop`, `onCancel`) are delivered on the
+/// main thread.
 final class HotkeyManager {
-    /// Ce que déclenche un raccourci.
+    /// What a shortcut triggers.
     enum Action {
-        /// Dictée ordinaire. Le polissage dépend du réglage, pas du raccourci.
+        /// Ordinary dictation. Polishing depends on the setting, not the shortcut.
         case dictate
-        /// Mode commande : une consigne appliquée au texte sélectionné.
+        /// Command mode: an instruction applied to the selected text.
         case command
     }
 
-    /// Démarrer une dictée du type donné.
+    /// Start a dictation of the given kind.
     var onStart: (Action) -> Void = { _ in }
-    /// Arrêter et insérer.
+    /// Stop and insert.
     var onStop: () -> Void = {}
-    /// Pourquoi une annulation est demandée.
+    /// Why a cancellation is being requested.
     enum CancelReason {
-        /// Échap : vaut aussi pendant le traitement.
+        /// Escape: also applies during processing.
         case escape
-        /// Touche seule utilisée dans une combinaison (Fn + ↑) : ne concerne
-        /// qu'un enregistrement qui vient de démarrer.
+        /// Single key used within a combination (Fn + ↑): only applies to a
+        /// recording that just started.
         case chord
     }
 
-    /// Abandonner la dictée en cours.
+    /// Abandon the current dictation.
     var onCancel: (CancelReason) -> Void = { _ in }
 
     private static let escapeKeyCode: UInt16 = 53
 
-    /// Protège tout ce que lisent à la fois le fil du tap et le fil principal.
+    /// Protects everything read by both the tap thread and the main thread.
     private let lock = NSLock()
 
-    /// Un raccourci et la machine qui interprète ses pressions.
+    /// A shortcut and the machine that interprets its presses.
     private struct Binding {
         let action: Action
         let shortcut: Shortcut
@@ -62,32 +62,32 @@ final class HotkeyManager {
                     machine: TriggerStateMachine(mode: mode, modifierOnly: $0.1.isModifierOnly))
         }
     }
-    /// Une dictée est en cours : Échap l'annule au lieu de partir dans l'app.
+    /// A dictation is in progress: Escape cancels it instead of leaking into the app.
     private var cancelArmed = false
     private var swallowedEscape = false
 
-    /// Mode capture : pendant l'enregistrement d'un nouveau raccourci, le tap
-    /// intercepte la combinaison au lieu de déclencher la dictée. Sans cela,
-    /// presser le raccourci actuel lancerait une dictée et la touche
-    /// n'atteindrait jamais l'interface.
+    /// Capture mode: while recording a new shortcut, the tap intercepts the
+    /// combination instead of triggering dictation. Without this, pressing
+    /// the current shortcut would start a dictation and the key would never
+    /// reach the interface.
     private var captureHandler: ((UInt16, NSEvent.ModifierFlags) -> Void)?
-    /// Modificateur enfoncé pendant une capture : on ne le valide comme
-    /// raccourci à lui seul qu'au relâchement, sinon ⌥ d'une combinaison ⌥J
-    /// serait capturé avant même la frappe du J.
+    /// Modifier held down during a capture: it's only validated as a
+    /// standalone shortcut on release, otherwise the ⌥ in an ⌥J combination
+    /// would be captured before the J is even pressed.
     private var capturePendingModifier: UInt16?
 
     private var eventTap: CFMachPort?
     private var globalMonitors: [Any] = []
     private(set) var isTapActive = false
 
-    /// À appeler après modification des réglages.
+    /// Call after settings change.
     func reload() {
         lock.withLock { bindings = Self.loadBindings() }
     }
 
-    /// L'app signale son état : Échap n'est intercepté que pendant une
-    /// dictée, et la machine se recale quand l'app revient d'elle-même au
-    /// repos.
+    /// The app reports its state: Escape is only intercepted during a
+    /// dictation, and the machine resyncs when the app returns to idle on
+    /// its own.
     func setDictationActive(_ active: Bool) {
         lock.withLock {
             cancelArmed = active
@@ -97,16 +97,16 @@ final class HotkeyManager {
         }
     }
 
-    /// L'app a refusé un démarrage (modèle absent, dictée déjà en cours…) :
-    /// les machines ne doivent pas croire une dictée lancée, sinon la
-    /// pression suivante serait prise pour un arrêt.
+    /// The app refused a start (missing model, dictation already in
+    /// progress…): the machines must not believe a dictation started,
+    /// otherwise the next press would be taken as a stop.
     func startRejected() {
         lock.withLock {
             for index in bindings.indices { bindings[index].machine.dictationEnded() }
         }
     }
 
-    /// Capture la prochaine combinaison au lieu de déclencher la dictée.
+    /// Captures the next combination instead of triggering dictation.
     func beginCapture(_ handler: @escaping (UInt16, NSEvent.ModifierFlags) -> Void) {
         lock.withLock {
             captureHandler = handler
@@ -121,10 +121,9 @@ final class HotkeyManager {
         }
     }
 
-    /// L'interception ne peut naître qu'avec l'autorisation Accessibilité.
-    /// Accordée pendant l'onboarding, elle arrive *après* le lancement : il
-    /// faut donc retenter, sinon le raccourci reste mort jusqu'au prochain
-    /// démarrage.
+    /// Interception can only start with Accessibility permission. Granted
+    /// during onboarding, it arrives *after* launch: a retry is therefore
+    /// needed, otherwise the shortcut stays dead until the next launch.
     func restartIfNeeded() {
         guard !isTapActive else { return }
         globalMonitors.forEach(NSEvent.removeMonitor)
@@ -166,8 +165,8 @@ final class HotkeyManager {
         ) else { return false }
 
         eventTap = tap
-        // Le port n'est plus touché que par ce fil, et par `tapEnable`,
-        // documenté comme sûr depuis n'importe quel fil.
+        // The port is only touched by this thread from here on, and by
+        // `tapEnable`, documented as safe from any thread.
         nonisolated(unsafe) let port = tap
         let thread = Thread {
             let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, port, 0)
@@ -187,8 +186,8 @@ final class HotkeyManager {
         let flags = NSEvent.ModifierFlags(rawValue: UInt(event.flags.rawValue))
         let now = Date()
 
-        // Nos propres frappes simulées (insertion au clavier, ⌘V) ne sont
-        // pas des gestes de l'utilisateur.
+        // Our own simulated keystrokes (keyboard insertion, ⌘V) are not
+        // user gestures.
         if type == .keyDown || type == .keyUp || type == .flagsChanged,
            event.getIntegerValueField(.eventSourceUnixProcessID) == Int64(getpid()) {
             return pass
@@ -221,10 +220,10 @@ final class HotkeyManager {
         }
     }
 
-    // MARK: - Événements
+    // MARK: - Events
 
-    /// Chaque gestionnaire rend : faut-il avaler l'événement, et quoi faire
-    /// une fois le verrou relâché (jamais d'appel sortant sous verrou).
+    /// Each handler returns: whether to swallow the event, and what to do
+    /// once the lock is released (never an outgoing call while locked).
     private typealias Outcome = (swallow: Bool, work: () -> Void)
 
     private func keyDown(
@@ -286,12 +285,12 @@ final class HotkeyManager {
                 guard Shortcut.modifierKeyCodes.contains(keyCode) else { return (false, {}) }
                 let swallowFn = Shortcut.shouldSwallow(keyCode)
                 if Shortcut.isPressed(keyCode, flags) {
-                    // Enfoncé : peut-être le début d'une combinaison, on attend.
+                    // Pressed: might be the start of a combination, so we wait.
                     capturePendingModifier = keyCode
                     return (swallowFn, {})
                 }
-                // Relâché sans qu'aucune touche n'ait suivi : c'est un
-                // raccourci à touche unique.
+                // Released without any key following: this is a single-key
+                // shortcut.
                 let relevant = flags.intersection([.control, .option, .shift, .command])
                 guard capturePendingModifier == keyCode, relevant.isEmpty else {
                     return (swallowFn, {})
@@ -313,8 +312,8 @@ final class HotkeyManager {
         }
     }
 
-    /// Le tap a été coupé : un relâchement a pu se perdre. Relire l'état
-    /// réel du clavier plutôt que de laisser une dictée tourner seule.
+    /// The tap was cut off: a release may have been lost. Re-read the
+    /// keyboard's real state instead of letting a dictation run unattended.
     private func reconcileHeldKey(at now: Date) {
         let work: [() -> Void] = lock.withLock {
             bindings.indices.compactMap { index in
@@ -337,7 +336,7 @@ final class HotkeyManager {
         work.forEach { $0() }
     }
 
-    /// Traduit une action de la machine en appel différé.
+    /// Translates a machine action into a deferred call.
     private func emit(
         _ action: TriggerStateMachine.Action?, for kind: Action = .dictate
     ) -> () -> Void {
@@ -354,8 +353,8 @@ final class HotkeyManager {
         }
     }
 
-    /// Les rappels de l'app sont posés une fois au lancement et ne sont
-    /// appelés que sur le fil principal : c'est ce saut qui les y amène.
+    /// The app's callbacks are set once at launch and are only called on
+    /// the main thread: this hop is what gets them there.
     private static func onMain(_ work: @escaping () -> Void) {
         if Thread.isMainThread {
             work()
@@ -365,7 +364,7 @@ final class HotkeyManager {
         }
     }
 
-    // MARK: - Repli passif
+    // MARK: - Passive fallback
 
     private func startFallbackMonitor() {
         let down = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in

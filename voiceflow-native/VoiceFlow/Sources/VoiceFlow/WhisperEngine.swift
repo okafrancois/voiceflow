@@ -1,10 +1,10 @@
 import AVFoundation
 import WhisperKit
 
-/// Moteur Whisper via WhisperKit (Core ML, Apple Neural Engine).
-/// Accumule l'audio en 16 kHz mono Float32 pendant l'enregistrement,
-/// transcrit en une passe à la fin. Le modèle est téléchargé depuis
-/// Hugging Face au premier usage puis mis en cache par WhisperKit.
+/// Whisper engine via WhisperKit (Core ML, Apple Neural Engine).
+/// Accumulates audio as 16 kHz mono Float32 during recording, transcribes
+/// in one pass at the end. The model is downloaded from Hugging Face on
+/// first use, then cached by WhisperKit.
 final class WhisperEngine: DictationEngine, @unchecked Sendable {
     enum EngineError: LocalizedError {
         case emptyRecording
@@ -17,9 +17,9 @@ final class WhisperEngine: DictationEngine, @unchecked Sendable {
     }
 
     private let model: String
-    /// Code langue Whisper ("fr", "en", …) ; nil = détection automatique.
+    /// Whisper language code ("fr", "en", …); nil = automatic detection.
     private let language: String?
-    /// Termes du dictionnaire, passés au décodeur comme contexte.
+    /// Dictionary terms, passed to the decoder as context.
     private let hints: [String]
 
     private let resampler: AudioResampler
@@ -71,26 +71,26 @@ final class WhisperEngine: DictationEngine, @unchecked Sendable {
 }
 
 extension WhisperEngine {
-    /// Sur un audio presque muet, Whisper recrache parfois son prompt : la
-    /// liste du glossaire arrive alors comme si elle avait été dite.
+    /// On near-silent audio, Whisper sometimes echoes back its prompt: the
+    /// glossary list then arrives as if it had been spoken.
     static func removingEchoedPrompt(_ text: String, hints: [String]) -> String {
         guard !hints.isEmpty else { return text }
         let prompt = hints.prefix(40).joined(separator: ", ")
         let normalized = text.trimmingCharacters(in: CharacterSet(charactersIn: " ."))
         if normalized.caseInsensitiveCompare(prompt) == .orderedSame { return "" }
         if text.hasPrefix(prompt) {
-            // Seulement la ponctuation qui suivait le prompt, pas celle de
-            // la fin de la dictée.
+            // Only the punctuation that followed the prompt, not the
+            // dictation's own trailing punctuation.
             return String(text.dropFirst(prompt.count)
                 .drop(while: { " .,".contains($0) || $0.isWhitespace }))
         }
         return text
     }
 
-    /// Le prompt initial de Whisper sert de contexte au décodeur : un
-    /// glossaire y fait écrire les noms propres et le jargon comme voulu.
-    /// Court exprès — au-delà d'une centaine de jetons, il prend la place
-    /// de l'audio dans la fenêtre du décodeur.
+    /// Whisper's initial prompt serves as context for the decoder: a
+    /// glossary there makes it write proper nouns and jargon as intended.
+    /// Deliberately short — beyond about a hundred tokens, it takes the
+    /// audio's place in the decoder's window.
     static func promptTokens(for hints: [String], tokenizer: WhisperTokenizer?) -> [Int]? {
         guard !hints.isEmpty, let tokenizer else { return nil }
         let text = " " + hints.prefix(40).joined(separator: ", ") + "."
@@ -100,20 +100,20 @@ extension WhisperEngine {
     }
 }
 
-/// Suit les modèles Whisper déjà téléchargés, pour pouvoir l'afficher dans
-/// les réglages sans interroger le réseau.
+/// Tracks already-downloaded Whisper models, so they can be shown in
+/// settings without querying the network.
 @MainActor
 final class WhisperModelStore: ObservableObject {
     static let shared = WhisperModelStore()
 
-    /// Variante → dossier local du modèle.
+    /// Variant → local model folder.
     @Published private(set) var folders: [String: String] =
         UserDefaults.standard.dictionary(forKey: "whisperModelFolders") as? [String: String] ?? [:]
 
-    /// Téléchargement en cours : variante et avancement (0…1).
+    /// Download in progress: variant and progress fraction (0…1).
     @Published var downloading: (variant: String, fraction: Double)?
 
-    /// Dossier racine des modèles, à côté de la base d'historique.
+    /// Root folder for models, next to the history database.
     static var downloadBase: URL {
         let directory = URL.applicationSupportDirectory
             .appending(path: "VoiceFlow").appending(path: "models")
@@ -144,7 +144,7 @@ final class WhisperModelStore: ObservableObject {
         UserDefaults.standard.set(folders, forKey: "whisperModelFolders")
     }
 
-    /// Télécharge le modèle s'il manque, en publiant l'avancement.
+    /// Downloads the model if missing, publishing progress.
     @discardableResult
     func ensureAvailable(_ variant: String) async throws -> URL {
         if let folder = folder(variant) { return folder }
@@ -167,16 +167,16 @@ final class WhisperModelStore: ObservableObject {
     }
 }
 
-/// Le pipeline n'est jamais utilisé par deux décodages à la fois : ils
-/// passent un par un par `WhisperKitCache.decoding`.
+/// The pipeline is never used by two decodings at once: they go through
+/// `WhisperKitCache.decoding` one at a time.
 extension WhisperKit: @retroactive @unchecked Sendable {}
 
-/// Garde le pipeline WhisperKit chargé : le chargement d'un modèle prend
-/// plusieurs secondes, on ne le paie qu'une fois par session. Un seul modèle
-/// reste en mémoire — un Large v3 pèse à lui seul autour de 3 Go.
+/// Keeps the WhisperKit pipeline loaded: loading a model takes several
+/// seconds, we only pay that cost once per session. Only one model stays
+/// in memory — a Large v3 alone weighs around 3 GB.
 actor WhisperKitCache {
     static let shared = WhisperKitCache()
-    /// Un décodage à la fois sur le pipeline partagé.
+    /// One decoding at a time on the shared pipeline.
     static let decoding = SerialWork()
     private var instances: [String: WhisperKit] = [:]
     private var loading: [String: Task<WhisperKit, Error>] = [:]
@@ -186,8 +186,8 @@ actor WhisperKitCache {
         if let task = loading[model] { return try await task.value }
 
         let task = Task<WhisperKit, Error> {
-            // Téléchargement explicite : c'est lui qui alimente la barre de
-            // progression des réglages.
+            // Explicit download: it's what feeds the settings progress
+            // bar.
             let folder = try await WhisperModelStore.shared.ensureAvailable(model)
             log.info("loading WhisperKit model \(model)…")
             let config = WhisperKitConfig(
@@ -199,8 +199,8 @@ actor WhisperKitCache {
         loading[model] = task
         defer { loading[model] = nil }
         let kit = try await task.value
-        // Changer de modèle libère le précédent ; une dictée qui l'utilise
-        // encore garde sa propre référence jusqu'au bout.
+        // Switching models releases the previous one; a dictation still
+        // using it keeps its own reference until it's done.
         instances = [model: kit]
         return kit
     }

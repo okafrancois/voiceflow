@@ -1,15 +1,15 @@
 import Foundation
 
-/// Vérification des mises à jour par simple flux JSON.
+/// Update checking via a simple JSON feed.
 ///
-/// Le flux attendu :
+/// Expected feed:
 /// ```json
 /// { "version": "0.2.0", "notes": "…", "url": "https://…/VoiceFlow.dmg" }
 /// ```
-/// Rien n'est installé automatiquement : l'app signale la version et ouvre le
-/// lien de téléchargement. L'installation silencieuse demanderait Sparkle et
-/// une paire de clés de signature, ce qui n'a de sens qu'une fois la
-/// distribution en place.
+/// Nothing is installed automatically: the app reports the version and
+/// opens the download link. Silent installation would require Sparkle
+/// and a signing key pair, which only makes sense once distribution is
+/// in place.
 @MainActor
 final class UpdateChecker: ObservableObject {
     static let shared = UpdateChecker()
@@ -21,16 +21,16 @@ final class UpdateChecker: ObservableObject {
     }
 
     @Published var latest: Release?
-    /// Conservée d'un lancement à l'autre : sans elle, « une fois par jour »
-    /// voulait dire « à chaque lancement ».
+    /// Kept from one launch to the next: without it, "once a day" would
+    /// mean "on every launch".
     @Published var lastCheck: Date? = UserDefaults.standard.object(forKey: "lastUpdateCheck") as? Date {
         didSet { UserDefaults.standard.set(lastCheck, forKey: "lastUpdateCheck") }
     }
     @Published var checking = false
     @Published var error: String?
 
-    /// Flux de la dernière release publiée : l'URL « latest » ne change pas
-    /// d'une version à l'autre.
+    /// Feed of the latest published release: the "latest" URL doesn't
+    /// change from one version to the next.
     static let defaultFeed =
         "https://github.com/okafrancois/voiceflow/releases/latest/download/appcast.json"
 
@@ -51,7 +51,7 @@ final class UpdateChecker: ObservableObject {
         return latest.version.compare(currentVersion, options: .numeric) == .orderedDescending
     }
 
-    /// Vérifie au lancement, au plus une fois par jour.
+    /// Checks at launch, at most once a day.
     func checkIfDue() async {
         guard automatic, !feedURL.isEmpty else { return }
         if let lastCheck, Date().timeIntervalSince(lastCheck) < 86400 { return }

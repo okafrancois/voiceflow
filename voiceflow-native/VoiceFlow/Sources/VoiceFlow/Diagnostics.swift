@@ -1,11 +1,11 @@
 import Foundation
 
-/// Journal de diagnostic écrit dans un fichier.
+/// Diagnostic log written to a file.
 ///
-/// `os_log` ne conserve pas les messages de niveau `info` : `log show` ne
-/// remonte donc rien, et l'utilisateur comme le développeur se retrouvent
-/// sans trace quand quelque chose échoue. Ce journal-ci est toujours lisible,
-/// et accessible depuis les réglages.
+/// `os_log` doesn't retain `info`-level messages: `log show` therefore
+/// surfaces nothing, leaving both user and developer without a trace when
+/// something fails. This log stays readable, and accessible from
+/// settings.
 enum Diagnostics {
     private static let queue = DispatchQueue(label: "fr.okatech.voiceflow.diagnostics")
     private static let maxBytes = 512 * 1024
@@ -18,7 +18,7 @@ enum Diagnostics {
 
     static func log(_ message: String) {
         let stamp = Date().formatted(.dateTime.hour().minute().second()
-            .locale(Locale(identifier: "fr_FR")))
+            .locale(Locale(identifier: "en_US_POSIX")))
         let line = "\(stamp)  \(message)\n"
         queue.async {
             let url = fileURL
@@ -34,14 +34,14 @@ enum Diagnostics {
         }
     }
 
-    /// Journal précédent, gardé à la rotation : effacer d'un coup perdait
-    /// justement les dernières dictées, celles qu'on vient investiguer.
+    /// Previous log, kept at rotation time: wiping it outright would lose
+    /// exactly the most recent dictations, the ones being investigated.
     static var previousFileURL: URL {
         fileURL.deletingPathExtension().appendingPathExtension("previous.log")
     }
 
-    /// Un journal de diagnostic ne doit pas grossir sans fin : au-delà de la
-    /// taille maximale, il devient le journal précédent.
+    /// A diagnostic log must not grow forever: past the maximum size, it
+    /// becomes the previous log.
     private static func rotate(_ url: URL) {
         let attributes = try? FileManager.default
             .attributesOfItem(atPath: url.path(percentEncoded: false))

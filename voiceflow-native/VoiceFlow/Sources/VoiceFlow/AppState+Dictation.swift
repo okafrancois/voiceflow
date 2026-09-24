@@ -1,7 +1,7 @@
 import AppKit
 import AVFoundation
 
-/// Message bref affiché par la pill.
+/// Brief message shown by the pill.
 struct Notice: Equatable {
     enum Kind { case info, error }
     let id = UUID()
@@ -9,11 +9,11 @@ struct Notice: Equatable {
     let kind: Kind
 }
 
-/// Une dictée, du déclenchement à l'insertion.
+/// A dictation, from trigger to insertion.
 ///
-/// Le micro démarre tout de suite ; le moteur et la cible d'insertion se
-/// préparent en parallèle. Une dictée annulée garde sa place jusqu'au bout
-/// de ses tâches mais ne touche plus à l'état de l'app.
+/// The mic starts right away; the engine and insertion target prepare
+/// in parallel. A cancelled dictation keeps its place until its tasks
+/// finish, but no longer touches the app's state.
 @MainActor
 final class DictationSession {
     let kind: HotkeyManager.Action
@@ -49,20 +49,20 @@ final class DictationSession {
     }
 }
 
-/// Ce qu'il faut savoir pour annuler la dernière insertion.
+/// What's needed to undo the last insertion.
 struct InsertionRecord {
     let text: String
     let method: InjectionMethod
     let bundleID: String?
-    /// Champ et position, quand l'insertion est passée par l'accessibilité.
+    /// Field and position, when the insertion went through accessibility.
     let element: AccessibilityTarget?
     let location: Int?
-    /// Texte sélectionné que l'insertion a remplacé, à remettre en place.
+    /// Selected text that the insertion replaced, to be restored.
     let replaced: String?
 }
 
 extension AppState {
-    // MARK: - Déclenchement
+    // MARK: - Triggering
 
     func toggleDictation() {
         if phase == .recording {
@@ -79,9 +79,9 @@ extension AppState {
         }
         guard microphoneGranted else {
             hotkey.startRejected()
-            // Jamais demandé (onboarding passé) : poser la question
-            // maintenant. Pas de démarrage automatique ensuite : la touche a
-            // pu être relâchée pendant la boîte système.
+            // Never asked (onboarding skipped): ask the question now. No
+            // automatic start afterward: the key may have been released
+            // while the system dialog was up.
             Task {
                 if await requestMicrophone() {
                     notice = Notice(text: L.t("Micro autorisé : pressez à nouveau le raccourci."), kind: .info)
@@ -111,7 +111,7 @@ extension AppState {
         let bundleID = frontmost?.bundleIdentifier
         let session = DictationSession(
             kind: kind,
-            // Le mode commande produit lui-même le texte final.
+            // Command mode produces the final text itself.
             polish: kind == .dictate && polishEnabled,
             engineChoice: engineChoice,
             localeID: VocabularyStore.shared.localeID(forBundleID: bundleID) ?? dictationLocaleID,
@@ -119,15 +119,15 @@ extension AppState {
             appName: frontmost?.localizedName)
         self.session = session
 
-        // Retour immédiat d'abord : pill et son partent avec la pression.
+        // Immediate feedback first: pill and sound fire with the key press.
         phase = .recording
         playSound(start: true)
         Diagnostics.log(
-            "\(kind == .command ? "commande" : "dictée") démarrée · moteur \(session.engineChoice.rawValue) · "
-            + "langue \(session.localeID) · polissage \(session.polish)")
+            "\(kind == .command ? "command" : "dictation") started · engine \(session.engineChoice.rawValue) · "
+            + "language \(session.localeID) · polish \(session.polish)")
 
-        // Le micro avant le moteur : ce qui est dit pendant que le moteur se
-        // prépare attend dans `feed` au lieu d'être perdu.
+        // Mic before engine: whatever is said while the engine prepares
+        // waits in `feed` instead of being lost.
         do {
             try session.recorder.start(
                 options: AudioRecorder.Options(
@@ -147,8 +147,8 @@ extension AppState {
         }
         recordingStart = session.startedAt
 
-        // Le mode commande a besoin du champ et de sa sélection, quel que
-        // soit le réglage d'insertion.
+        // Command mode needs the field and its selection, regardless of
+        // the insertion setting.
         let captureField = insertInOriginalField || kind == .command
         session.targetTask = Task {
             await CapturedTextTarget.capture(
@@ -164,8 +164,8 @@ extension AppState {
         }
 
         let hints = VocabularyStore.shared.recognitionHints
-        // Identifiant plutôt que référence : le moteur garde ce rappel, et
-        // la dictée garde le moteur.
+        // Identifier rather than reference: the engine keeps this callback,
+        // and the dictation keeps the engine.
         let sessionID = ObjectIdentifier(session)
         session.engineTask = Task { [weak self] in
             guard let self else { throw CancellationError() }
@@ -173,8 +173,8 @@ extension AppState {
                 choice: session.engineChoice, localeID: session.localeID, hints: hints
             ) { [weak self] volatile in
                 Task { @MainActor in
-                    // Une dictée annulée ne doit pas écrire dans la pill de
-                    // la suivante.
+                    // A cancelled dictation must not write into the next
+                    // one's pill.
                     guard let self, self.session.map(ObjectIdentifier.init) == sessionID else { return }
                     self.volatileTranscript = volatile
                 }
@@ -182,8 +182,8 @@ extension AppState {
             session.feed.attach(engine)
             return engine
         }
-        // Un moteur qui ne démarre pas doit se voir tout de suite, pas au
-        // relâchement de la touche.
+        // An engine that fails to start must be noticed right away, not
+        // when the key is released.
         Task { [weak self] in
             do {
                 _ = try await session.engine()
@@ -199,8 +199,8 @@ extension AppState {
         }
     }
 
-    /// Un modèle à télécharger ne se télécharge pas en douce pendant une
-    /// dictée : on le dit, et on lance le téléchargement.
+    /// A model that needs downloading doesn't download silently during
+    /// a dictation: it is announced, and the download starts.
     private func ensureModelReady() -> Bool {
         if let variant = engineChoice.whisperModel,
            !WhisperModelStore.shared.isDownloaded(variant) {
@@ -217,7 +217,7 @@ extension AppState {
         return true
     }
 
-    /// Téléchargement de modèle dont l'échec est dit, jamais tu.
+    /// Model download whose failure is announced, never hidden.
     func download(_ work: @escaping () async throws -> URL) async {
         do {
             _ = try await work()
@@ -228,7 +228,7 @@ extension AppState {
         }
     }
 
-    // MARK: - Arrêt
+    // MARK: - Stopping
 
     func stopDictation() async {
         guard phase == .recording, let session else { return }
@@ -239,10 +239,10 @@ extension AppState {
         resetMeters()
         let audioDurationMs = Int(-session.startedAt.timeIntervalSinceNow * 1000)
 
-        // Silence absolu : inutile d'interroger le moteur, et surtout il faut
-        // le dire — macOS ne signale pas une autorisation micro manquante,
-        // il livre simplement des blocs vides.
-        Diagnostics.log("prise terminée · \(audioDurationMs) ms · crête \(String(format: "%.3f", peak))")
+        // Absolute silence: no point asking the engine, and above all it
+        // must be reported — macOS doesn't signal a missing mic permission,
+        // it just delivers empty buffers.
+        Diagnostics.log("recording finished · \(audioDurationMs) ms · peak \(String(format: "%.3f", peak))")
         guard peak > 0.001 else {
             discardEngine(of: session)
             abandon(session)
@@ -264,7 +264,7 @@ extension AppState {
         } catch {
             guard !session.cancelled else { return }
             abandon(session)
-            Diagnostics.log("échec transcription : \(error.localizedDescription)")
+            Diagnostics.log("transcription failed: \(error.localizedDescription)")
             report(L.t("Transcription échouée") + " : \(error.localizedDescription)")
             log.error("transcription failed: \(error)")
             return
@@ -275,18 +275,18 @@ extension AppState {
         guard !trimmed.isEmpty else {
             guard !session.cancelled else { return }
             abandon(session)
-            // Silence complet plutôt qu'échec : le dire, sinon l'app a
-            // l'air de tourner dans le vide.
-            Diagnostics.log("transcription vide (coupe du silence : \(trimSilence))")
+            // Complete silence rather than failure: say so, otherwise the app
+            // looks like it's spinning idly.
+            Diagnostics.log("empty transcription (silence trimming: \(trimSilence))")
             report(trimSilence
                 ? L.t("Aucune parole reconnue. Si cela se répète, baissez la sensibilité de la coupe du silence, ou désactivez-la.")
                 : L.t("Aucune parole reconnue."))
             log.info("empty transcription (trimSilence=\(self.trimSilence))")
             return
         }
-        Diagnostics.log("transcrit \(trimmed.count) caractères en \(sttDurationMs) ms")
+        Diagnostics.log("transcribed \(trimmed.count) characters in \(sttDurationMs) ms")
 
-        // Commandes vocales, puis extraits et dictionnaire, avant tout le reste.
+        // Voice commands, then snippets and dictionary, before anything else.
         let target = await session.target()
         if session.kind == .command {
             await runCommand(instruction: VocabularyStore.shared.apply(to: trimmed),
@@ -303,7 +303,7 @@ extension AppState {
         if session.polish, !session.cancelled {
             if isCurrent(session) { phase = .polishing }
             let polishStart = Date()
-            // Une règle d'application l'emporte sur le style par défaut.
+            // An app-specific rule overrides the default style.
             let templateID = VocabularyStore.shared.templateID(forBundleID: session.bundleID)
                 ?? polishTemplateID
             do {
@@ -313,8 +313,8 @@ extension AppState {
                 polishDurationMs = Int(-polishStart.timeIntervalSinceNow * 1000)
                 log.info("polished (\(templateID))")
             } catch {
-                // Le polissage ne doit jamais faire perdre la dictée :
-                // on insère le texte brut et on signale l'échec.
+                // Polishing must never cause the dictation to be lost:
+                // the raw text is inserted and the failure is reported.
                 report(L.t("Polissage ignoré, texte brut inséré") + " : \(error.localizedDescription)")
                 log.error("polish failed: \(error)")
             }
@@ -331,10 +331,9 @@ extension AppState {
             polishEngine: polishDurationMs == nil ? nil : "foundation-models")
         refreshHistory()
 
-        // Annulée pendant le traitement : gardée dans l'historique, rien
-        // n'est inséré.
+        // Cancelled during processing: kept in history, nothing is inserted.
         guard !session.cancelled else {
-            Diagnostics.log("dictée annulée après transcription : conservée dans l'historique")
+            Diagnostics.log("dictation cancelled after transcription: kept in history")
             return
         }
         lastTranscript = final
@@ -346,17 +345,18 @@ extension AppState {
         }
     }
 
-    // MARK: - Mode commande
+    // MARK: - Command mode
 
-    /// La consigne dite s'applique à la sélection capturée au déclenchement,
-    /// qu'elle remplace ; sans sélection, le résultat s'insère au curseur.
+    /// The spoken instruction applies to the selection captured at trigger
+    /// time, which it replaces; without a selection, the result is inserted
+    /// at the cursor.
     private func runCommand(
         instruction: String, session: DictationSession, target: CapturedTextTarget?
     ) async {
         guard !session.cancelled else { return }
         if isCurrent(session) { phase = .polishing }
         let selection = target?.selection
-        Diagnostics.log("commande · sélection \(selection?.count ?? 0) caractères")
+        Diagnostics.log("command · selection \(selection?.count ?? 0) characters")
         let output: String
         do {
             output = try await polisher.transform(selection: selection, instruction: instruction)
@@ -372,11 +372,11 @@ extension AppState {
         await deliver(output, to: target, shaping: selection == nil)
     }
 
-    // MARK: - Annulation
+    // MARK: - Cancellation
 
-    /// Échap pendant la dictée. Pendant l'enregistrement, tout est jeté ;
-    /// pendant le traitement, le texte finit dans l'historique sans être
-    /// inséré.
+    /// Escape during dictation. During recording, everything is discarded;
+    /// during processing, the text ends up in history without being
+    /// inserted.
     func cancelDictation() {
         guard let session, phase != .idle else { return }
         session.cancelled = true
@@ -388,11 +388,11 @@ extension AppState {
         volatileTranscript = ""
         playSound(start: false)
         notice = Notice(text: L.t("Dictée annulée"), kind: .info)
-        Diagnostics.log("dictée annulée")
+        Diagnostics.log("dictation cancelled")
     }
 
-    /// Le moteur d'une dictée abandonnée pendant l'enregistrement ne doit
-    /// pas continuer d'analyser dans le vide.
+    /// The engine of a dictation abandoned during recording must not keep
+    /// analyzing into the void.
     private func discardEngine(of session: DictationSession) {
         let task = session.engineTask
         task?.cancel()
@@ -401,8 +401,8 @@ extension AppState {
         }
     }
 
-    /// La dictée ne pilote plus l'app : retour au repos si elle était la
-    /// dictée courante.
+    /// The dictation no longer drives the app: back to idle if it was the
+    /// current dictation.
     func abandon(_ session: DictationSession) {
         guard isCurrent(session) else { return }
         self.session = nil
@@ -419,7 +419,7 @@ extension AppState {
         audioLevels = Array(repeating: 0, count: audioLevels.count)
     }
 
-    // MARK: - Moteurs
+    // MARK: - Engines
 
     func makeEngine(
         choice: EngineChoice, localeID: String, hints: [String],
@@ -429,8 +429,8 @@ extension AppState {
         let languageCode = isAuto
             ? nil : Locale(identifier: localeID).language.languageCode?.identifier
         if let whisperModel = choice.whisperModel {
-            // Un modèle anglais seul ne sait rien détecter d'autre : lui
-            // laisser deviner la langue produirait du charabia.
+            // An English-only model can't detect anything else: letting it
+            // guess the language would produce gibberish.
             return try WhisperEngine(
                 model: whisperModel,
                 language: choice.isEnglishOnly ? "en" : languageCode,
@@ -439,12 +439,12 @@ extension AppState {
         if let sherpa = choice.sherpaModel {
             return try SherpaEngine(model: sherpa, language: languageCode)
         }
-        // Le moteur système exige une langue explicite.
+        // The system engine requires an explicit language.
         let locale = Locale(identifier: isAuto ? "fr-FR" : localeID)
         return try await TranscriptionSession(locale: locale, hints: hints, onVolatile: onVolatile)
     }
 
-    /// Charge le moteur choisi en mémoire (jamais de téléchargement ici).
+    /// Loads the chosen engine into memory (never a download here).
     func preloadEngine() async {
         let choice = engineChoice
         let localeID = dictationLocaleID
@@ -474,7 +474,7 @@ extension AppState {
 
     // MARK: - Insertion
 
-    /// Insère dans le champ capturé si possible, sinon dans le focus courant.
+    /// Inserts into the captured field if possible, otherwise into the current focus.
     @discardableResult
     func deliver(
         _ text: String, to target: CapturedTextTarget?, shaping: Bool = true,
@@ -489,10 +489,10 @@ extension AppState {
                 lastInsertion = InsertionRecord(
                     text: adjusted, method: .accessibility, bundleID: target?.bundleID,
                     element: element, location: location, replaced: target?.selection)
-                Diagnostics.log("inséré dans le champ d'origine")
+                Diagnostics.log("inserted into the original field")
                 return .accessibility
             } catch {
-                Diagnostics.log("champ d'origine indisponible (\(error.localizedDescription)), repli sur le focus courant")
+                Diagnostics.log("original field unavailable (\(error.localizedDescription)), falling back to current focus")
             }
         }
         do {
@@ -503,7 +503,7 @@ extension AppState {
                 text: text, method: method,
                 bundleID: NSWorkspace.shared.frontmostApplication?.bundleIdentifier,
                 element: nil, location: nil, replaced: nil)
-            Diagnostics.log("inséré via \(String(describing: method))")
+            Diagnostics.log("inserted via \(String(describing: method))")
             return method
         } catch {
             report(L.t("Insertion échouée") + " : \(error.localizedDescription)")
@@ -512,8 +512,8 @@ extension AppState {
         }
     }
 
-    /// « Coller » vise le champ qui a le focus maintenant, pas celui de la
-    /// dictée précédente : l'utilisateur a pu changer de champ ou d'app.
+    /// "Paste" targets the field that currently has focus, not the one from
+    /// the previous dictation: the user may have switched field or app.
     func reinsertLast() {
         guard !lastTranscript.isEmpty else { return }
         let text = lastTranscript
@@ -526,11 +526,11 @@ extension AppState {
 
     var canUndoLastInsertion: Bool { lastInsertion != nil }
 
-    /// Retire la dernière insertion et remet ce qu'elle avait remplacé.
-    /// Par l'accessibilité quand le texte est encore intact à sa place.
-    /// ⌘Z seulement pour une frappe ou un collage, dans l'app qui l'a reçu :
-    /// une écriture par accessibilité n'entre pas toujours dans la pile
-    /// d'annulation de l'app, et ⌘Z y déferait autre chose.
+    /// Removes the last insertion and restores what it had replaced.
+    /// Via accessibility when the text is still intact in place.
+    /// ⌘Z only for a keystroke or paste, in the app that received it:
+    /// a write via accessibility doesn't always enter the app's undo
+    /// stack, and ⌘Z there would undo something else.
     func undoLastInsertion() {
         guard let record = lastInsertion else { return }
         lastInsertion = nil
@@ -538,7 +538,7 @@ extension AppState {
             if let element = record.element, let location = record.location {
                 let restore = record.replaced ?? ""
                 if await AXQueue.run({ element.remove(record.text, at: location, restoring: restore) }) {
-                    Diagnostics.log("dernière insertion retirée")
+                    Diagnostics.log("last insertion removed")
                     return
                 }
             }
@@ -551,35 +551,35 @@ extension AppState {
                 return
             }
             await Task.detached { TextInjector.pressUndo() }.value
-            Diagnostics.log("dernière insertion annulée par ⌘Z")
+            Diagnostics.log("last insertion undone via ⌘Z")
         }
     }
 
     // MARK: - Messages
 
-    /// Une erreur que l'utilisateur doit voir : dans la pill tout de suite,
-    /// dans les réglages ensuite.
+    /// An error the user must see: in the pill right away, in settings
+    /// afterward.
     func report(_ message: String) {
         lastError = message
         notice = Notice(text: message, kind: .error)
-        Diagnostics.log("erreur affichée : \(message)")
+        Diagnostics.log("error shown: \(message)")
     }
 
-    // MARK: - Divers
+    // MARK: - Miscellaneous
 
-    /// Vrai si l'interception clavier globale fonctionne (permission
-    /// Accessibilité accordée).
+    /// True if the global keyboard interception is active (Accessibility
+    /// permission granted).
     var hotkeyTapActive: Bool { hotkey.isTapActive }
 
-    /// Enregistre la prochaine combinaison pressée dans le raccourci donné.
+    /// Records the next pressed combination into the given shortcut.
     func captureShortcut(into keyPath: ReferenceWritableKeyPath<AppState, Shortcut?>,
                          completion: @escaping () -> Void) {
         hotkey.beginCapture { [weak self] keyCode, flags in
             Task { @MainActor in
                 guard let self else { return }
                 defer { completion() }
-                // Échap annule. Une touche seule n'est acceptée que si elle ne
-                // sert pas à écrire : modificateur (Fn, ⌘…) ou touche de fonction.
+                // Escape cancels. A single key is only accepted if it isn't used
+                // for typing: a modifier (Fn, ⌘…) or a function key.
                 guard keyCode != 53 else { return }
                 guard Shortcut.isAssignable(keyCode: keyCode, modifiers: flags) else {
                     self.lastError = L.t("Raccourci refusé : une touche ordinaire seule serait avalée partout. Utilisez Fn, une touche de fonction, ou ajoutez un modificateur.")
@@ -595,7 +595,7 @@ extension AppState {
         hotkey.endCapture()
     }
 
-    /// Relit l'historique hors du fil principal, puis publie.
+    /// Reloads history off the main thread, then publishes.
     func refreshHistory() {
         Task {
             let snapshot = await HistoryStore.shared.snapshot()
@@ -606,8 +606,8 @@ extension AppState {
         }
     }
 
-    /// La rétention s'applique au lancement puis régulièrement : une app
-    /// qui tourne des semaines ne doit pas garder plus que demandé.
+    /// Retention applies at launch and then regularly: an app that runs
+    /// for weeks must not keep more than requested.
     func applyRetention() {
         guard let days = retentionDays else { return }
         HistoryStore.shared.deleteOlderThan(days: days)
@@ -626,8 +626,8 @@ extension AppState {
         }
     }
 
-    /// Demande l'accès micro (boîte système, une seule fois dans la vie de
-    /// l'app). Appelé depuis l'onboarding ou à la première dictée.
+    /// Requests mic access (system dialog, only once in the app's
+    /// lifetime). Called from onboarding or on the first dictation.
     @discardableResult
     func requestMicrophone() async -> Bool {
         let granted = await Permissions.requestMicrophone()
@@ -638,19 +638,19 @@ extension AppState {
         return granted
     }
 
-    /// Affiche l'invite d'accessibilité du système.
+    /// Shows the system accessibility prompt.
     func requestAccessibility() {
         Permissions.ensureAccessibility()
         refreshPermissions()
     }
 
-    /// Réévalue les permissions (à l'ouverture de la fenêtre).
+    /// Re-evaluates permissions (when the window opens).
     func refreshPermissions() {
         let wasGranted = accessibilityGranted
         accessibilityGranted = Permissions.isAccessibilityTrusted()
         microphoneGranted = Permissions.isMicrophoneGranted()
 
-        // L'autorisation vient d'arriver : mettre en place l'interception.
+        // Permission just arrived: set up the interception.
         if accessibilityGranted, !wasGranted {
             hotkey.restartIfNeeded()
             log.info("accessibility granted, hotkey restarted")

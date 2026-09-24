@@ -1,8 +1,8 @@
 import AVFoundation
 
-/// Bips de début et de fin, repris tels quels de l'app actuelle
-/// (`src-tauri/assets/*.wav`). Anti-rebond de 300 ms comme dans `beep.rs`,
-/// pour qu'un aller-retour rapide ne produise pas une rafale.
+/// Start and stop beeps, reused as-is from the current app
+/// (`src-tauri/assets/*.wav`). 300 ms debounce like in `beep.rs`, so a
+/// quick back-and-forth doesn't produce a burst.
 @MainActor
 final class BeepPlayer {
     static let shared = BeepPlayer()

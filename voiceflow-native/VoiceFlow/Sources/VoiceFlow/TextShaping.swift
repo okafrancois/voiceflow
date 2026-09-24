@@ -1,28 +1,28 @@
 import Foundation
 import NaturalLanguage
 
-/// Espace et majuscule selon ce qui précède le curseur.
+/// Spacing and capitalization based on what precedes the cursor.
 ///
-/// Les moteurs rendent chaque dictée comme une phrase isolée : majuscule en
-/// tête, aucune espace devant. Deux dictées d'affilée donnaient donc
-/// « …la première.La seconde », et une dictée en milieu de phrase une
-/// majuscule parasite. Quand le champ dit ce qui précède l'insertion, on
-/// raccorde ; quand il ne le dit pas, on ne touche à rien.
+/// Engines render each dictation as an isolated sentence: capitalized at
+/// the start, no leading space. Two dictations in a row therefore produced
+/// « …la première.La seconde », and a dictation mid-sentence produced a
+/// stray capital letter. When the field reports what precedes the
+/// insertion, we stitch it together; when it doesn't, we leave it alone.
 enum SmartSpacing {
     private static let sentenceEnds: Set<Character> = [".", "!", "?", "…"]
-    /// Après eux, on colle le texte sans espace.
+    /// After these, the text is glued on without a space.
     private static let openers: Set<Character> = ["(", "[", "{", "\"", "'", "’", "«", "“", "‘", "/", "-", "@", "#"]
-    /// En tête de dictée, ils se collent au mot précédent.
+    /// At the start of a dictation, these glue onto the previous word.
     private static let leadingPunctuation: Set<Character> = [",", ".", ";", ":", "!", "?", ")", "]", "}", "…"]
 
-    /// Langues où un mot courant ne prend pas de majuscule en milieu de
-    /// phrase. L'allemand, qui en met à tous les noms, n'en fait pas partie.
+    /// Languages where a common word doesn't take a capital letter
+    /// mid-sentence. German, which capitalizes all nouns, is not among them.
     private static let lowercaseLanguages: Set<String> = [
         "fr", "en", "es", "it", "pt", "ca", "nl", "sv", "da", "nb", "no", "pl", "ro",
     ]
 
-    /// `localeID` : langue de la dictée ; en détection automatique, celle du
-    /// texte lui-même.
+    /// `localeID`: language of the dictation; in automatic detection, that
+    /// of the text itself.
     static func adjust(_ text: String, after context: String?, localeID: String? = nil) -> String {
         let body = String(text.drop(while: { $0 == " " || $0 == "\t" }))
         guard let context, let last = context.last, let first = body.first else { return text }
@@ -30,7 +30,7 @@ enum SmartSpacing {
         if last.isNewline {
             return capitalizingFirst(body)
         }
-        // La dictée commence par un saut de ligne : rien à raccorder.
+        // The dictation starts with a line break: nothing to stitch together.
         if first.isNewline { return body }
 
         let needsSpace = !last.isWhitespace
@@ -57,7 +57,7 @@ enum SmartSpacing {
         } else {
             code = NLLanguageRecognizer.dominantLanguage(for: text)?.rawValue
         }
-        // Langue inconnue : dans le doute, ne rien toucher.
+        // Unknown language: when in doubt, don't touch anything.
         guard let code else { return localeID == nil }
         return lowercaseLanguages.contains(code)
     }
@@ -67,9 +67,9 @@ enum SmartSpacing {
         return first.uppercased() + text.dropFirst()
     }
 
-    /// Minuscule en milieu de phrase, sauf pour ce qui s'écrit toujours avec
-    /// une majuscule : sigles, « I » anglais, noms propres, graphies mixtes
-    /// (iPhone, McDonald).
+    /// Lowercase mid-sentence, except for what is always written with a
+    /// capital letter: acronyms, English "I", proper nouns, mixed-case
+    /// spellings (iPhone, McDonald).
     private static func lowercasingFirstIfCommonWord(_ text: String) -> String {
         let firstWord = text.prefix { $0.isLetter }
         guard let initial = firstWord.first, initial.isUppercase else { return text }
@@ -87,13 +87,14 @@ enum SmartSpacing {
     }
 }
 
-/// Commandes de mise en forme dites pendant la dictée : « à la ligne »,
+/// Formatting commands spoken during dictation: « à la ligne »,
 /// « nouveau paragraphe », « new line »…
 ///
-/// Une commande n'est reconnue que seule entre deux ponctuations (ou en
-/// début/fin de dictée) : « la ligne de départ » ou « une nouvelle ligne de
-/// métro » restent du texte. Une commande dite sans pause peut donc être
-/// manquée ; c'est le prix de ne jamais casser une phrase ordinaire.
+/// A command is only recognized on its own between two punctuation marks
+/// (or at the start/end of dictation): « la ligne de départ » or « une
+/// nouvelle ligne de métro » remain plain text. A command spoken without a
+/// pause can therefore be missed; that's the price of never breaking an
+/// ordinary sentence.
 enum VoiceCommands {
     private struct Command {
         let phrase: String
@@ -132,14 +133,14 @@ enum VoiceCommands {
         }
     }
 
-    /// Avant la commande : début du texte ou ponctuation forte (conservée),
-    /// ou virgule / point-virgule (absorbés). Après : ponctuation ou fin.
+    /// Before the command: start of text or strong punctuation (kept),
+    /// or comma / semicolon (absorbed). After: punctuation or end.
     private static func replace(_ command: Command, in text: String) -> String {
         let phrase = NSRegularExpression.escapedPattern(for: command.phrase)
             .replacingOccurrences(of: "à", with: "[àa]")
         let tail = #"[ \t]*(?:[,.;:!?…]|$)[ \t]*"#
-        // Après une fin de phrase ou en tête, « point à la ligne » ne remet
-        // pas un second point.
+        // After a sentence end or at the start, « point à la ligne » does
+        // not add a second period.
         let afterBoundary = #"(?:^|(?<=[.!?…:]))[ \t]*"# + phrase + tail
         let afterComma = #"[ \t]*[,;][ \t]*"# + phrase + tail
         let boundaryOutput = command.output.hasPrefix(".")

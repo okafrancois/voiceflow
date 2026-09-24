@@ -2,12 +2,12 @@ import AppKit
 import ApplicationServices
 import CoreGraphics
 
-/// Port Swift de `apps/desktop/src-tauri/src/text_injector/` (Rust), qui fait
-/// référence pour le comportement :
-/// - cible AX capturée au démarrage de la dictée → insertion sans réactiver l'app ;
-/// - sinon : multiligne ou > 400 graphèmes → presse-papiers + Cmd+V (avec
-///   sauvegarde/restauration complète du presse-papiers) ; texte court → frappe
-///   clavier simulée par tranches de 100 graphèmes espacées de 50 ms.
+/// Swift port of `apps/desktop/src-tauri/src/text_injector/` (Rust), which is
+/// the reference for behavior:
+/// - AX target captured at dictation start → insertion without reactivating the app;
+/// - otherwise: multiline or > 400 graphemes → clipboard + Cmd+V (with full
+///   clipboard save/restore); short text → simulated keyboard typing in
+///   100-grapheme chunks spaced 50 ms apart.
 
 enum InjectionMethod {
     case keyboard, clipboard, accessibility
@@ -39,14 +39,14 @@ enum InjectionError: LocalizedError {
     }
 }
 
-// MARK: - File d'accessibilité
+// MARK: - Accessibility queue
 
-/// Tous les échanges d'accessibilité avec une autre app passent par ici.
+/// All accessibility exchanges with another app go through here.
 ///
-/// Chaque appel attend la réponse de l'app interrogée ; sur le fil principal,
-/// une app lente figeait l'interface — et, avant que le raccourci n'ait son
-/// propre fil, le clavier entier. Une file série garde aussi l'ordre :
-/// capture, insertion, relecture.
+/// Each call waits for the queried app's response; on the main thread, a
+/// slow app would freeze the interface — and, before the shortcut had its
+/// own thread, the entire keyboard. A serial queue also preserves order:
+/// capture, insertion, readback.
 enum AXQueue {
     private static let queue = DispatchQueue(
         label: "fr.okatech.voiceflow.accessibility", qos: .userInitiated)
@@ -64,19 +64,19 @@ enum AXQueue {
     }
 }
 
-// MARK: - Cible accessibilité
+// MARK: - Accessibility target
 
-/// Instantané du champ qui a le focus au démarrage de l'enregistrement :
-/// élément AX + position du curseur. Permet d'insérer plus tard sans
-/// réactiver l'application.
-/// `AXUIElement` est une référence Core Foundation utilisable depuis
-/// n'importe quel fil ; les échanges eux-mêmes passent par `AXQueue`.
+/// Snapshot of the field that has focus when recording starts: AX element +
+/// cursor position. Allows inserting later without reactivating the
+/// application.
+/// `AXUIElement` is a Core Foundation reference usable from any thread;
+/// the exchanges themselves go through `AXQueue`.
 struct AccessibilityTarget: @unchecked Sendable {
     private let element: AXUIElement
     private let selectedRange: CFRange?
 
-    /// Délai maximal accordé à l'app interrogée. Par défaut macOS attend
-    /// six secondes une app qui ne répond pas.
+    /// Maximum delay granted to the queried app. By default macOS waits
+    /// six seconds for an app that doesn't respond.
     static let messagingTimeout: Float = 1.0
 
     static func capture() -> AccessibilityTarget? {
@@ -98,7 +98,7 @@ struct AccessibilityTarget: @unchecked Sendable {
         return AccessibilityTarget(element: element, selectedRange: selectedRange)
     }
 
-    /// Relit le contenu du champ, pour repérer une correction après coup.
+    /// Re-reads the field's content, to spot a correction after the fact.
     func readValue() -> String? {
         var value: CFTypeRef?
         let error = AXUIElementCopyAttributeValue(
@@ -107,8 +107,8 @@ struct AccessibilityTarget: @unchecked Sendable {
         return value as? String
     }
 
-    /// Insère à la position capturée et rend cette position (en unités
-    /// UTF-16, celles de l'accessibilité), si elle est connue.
+    /// Inserts at the captured position and returns that position (in
+    /// UTF-16 units, those used by accessibility), if it is known.
     @discardableResult
     func insert(_ text: String) throws -> Int? {
         let before = readValue()
@@ -121,21 +121,21 @@ struct AccessibilityTarget: @unchecked Sendable {
         do {
             try setString(element, kAXSelectedTextAttribute, text)
         } catch InjectionError.axRejected(_, .cannotComplete) {
-            // Délai dépassé : l'app a pu écrire quand même. Vérifier avant de
-            // se replier, sinon le texte arriverait deux fois.
+            // Timeout exceeded: the app may have written anyway. Verify before
+            // falling back, otherwise the text would arrive twice.
             log.warning("accessibility write timed out, verifying")
             timedOut = true
         }
 
-        // Chromium/Electron déclarent l'attribut modifiable et renvoient
-        // .success sans rien insérer : relire le champ pour s'en assurer.
-        // L'écriture y est asynchrone, d'où quelques relectures espacées.
+        // Chromium/Electron declare the attribute writable and return
+        // .success without inserting anything: re-read the field to make sure.
+        // Writing there is asynchronous, hence a few spaced-out re-reads.
         for attempt in 0..<Self.verifyAttempts {
             switch Self.verdict(before: before, after: readValue()) {
             case .landed: return location
-            // Sans délai dépassé, l'accessibilité a dit oui : la croire.
-            // Après un délai dépassé et un champ illisible, rien ne prouve
-            // l'écriture : mieux vaut un repli qu'une dictée perdue.
+            // Without a timeout, accessibility said yes: trust it.
+            // After a timeout and an unreadable field, nothing proves the
+            // write happened: better to fall back than lose a dictation.
             case .unknown: if !timedOut { return location }
             case .ignored: break
             }
@@ -146,9 +146,9 @@ struct AccessibilityTarget: @unchecked Sendable {
         throw InjectionError.writeIgnored
     }
 
-    /// Retire un texte inséré plus tôt, à condition qu'il soit encore
-    /// intact à sa place : jamais d'effacement à l'aveugle. `restoring`
-    /// reprend sa place (la sélection que l'insertion avait remplacée).
+    /// Removes text inserted earlier, provided it is still intact in
+    /// place: never a blind erase. `restoring` takes its place (the
+    /// selection that the insertion had replaced).
     func remove(_ text: String, at location: Int, restoring: String = "") -> Bool {
         guard let value = readValue() as NSString? else { return false }
         let length = (text as NSString).length
@@ -166,8 +166,8 @@ struct AccessibilityTarget: @unchecked Sendable {
         }
     }
 
-    /// Le texte qui précède la position d'insertion, pour décider de
-    /// l'espace et de la majuscule. `nil` si le champ ne le dit pas.
+    /// The text preceding the insertion position, to decide on
+    /// spacing and capitalization. `nil` if the field doesn't say.
     func textBeforeInsertion(maxLength: Int = 64) -> String? {
         guard let value = readValue() as NSString? else { return nil }
         let location = selectedRange?.location
@@ -177,7 +177,7 @@ struct AccessibilityTarget: @unchecked Sendable {
         return value.substring(with: NSRange(location: start, length: location - start))
     }
 
-    /// Le texte sélectionné au moment de la capture (mode commande).
+    /// The text selected at the moment of capture (command mode).
     func selectedText() -> String? {
         var value: CFTypeRef?
         let error = AXUIElementCopyAttributeValue(
@@ -193,8 +193,8 @@ struct AccessibilityTarget: @unchecked Sendable {
     private static let verifyAttempts = 6
     private static let verifyDelayUs: UInt32 = 50_000
 
-    /// Contenu inchangé après l'écriture : le champ l'a ignorée. Contenu
-    /// illisible : impossible de trancher, on fait confiance au succès AX.
+    /// Content unchanged after writing: the field ignored it. Unreadable
+    /// content: impossible to decide, so we trust the AX success.
     static func verdict(before: String?, after: String?) -> Verdict {
         guard let before, let after else { return .unknown }
         return before == after ? .ignored : .landed
@@ -242,13 +242,13 @@ struct AccessibilityTarget: @unchecked Sendable {
     }
 }
 
-/// Cible capturée au moment où la dictée démarre : le champ éditable et
-/// l'application au premier plan (qui détermine le style de polissage).
+/// Target captured at the moment dictation starts: the editable field and
+/// the frontmost application (which determines the polish style).
 final class CapturedTextTarget: Sendable {
     let accessibility: AccessibilityTarget?
     let bundleID: String?
     let appName: String?
-    /// Texte sélectionné au déclenchement (mode commande).
+    /// Text selected at trigger time (command mode).
     let selection: String?
 
     init(accessibility: AccessibilityTarget?, bundleID: String?, appName: String?,
@@ -259,8 +259,8 @@ final class CapturedTextTarget: Sendable {
         self.selection = selection
     }
 
-    /// L'app au premier plan se lit tout de suite ; le champ, lui, demande
-    /// d'interroger l'app cible, donc sur la file d'accessibilité.
+    /// The frontmost app is read right away; the field, however, requires
+    /// querying the target app, hence on the accessibility queue.
     static func capture(
         accessibility: Bool, bundleID: String?, appName: String?, readSelection: Bool = true
     ) async -> CapturedTextTarget {
@@ -277,7 +277,7 @@ final class CapturedTextTarget: Sendable {
 
 }
 
-// MARK: - Injection dans le focus courant
+// MARK: - Injection into current focus
 
 enum TextInjector {
     private static let chunkSize = 100
@@ -307,11 +307,11 @@ enum TextInjector {
         return .clipboard
     }
 
-    // MARK: Couche 0 — frappe clavier simulée
+    // MARK: Layer 0 — simulated keyboard typing
 
-    /// Simule la frappe sans toucher au presse-papiers. Tranches de
-    /// 100 graphèmes avec 50 ms de pause pour ne pas casser la composition IME ;
-    /// chaque CGEvent porte au plus 20 unités UTF-16.
+    /// Simulates typing without touching the clipboard. Chunks of
+    /// 100 graphemes with a 50 ms pause to avoid breaking IME composition;
+    /// each CGEvent carries at most 20 UTF-16 units.
     private static func typeText(_ text: String) -> Bool {
         guard let source = CGEventSource(stateID: .combinedSessionState) else {
             return false
@@ -338,8 +338,8 @@ enum TextInjector {
                 let down = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true),
                 let up = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: false)
             else { return false }
-            // Sans drapeaux explicites, l'événement hérite des touches encore
-            // tenues (le ⌥ du raccourci) et l'app peut y voir un raccourci.
+            // Without explicit flags, the event inherits keys still held
+            // down (the shortcut's ⌥) and the app may read it as a shortcut.
             down.flags = []
             up.flags = []
             down.keyboardSetUnicodeString(stringLength: slice.count, unicodeString: slice)
@@ -351,24 +351,24 @@ enum TextInjector {
         return true
     }
 
-    // MARK: Couche 2 — presse-papiers + Cmd+V
+    // MARK: Layer 2 — clipboard + Cmd+V
 
-    /// Délai avant de rendre le presse-papiers. Une app Electron chargée
-    /// lit le contenu bien après le ⌘V ; restauré trop tôt (100 ms
-    /// auparavant), c'est l'ancien contenu qu'elle collait.
+    /// Delay before restoring the clipboard. A busy Electron app reads
+    /// the content well after ⌘V; restored too early (100 ms
+    /// previously), it would paste the old content.
     private static let restoreDelay: DispatchTimeInterval = .milliseconds(700)
 
-    /// Types reconnus par les gestionnaires de presse-papiers
-    /// (nspasteboard.org) : contenu éphémère, à ne pas archiver.
+    /// Types recognized by clipboard managers
+    /// (nspasteboard.org): ephemeral content, not to be archived.
     private static let transientTypes: [NSPasteboard.PasteboardType] = [
         NSPasteboard.PasteboardType("org.nspasteboard.TransientType"),
         NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType"),
         NSPasteboard.PasteboardType("org.nspasteboard.AutoGeneratedType"),
     ]
 
-    /// Restauration en attente : un second collage avant qu'elle n'ait lieu
-    /// doit reprendre le contenu d'origine, pas notre propre texte.
-    /// Lu et écrit uniquement sur le fil principal.
+    /// Pending restore: a second paste before it happens must pick up
+    /// the original content, not our own text.
+    /// Read and written only on the main thread.
     @MainActor private static var pendingRestore: (snapshot: PasteboardSnapshot?, change: Int)?
     @MainActor private static var restoreGeneration = 0
 
@@ -401,14 +401,14 @@ enum TextInjector {
         let ok = pressKey(0x09, flags: .maskCommand)
 
         DispatchQueue.main.asyncAfter(deadline: .now() + restoreDelay) {
-            // Un collage plus récent s'occupera de la restauration.
+            // A more recent paste will take care of the restore.
             let isLatest = MainActor.assumeIsolated {
                 guard restoreGeneration == generation else { return false }
                 pendingRestore = nil
                 return true
             }
             guard isLatest else { return }
-            // Quelqu'un a copié entre-temps : son contenu prime sur le nôtre.
+            // Someone copied something in the meantime: their content takes priority over ours.
             guard NSPasteboard.general.changeCount == ourChange else {
                 log.info("clipboard changed meanwhile, not restoring")
                 return
@@ -424,20 +424,20 @@ enum TextInjector {
         return ok
     }
 
-    /// ⌘Z dans l'app au premier plan.
+    /// ⌘Z in the frontmost app.
     static func pressUndo() {
         waitForModifierRelease()
-        // 0x06 = 'z' physique.
+        // 0x06 = physical 'z'.
         _ = pressKey(0x06, flags: .maskCommand)
     }
 
-    /// 0x09 = 'v', 0x06 = 'z' : touches physiques, indépendantes de la
-    /// disposition clavier.
+    /// 0x09 = 'v', 0x06 = 'z': physical keys, independent of the
+    /// keyboard layout.
     private static func pressKey(_ key: CGKeyCode, flags: CGEventFlags) -> Bool {
         guard let source = CGEventSource(stateID: .combinedSessionState) else {
             return false
         }
-        // Laisser l'app cible reprendre le focus avant de recevoir les touches.
+        // Let the target app regain focus before receiving the keys.
         usleep(20_000)
         guard
             let down = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: true),
@@ -450,9 +450,9 @@ enum TextInjector {
         return true
     }
 
-    /// Attend que l'utilisateur ait lâché ⌘ ⌥ ⌃ ⇧ (une seconde au plus) :
-    /// une frappe simulée pendant que le ⌥ du raccourci est encore tenu
-    /// devient un caractère spécial ou un raccourci de l'app.
+    /// Waits for the user to release ⌘ ⌥ ⌃ ⇧ (at most one second):
+    /// a simulated keystroke while the shortcut's ⌥ is still held
+    /// becomes a special character or an app shortcut.
     static func waitForModifierRelease(timeout: TimeInterval = 1.0) {
         let held: CGEventFlags = [.maskCommand, .maskAlternate, .maskControl, .maskShift]
         let deadline = Date().addingTimeInterval(timeout)
@@ -463,13 +463,13 @@ enum TextInjector {
     }
 }
 
-// MARK: - Sauvegarde/restauration du presse-papiers
+// MARK: - Clipboard save/restore
 
-/// Copie intégrale du presse-papiers (tous items, tous types), restituée
-/// après le collage pour que l'utilisateur ne perde rien.
+/// Full copy of the clipboard (all items, all types), restored
+/// after the paste so the user loses nothing.
 ///
-/// Créée et restituée sur le fil principal uniquement ; elle ne fait que
-/// transiter par le fil d'insertion.
+/// Created and restored on the main thread only; it merely passes
+/// through the insertion thread.
 private struct PasteboardSnapshot: @unchecked Sendable {
     private enum Value {
         case plist(Any)

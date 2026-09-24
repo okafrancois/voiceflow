@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Premier lancement : autorisations, langue, raccourci, essai. Les étapes
-/// suivent l'ordre de ce qui bloque réellement la dictée.
+/// First launch: permissions, language, shortcut, try it out. The steps
+/// follow the order of what actually blocks dictation.
 struct OnboardingView: View {
     @ObservedObject var state: AppState
     var finish: () -> Void
@@ -161,8 +161,8 @@ struct OnboardingView: View {
         }
     }
 
-    /// Le micro passe par une boîte système ; l'accessibilité par l'invite
-    /// d'Apple, qui ouvre elle-même les Réglages Système.
+    /// The mic goes through a system dialog; accessibility through Apple's
+    /// prompt, which itself opens System Settings.
     private func request(_ pane: String) {
         if pane.contains("Microphone") {
             Task { await state.requestMicrophone() }

@@ -1,27 +1,27 @@
 #!/bin/zsh
-# Build signé Developer ID + notarisation + DMG.
+# Developer ID signed build + notarization + DMG.
 #
-# Prérequis (une fois) :
-#   1. Compte Apple Developer, certificat « Developer ID Application »
-#      installé dans le trousseau.
-#   2. Mot de passe d'app créé sur appleid.apple.com, puis :
+# Prerequisites (one time):
+#   1. Apple Developer account, "Developer ID Application" certificate
+#      installed in the keychain.
+#   2. App password created at appleid.apple.com, then:
 #        xcrun notarytool store-credentials voiceflow-notary \
-#          --apple-id "<votre identifiant Apple>" \
-#          --team-id "<votre Team ID>" \
-#          --password "<mot de passe d'app>"
+#          --apple-id "<your Apple ID>" \
+#          --team-id "<your Team ID>" \
+#          --password "<app password>"
 #
-# Usage : DEV_ID="Developer ID Application: Nom (TEAMID)" ./release.sh
+# Usage: DEV_ID="Developer ID Application: Name (TEAMID)" ./release.sh
 set -euo pipefail
 cd "$(dirname "$0")"
 
-# Identité de signature : celle du trousseau, sauf si DEV_ID la précise.
+# Signing identity: the keychain's, unless DEV_ID specifies one.
 DEV_ID="${DEV_ID:-$(security find-identity -v -p codesigning 2>/dev/null \
 	| grep "Developer ID Application" | head -1 | awk '{print $2}')}"
 if [[ -z "$DEV_ID" ]]; then
-	echo "Aucun certificat « Developer ID Application » dans le trousseau." >&2
+	echo "No \"Developer ID Application\" certificate in the keychain." >&2
 	exit 1
 fi
-echo "Signature : $DEV_ID"
+echo "Signature: $DEV_ID"
 
 NOTARY_PROFILE="${NOTARY_PROFILE:-voiceflow-notary}"
 
@@ -30,8 +30,8 @@ NOTARY_PROFILE="${NOTARY_PROFILE:-voiceflow-notary}"
 APP="dist/VoiceFlow.app"
 DMG="dist/VoiceFlow.dmg"
 
-# Le durcissement d'exécution est exigé pour la notarisation ; seule
-# l'entrée audio est déclarée (l'app n'envoie aucun Apple Event).
+# Hardened runtime is required for notarization; only audio input
+# is declared (the app doesn't send any Apple Events).
 codesign --force --deep --options runtime --timestamp \
 	--entitlements voiceflow.entitlements \
 	--sign "$DEV_ID" "$APP"
@@ -40,26 +40,26 @@ codesign --verify --strict --verbose=2 "$APP"
 rm -f "$DMG"
 hdiutil create -volname "VoiceFlow" -srcfolder "$APP" -ov -format UDZO "$DMG"
 
-# La notarisation n'est nécessaire que pour distribuer l'app à d'autres.
-# Pour un usage local, la signature suffit.
+# Notarization is only needed to distribute the app to others.
+# For local use, signing is enough.
 if xcrun notarytool history --keychain-profile "$NOTARY_PROFILE" >/dev/null 2>&1; then
 	xcrun notarytool submit "$DMG" --keychain-profile "$NOTARY_PROFILE" --wait
 	xcrun stapler staple "$DMG"
 	xcrun stapler validate "$DMG"
-	echo "→ $DMG signé, notarisé et agrafé."
+	echo "→ $DMG signed, notarized and stapled."
 else
 	cat <<'MSG'
-→ DMG signé, mais non notarisé : aucun profil notarytool enregistré.
+→ DMG signed, but not notarized: no notarytool profile registered.
 
-Pour un usage sur cette machine, c'est suffisant.
-Pour distribuer l'app, enregistrez une fois vos identifiants App Store Connect
-(les mêmes que ceux du workflow GitHub) :
+For use on this machine, that's enough.
+To distribute the app, register your App Store Connect credentials once
+(the same ones as the GitHub workflow):
 
   xcrun notarytool store-credentials voiceflow-notary \
-    --key /chemin/vers/AuthKey_<KEYID>.p8 \
+    --key /path/to/AuthKey_<KEYID>.p8 \
     --key-id <APPLE_API_KEY> \
     --issuer <APPLE_API_ISSUER>
 
-puis relancez ./release.sh
+then run ./release.sh again
 MSG
 fi

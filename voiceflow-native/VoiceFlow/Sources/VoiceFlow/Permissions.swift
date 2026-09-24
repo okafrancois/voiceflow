@@ -2,12 +2,12 @@ import AVFoundation
 import ApplicationServices
 
 enum Permissions {
-    /// Demande l'accès micro (affiche la boîte système au premier lancement).
+    /// Requests microphone access (shows the system prompt on first launch).
     static func requestMicrophone() async -> Bool {
         await AVAudioApplication.requestRecordPermission()
     }
 
-    /// Lit l'état sans afficher d'invite.
+    /// Reads the state without showing a prompt.
     static func isAccessibilityTrusted() -> Bool {
         AXIsProcessTrusted()
     }
@@ -16,12 +16,12 @@ enum Permissions {
         AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
     }
 
-    /// Vérifie la confiance Accessibilité et affiche l'invite système si absente.
-    /// Nécessaire pour le CGEventTap (raccourci) et l'injection.
+    /// Checks Accessibility trust and shows the system prompt if absent.
+    /// Required for the CGEventTap (shortcut) and injection.
     @discardableResult
     static func ensureAccessibility() -> Bool {
-        // Valeur de `kAXTrustedCheckOptionPrompt`, variable globale C que
-        // Swift 6 refuse de lire hors isolation.
+        // Value of `kAXTrustedCheckOptionPrompt`, a C global variable that
+        // Swift 6 refuses to read outside isolation.
         let options = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
         return AXIsProcessTrustedWithOptions(options)
     }

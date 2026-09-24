@@ -1,8 +1,8 @@
 import Charts
 import SwiftUI
 
-/// Fenêtre principale, calquée sur l'app actuelle : barre latérale sombre de
-/// 248 px sans barre de titre, contenu spacieux à droite.
+/// Main window, modeled on the current app: dark 248 px sidebar with no
+/// title bar, roomy content area on the right.
 struct MainWindow: View {
     @ObservedObject var state: AppState
     @State private var page: Page = .dictation
@@ -71,8 +71,8 @@ struct MainWindow: View {
             .background(VF.background)
         }
         .frame(minWidth: 940, minHeight: 640)
-        // Rebâtir l'arbre à la bascule de langue : les libellés sont résolus
-        // pendant le rendu, il faut donc le refaire.
+        // Rebuild the tree when the language toggles: labels are resolved
+        // during rendering, so it has to happen again.
         .id(state.interfaceLanguage)
         .onAppear {
             state.refreshHistory()
@@ -98,7 +98,7 @@ struct MainWindow: View {
         }
     }
 
-    // MARK: Barre latérale
+    // MARK: Sidebar
 
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -110,7 +110,7 @@ struct MainWindow: View {
                     .foregroundStyle(VF.label)
             }
             .padding(.horizontal, 20)
-            .padding(.top, 24)   // s'ajoute à la zone de titre masquée
+            .padding(.top, 24)   // adds to the hidden title bar area
             .padding(.bottom, 20)
 
             Rectangle().fill(VF.border).frame(height: 1)
@@ -166,7 +166,7 @@ struct MainWindow: View {
     }
 }
 
-// MARK: - Dictée
+// MARK: - Dictation
 
 struct DictationPage: View {
     @ObservedObject var state: AppState
@@ -268,7 +268,7 @@ func number(_ value: Int) -> String {
     return formatter.string(from: NSNumber(value: value)) ?? "\(value)"
 }
 
-// MARK: - Statistiques
+// MARK: - Statistics
 
 struct StatisticsPage: View {
     @ObservedObject var state: AppState
@@ -295,7 +295,7 @@ struct StatisticsPage: View {
         }
     }
 
-    /// Relu quand la période change ou qu'une dictée arrive.
+    /// Recomputed when the period changes or a dictation comes in.
     private var reloadKey: String {
         "\(period.rawValue)-\(state.entries.first?.id ?? "")-\(state.entries.count)"
     }
@@ -369,7 +369,7 @@ struct StatisticsPage: View {
                         .font(.system(size: 17, weight: .medium))
                         .foregroundStyle(VF.label)
                     HStack(spacing: 0) {
-                        // Tous les moteurs réellement utilisés, du plus au moins sollicité.
+                        // All engines actually used, from most to least called on.
                         let engines = data.usage.byEngine.sorted { $0.value > $1.value }
                         if engines.isEmpty {
                             engineColumn("Apple", 0, 0)
@@ -399,7 +399,7 @@ struct StatisticsPage: View {
                 .foregroundStyle(VF.label)
                 .monospacedDigit()
             if total > 0 {
-                // Format traduisible : l'ordre des éléments varie d'une langue à l'autre.
+                // Translatable format: element order varies from one language to another.
                 Text(String(format: L.t("%d %% des dictées"),
                             Int(Double(count) / Double(total) * 100)))
                     .font(.system(size: 12))
@@ -410,7 +410,7 @@ struct StatisticsPage: View {
     }
 }
 
-// MARK: - Ligne de transcription
+// MARK: - Transcription row
 
 struct EntryRow: View {
     let entry: HistoryEntry
