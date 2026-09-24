@@ -22,6 +22,7 @@ enum AppTheme: String, CaseIterable, Identifiable {
         }
     }
 
+    @MainActor
     func apply() {
         NSApp.appearance = appearance
     }

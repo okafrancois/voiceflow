@@ -26,7 +26,7 @@ enum Diagnostics {
             guard let data = line.data(using: .utf8) else { return }
             if let handle = try? FileHandle(forWritingTo: url) {
                 defer { try? handle.close() }
-                try? handle.seekToEnd()
+                _ = try? handle.seekToEnd()
                 try? handle.write(contentsOf: data)
             } else {
                 try? data.write(to: url)
@@ -34,12 +34,24 @@ enum Diagnostics {
         }
     }
 
-    /// Repart à zéro quand le fichier devient gros : un journal de diagnostic
-    /// ne doit pas grossir sans fin.
+    /// Journal précédent, gardé à la rotation : effacer d'un coup perdait
+    /// justement les dernières dictées, celles qu'on vient investiguer.
+    static var previousFileURL: URL {
+        fileURL.deletingPathExtension().appendingPathExtension("previous.log")
+    }
+
+    /// Un journal de diagnostic ne doit pas grossir sans fin : au-delà de la
+    /// taille maximale, il devient le journal précédent.
     private static func rotate(_ url: URL) {
         let attributes = try? FileManager.default
             .attributesOfItem(atPath: url.path(percentEncoded: false))
         guard let size = attributes?[.size] as? Int, size > maxBytes else { return }
-        try? FileManager.default.removeItem(at: url)
+        let previous = previousFileURL
+        try? FileManager.default.removeItem(at: previous)
+        do {
+            try FileManager.default.moveItem(at: url, to: previous)
+        } catch {
+            try? FileManager.default.removeItem(at: url)
+        }
     }
 }

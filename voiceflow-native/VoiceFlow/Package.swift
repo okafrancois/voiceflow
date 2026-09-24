@@ -19,16 +19,17 @@ let package = Package(
             ],
             path: "Sources/VoiceFlow",
             swiftSettings: [
-                // Phase 1 : mode Swift 5 pour itérer vite ; on repassera en
-                // concurrence stricte une fois le squelette stabilisé.
-                .swiftLanguageMode(.v5)
+                // Concurrence stricte : les accès partagés entre le fil audio,
+                // le fil du raccourci et l'interface sont vérifiés à la
+                // compilation.
+                .swiftLanguageMode(.v6)
             ]
         ),
         .testTarget(
             name: "VoiceFlowTests",
             dependencies: ["VoiceFlow"],
             path: "Tests/VoiceFlowTests",
-            swiftSettings: [.swiftLanguageMode(.v5)]
+            swiftSettings: [.swiftLanguageMode(.v6)]
         )
     ]
 )

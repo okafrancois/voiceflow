@@ -12,7 +12,14 @@ import Foundation
 /// prend effet immédiatement, sans relancer l'application.
 enum L {
     /// Catalogue actif. `nil` = celui que macOS a choisi au lancement.
-    private static var override: Bundle?
+    /// Lu depuis n'importe quel fil (messages d'erreur des moteurs) : le
+    /// verrou protège l'échange.
+    nonisolated(unsafe) private static var storedOverride: Bundle?
+    private static let lock = NSLock()
+    private static var override: Bundle? {
+        get { lock.withLock { storedOverride } }
+        set { lock.withLock { storedOverride = newValue } }
+    }
 
     /// Langue forcée par l'utilisateur ; vide pour suivre le système.
     static func setLanguage(_ code: String) {
@@ -24,6 +31,15 @@ enum L {
             return
         }
         override = bundle
+    }
+
+    /// Langue de l'interface, pour formater noms de langues et dates.
+    static var locale: Locale {
+        if let code = override?.bundlePath.split(separator: "/").last?
+            .replacingOccurrences(of: ".lproj", with: "") {
+            return Locale(identifier: code)
+        }
+        return Locale(identifier: Bundle.main.preferredLocalizations.first ?? "fr")
     }
 
     /// Traduit une clé — le libellé français, qui sert aussi de valeur par

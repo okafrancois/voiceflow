@@ -124,7 +124,7 @@ struct OnboardingView: View {
                     HStack {
                         Text(L.t("Raccourci")).font(.system(size: 14)).foregroundStyle(VF.label)
                         Spacer()
-                        ShortcutRecorder(state: state, keyPath: \.dictateShortcut)
+                        ShortcutRecorder(state: state, keyPath: \.dictateShortcutSetting)
                     }
                     HStack {
                         Text(L.t("Déclenchement")).font(.system(size: 14)).foregroundStyle(VF.label)

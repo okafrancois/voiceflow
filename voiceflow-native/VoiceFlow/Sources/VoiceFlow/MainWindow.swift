@@ -273,6 +273,8 @@ func number(_ value: Int) -> String {
 struct StatisticsPage: View {
     @ObservedObject var state: AppState
     @State private var period: Period = .week
+    @State private var data: (usage: HistoryStore.Usage, daily: [HistoryStore.DayPoint]) =
+        (HistoryStore.Usage(), [])
 
     enum Period: String, CaseIterable, Identifiable {
         case week, month, all
@@ -293,9 +295,12 @@ struct StatisticsPage: View {
         }
     }
 
-    var body: some View {
-        let data = HistoryStore.shared.usage(days: period.days)
+    /// Relu quand la période change ou qu'une dictée arrive.
+    private var reloadKey: String {
+        "\(period.rawValue)-\(state.entries.first?.id ?? "")-\(state.entries.count)"
+    }
 
+    var body: some View {
         VStack(alignment: .leading, spacing: 24) {
             HStack(spacing: 8) {
                 ForEach(Period.allCases) { item in
@@ -327,16 +332,16 @@ struct StatisticsPage: View {
                     } else {
                         Chart(data.daily) { point in
                             AreaMark(
-                                x: .value("Jour", point.day, unit: .day),
-                                y: .value("Mots", point.words))
+                                x: .value(L.t("Jour"), point.day, unit: .day),
+                                y: .value(L.t("Mots"), point.words))
                             .foregroundStyle(LinearGradient(
                                 colors: [VF.label.opacity(0.14), VF.label.opacity(0.01)],
                                 startPoint: .top, endPoint: .bottom))
                             .interpolationMethod(.monotone)
 
                             LineMark(
-                                x: .value("Jour", point.day, unit: .day),
-                                y: .value("Mots", point.words))
+                                x: .value(L.t("Jour"), point.day, unit: .day),
+                                y: .value(L.t("Mots"), point.words))
                             .foregroundStyle(VF.label)
                             .lineStyle(StrokeStyle(lineWidth: 2))
                             .interpolationMethod(.monotone)
@@ -364,11 +369,25 @@ struct StatisticsPage: View {
                         .font(.system(size: 17, weight: .medium))
                         .foregroundStyle(VF.label)
                     HStack(spacing: 0) {
-                        engineColumn("Apple", data.usage.byEngine["apple"] ?? 0, data.usage.dictations)
-                        engineColumn("Whisper", data.usage.byEngine["whisper"] ?? 0, data.usage.dictations)
+                        // Tous les moteurs réellement utilisés, du plus au moins sollicité.
+                        let engines = data.usage.byEngine.sorted { $0.value > $1.value }
+                        if engines.isEmpty {
+                            engineColumn("Apple", 0, 0)
+                        }
+                        ForEach(engines, id: \.key) { engine in
+                            engineColumn(
+                                EngineChoice.historyDisplayName(engine.key),
+                                engine.value, data.usage.dictations)
+                        }
                     }
                 }
             }
+        }
+        .task(id: reloadKey) {
+            let days = period.days
+            data = await Task.detached(priority: .userInitiated) {
+                HistoryStore.shared.usage(days: days)
+            }.value
         }
     }
 
@@ -402,11 +421,11 @@ struct EntryRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                Text(entry.sttEngine == "whisper" ? "Whisper" : "Apple")
+                Text(EngineChoice.historyDisplayName(entry.sttEngine))
                     .font(.system(size: 12))
                     .foregroundStyle(VF.labelMuted)
                 Text(L.t("·")).foregroundStyle(VF.labelFaint)
-                Text(entry.language ?? "—")
+                Text(entry.language.map { state.displayName(for: $0) } ?? "—")
                     .font(.system(size: 12))
                     .foregroundStyle(VF.labelMuted)
                 if entry.polishApplied {
@@ -418,7 +437,7 @@ struct EntryRow: View {
                     Text(appName).font(.system(size: 12)).foregroundStyle(VF.labelMuted)
                 }
                 Spacer(minLength: 8)
-                Text(entry.createdAt.formatted(.relative(presentation: .numeric)))
+                Text(entry.createdAt.formatted(.relative(presentation: .numeric).locale(L.locale)))
                     .font(.system(size: 12))
                     .foregroundStyle(VF.labelFaint)
                 Image(systemName: expanded ? "chevron.up" : "chevron.down")

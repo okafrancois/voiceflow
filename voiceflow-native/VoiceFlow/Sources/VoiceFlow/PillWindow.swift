@@ -20,7 +20,11 @@ final class PillController {
     private var cancellables = Set<AnyCancellable>()
 
     private static let centerKey = "pillCenter"
+    /// Aucune dictée en cours.
     private var isHidden = true
+    /// Taille du contenu, remontée par la vue : elle grandit avec un message.
+    private var contentSize: NSSize?
+    private var noticeTask: Task<Void, Never>?
 
     func attach(to state: AppState) {
         guard panel == nil else { return }
@@ -51,6 +55,12 @@ final class PillController {
         self.glassView = glass
         self.hostingView = hosting
 
+        // `$notice` émet avant l'affectation : lire la valeur transmise.
+        state.$notice
+            .receive(on: RunLoop.main)
+            .sink { [weak self] notice in self?.noticeChanged(notice) }
+            .store(in: &cancellables)
+
         applyAppearance()
     }
 
@@ -63,14 +73,7 @@ final class PillController {
         resize()
         // Repositionner tout de suite si un ancrage est choisi.
         if state.pillPosition != .free {
-            let size = pillSize
-            let center = storedCenter()
-            panel.setFrame(
-                NSRect(
-                    x: (center.x - size.width / 2).rounded(),
-                    y: (center.y - size.height / 2).rounded(),
-                    width: size.width, height: size.height),
-                display: true)
+            place(panel, center: storedCenter())
         }
         refreshVisibility()
     }
@@ -85,7 +88,7 @@ final class PillController {
             panel.alphaValue = 1
             panel.orderFrontRegardless()
         case .whileActive:
-            if isHidden { panel.orderOut(nil) }
+            if isHidden, AppState.shared.notice == nil { panel.orderOut(nil) }
         }
     }
 
@@ -97,50 +100,101 @@ final class PillController {
         }
         switch phase {
         case .recording, .transcribing, .polishing:
+            let wasHidden = isHidden
             isHidden = false
-            resize()
-            panel.alphaValue = 0
+            if wasHidden {
+                // Chaque dictée s'affiche sur l'écran où l'on travaille.
+                if AppState.shared.pillPosition != .free {
+                    place(panel, center: storedCenter())
+                }
+                resize()
+                panel.alphaValue = 0
+            }
             panel.orderFrontRegardless()
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = 0.18
                 panel.animator().alphaValue = 1
             }
-        case .idle, .preparing:
+        case .idle:
             isHidden = true
-            // En mode « toujours », la pill reste à l'écran au repos.
-            guard AppState.shared.pillVisibility != .always else {
-                panel.alphaValue = 1
-                panel.orderFrontRegardless()
-                return
-            }
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = 0.15
-                panel.animator().alphaValue = 0
-            } completionHandler: {
-                // Une dictée a pu redémarrer pendant le fondu : ne pas
-                // masquer une pill redevenue utile.
-                Task { @MainActor in
-                    guard self.isHidden else { return }
-                    panel.orderOut(nil)
-                }
+            hideIfIdle()
+        }
+    }
+
+    /// Masque la pill si plus rien ne la justifie : ni dictée, ni message,
+    /// ni mode « toujours ».
+    private func hideIfIdle() {
+        guard let panel, isHidden, AppState.shared.notice == nil else { return }
+        // En mode « toujours », la pill reste à l'écran au repos.
+        guard AppState.shared.pillVisibility != .always else {
+            panel.alphaValue = 1
+            panel.orderFrontRegardless()
+            return
+        }
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.15
+            panel.animator().alphaValue = 0
+        } completionHandler: {
+            // Une dictée a pu redémarrer pendant le fondu : ne pas
+            // masquer une pill redevenue utile.
+            Task { @MainActor in
+                guard self.isHidden, AppState.shared.notice == nil else { return }
+                panel.orderOut(nil)
             }
         }
     }
 
-    /// Ajuste la taille du panneau au contenu, en gardant le centre fixe
-    /// pour que la pill grandisse symétriquement.
+    /// Un message s'affiche quelques secondes, même au repos : c'est souvent
+    /// là qu'une erreur arrive, fenêtre principale fermée.
+    private func noticeChanged(_ notice: Notice?) {
+        noticeTask?.cancel()
+        guard let panel, AppState.shared.pillVisibility != .never else { return }
+        guard let notice else {
+            hideIfIdle()
+            return
+        }
+        if isHidden {
+            if AppState.shared.pillPosition != .free { place(panel, center: storedCenter()) }
+            panel.orderFrontRegardless()
+        }
+        // Par l'animateur : un fondu de fermeture lancé juste avant (fin de
+        // dictée) écraserait sinon la valeur et laisserait la pill invisible.
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.12
+            panel.animator().alphaValue = 1
+        }
+        let duration: Duration = notice.kind == .error ? .seconds(5) : .seconds(2)
+        noticeTask = Task { @MainActor in
+            try? await Task.sleep(for: duration)
+            guard !Task.isCancelled, AppState.shared.notice?.id == notice.id else { return }
+            AppState.shared.notice = nil
+        }
+    }
+
     /// Taille de la pill : celle de l'original, calculée depuis le contenu
     /// (boîte de points 32 × 16 + marges 12 × 5) plutôt que déduite de la
     /// mise en page, qui donnait une capsule trop large.
     private static let baseSize = NSSize(width: 32 + 24, height: 16 + 10)
 
     private var pillSize: NSSize {
+        if let contentSize { return contentSize }
         let scale = AppState.shared.pillScale
         return NSSize(
             width: (Self.baseSize.width * scale).rounded(),
             height: (Self.baseSize.height * scale).rounded())
     }
 
+    /// La vue remonte sa taille idéale ; le panneau suit.
+    func contentSizeChanged(_ size: CGSize) {
+        let rounded = NSSize(width: size.width.rounded(.up), height: size.height.rounded(.up))
+        guard rounded.width > 0, rounded.height > 0, rounded != contentSize else { return }
+        contentSize = rounded
+        resize()
+    }
+
+    /// Ajuste la taille du panneau au contenu, en gardant le centre fixe
+    /// pour que la pill grandisse symétriquement — ou collée à son bord
+    /// pour un ancrage latéral.
     private func resize() {
         guard let panel, let glassView else { return }
         let size = pillSize
@@ -151,20 +205,32 @@ final class PillController {
         glassView.cornerRadius = size.height / 2
 
         guard size != panel.frame.size else { return }
-        let center = panel.isVisible
-            ? NSPoint(x: panel.frame.midX, y: panel.frame.midY)
-            : storedCenter()
+        let anchored = AppState.shared.pillPosition != .free
+        let center = anchored || !panel.isVisible
+            ? storedCenter(in: panel.screen)
+            : NSPoint(x: panel.frame.midX, y: panel.frame.midY)
+        place(panel, center: center)
+    }
+
+    private func place(_ panel: NSPanel, center: NSPoint) {
+        let size = pillSize
         panel.setFrame(
             NSRect(
                 x: (center.x - size.width / 2).rounded(),
                 y: (center.y - size.height / 2).rounded(),
-                width: size.width,
-                height: size.height),
+                width: size.width, height: size.height),
             display: true)
     }
 
-    private func storedCenter() -> NSPoint {
-        let frame = (NSScreen.main ?? NSScreen.screens[0]).visibleFrame
+    /// L'écran sous la souris, à défaut l'écran principal.
+    private static var activeScreen: NSScreen {
+        let mouse = NSEvent.mouseLocation
+        return NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) }
+            ?? NSScreen.main ?? NSScreen.screens[0]
+    }
+
+    private func storedCenter(in screen: NSScreen? = nil) -> NSPoint {
+        let frame = (screen ?? Self.activeScreen).visibleFrame
         let position = AppState.shared.pillPosition
         if position != .free {
             return position.center(in: frame, size: pillSize)
@@ -214,22 +280,61 @@ struct PillView: View {
         state.phase == .transcribing || state.phase == .polishing
     }
 
+    /// Texte affiché à côté des points : un message, sinon la transcription
+    /// en direct (moteur d'Apple) si l'option est active.
+    private var message: (text: String, color: Color)? {
+        if let notice = state.notice {
+            return (notice.text, notice.kind == .error
+                ? Color(nsColor: NSColor(hex: 0xFFB340)) : .white.opacity(0.9))
+        }
+        if state.showLivePreview, state.phase == .recording, !state.volatileTranscript.isEmpty {
+            return (state.volatileTranscript, .white.opacity(0.85))
+        }
+        return nil
+    }
+
     var body: some View {
-        AudioDots(
-            phase: state.phase,
-            level: state.audioLevels.last ?? 0)
-            // Marges de l'original : 0.75rem × 0.3125rem.
-            .padding(.horizontal, 12)
-            .padding(.vertical, 5)
-            .scaleEffect(state.pillScale)
-            .overlay {
-                if processing {
-                    BorderBeam()
-                }
+        let scale = state.pillScale
+        HStack(spacing: 8 * scale) {
+            AudioDots(
+                phase: state.phase,
+                level: state.audioLevels.last ?? 0)
+                .scaleEffect(scale)
+                .frame(width: 32 * scale, height: 16 * scale)
+            if let message {
+                Text(message.text)
+                    .font(.system(size: 12 * scale, weight: .medium))
+                    .foregroundStyle(message.color)
+                    .lineLimit(1)
+                    // Les derniers mots dits restent visibles.
+                    .truncationMode(.head)
+                    .frame(maxWidth: 340 * scale, alignment: .leading)
             }
-            .fixedSize()
-            // Les clics servent à déplacer la pill : laisser passer vers le verre.
-            .allowsHitTesting(false)
+        }
+        // Marges de l'original : 0.75rem × 0.3125rem.
+        .padding(.horizontal, 12 * scale)
+        .padding(.vertical, 5 * scale)
+        .overlay {
+            if processing {
+                BorderBeam()
+            }
+        }
+        .fixedSize()
+        .background(GeometryReader { proxy in
+            Color.clear.preference(key: PillSizeKey.self, value: proxy.size)
+        })
+        .onPreferenceChange(PillSizeKey.self) { size in
+            PillController.shared.contentSizeChanged(size)
+        }
+        // Les clics servent à déplacer la pill : laisser passer vers le verre.
+        .allowsHitTesting(false)
+    }
+}
+
+private struct PillSizeKey: PreferenceKey {
+    static let defaultValue: CGSize = .zero
+    static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
+        value = nextValue()
     }
 }
 

@@ -12,7 +12,7 @@ final class AudioResampler {
 
         var errorDescription: String? {
             switch self {
-            case .unavailable: "Conversion audio impossible vers le format du moteur"
+            case .unavailable: L.t("Conversion audio impossible vers le format du moteur")
             }
         }
     }

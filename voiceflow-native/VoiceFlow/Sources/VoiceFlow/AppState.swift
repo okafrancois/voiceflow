@@ -10,7 +10,7 @@ final class AppState: ObservableObject {
     static let shared = AppState()
 
     enum Phase {
-        case idle, preparing, recording, transcribing, polishing
+        case idle, recording, transcribing, polishing
     }
 
     @Published var phase: Phase = .idle {
@@ -18,6 +18,7 @@ final class AppState: ObservableObject {
             guard phase != oldValue else { return }
             // Appel direct : la pill doit apparaître avec le son, pas après.
             PillController.shared.apply(phase: phase)
+            hotkey.setDictationActive(phase != .idle)
         }
     }
     @Published var volatileTranscript = ""
@@ -42,22 +43,13 @@ final class AppState: ObservableObject {
     /// La langue du Mac (anglais, espagnol…) ne doit jamais dicter la langue
     /// de la voix : c'est un choix explicite de l'utilisateur.
     /// Valeur spéciale : détection automatique de la langue (moteurs Whisper).
-    static let autoLocaleID = "auto"
+    nonisolated static let autoLocaleID = "auto"
 
     @Published var dictationLocaleID: String = UserDefaults.standard.string(forKey: "dictationLocale") ?? "fr-FR" {
         didSet {
             UserDefaults.standard.set(dictationLocaleID, forKey: "dictationLocale")
-            guard dictationLocaleID != Self.autoLocaleID else { return }
-            let locale = Locale(identifier: dictationLocaleID)
-            Task {
-                do {
-                    try await TranscriptionSession.prepareAssets(for: locale)
-                } catch {
-                    await MainActor.run {
-                        self.lastError = "Modèle \(self.displayName(for: self.dictationLocaleID)) indisponible : \(error.localizedDescription)"
-                    }
-                }
-            }
+            guard dictationLocaleID != oldValue else { return }
+            Task { await preloadEngine() }
         }
     }
 
@@ -86,6 +78,8 @@ final class AppState: ObservableObject {
                 dictationLocaleID = equivalentLocale(dictationLocaleID)
                     ?? availableLocaleIDs.first ?? "en"
             }
+            guard engineChoiceID != oldValue else { return }
+            Task { await preloadEngine() }
         }
     }
 
@@ -103,7 +97,7 @@ final class AppState: ObservableObject {
                     try SMAppService.mainApp.unregister()
                 }
             } catch {
-                lastError = "Lancement à la connexion : \(error.localizedDescription)"
+                lastError = L.t("Lancement à la connexion") + " : \(error.localizedDescription)"
                 log.error("login item failed: \(error)")
             }
         }
@@ -171,6 +165,21 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// Afficher la transcription en direct dans la pill (moteur d'Apple).
+    @Published var showLivePreview = UserDefaults.standard.object(forKey: "showLivePreview") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(showLivePreview, forKey: "showLivePreview") }
+    }
+
+    /// Reconnaître « à la ligne », « nouveau paragraphe »… dans la dictée.
+    @Published var voiceCommandsEnabled = UserDefaults.standard.object(forKey: "voiceCommands") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(voiceCommandsEnabled, forKey: "voiceCommands") }
+    }
+
+    /// Raccorder espace et majuscule au texte qui précède le curseur.
+    @Published var smartSpacingEnabled = UserDefaults.standard.object(forKey: "smartSpacing") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(smartSpacingEnabled, forKey: "smartSpacing") }
+    }
+
     @Published var pillOpacity = UserDefaults.standard.object(forKey: "pillOpacity") as? Double ?? 0.55 {
         didSet {
             UserDefaults.standard.set(pillOpacity, forKey: "pillOpacity")
@@ -232,6 +241,20 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// Raccourci du mode commande : aucun par défaut.
+    @Published var commandShortcut: Shortcut? = ShortcutSettings.command {
+        didSet {
+            ShortcutSettings.command = commandShortcut
+            hotkey.reload()
+        }
+    }
+
+    /// Accès facultatif au raccourci de dictée, pour l'enregistreur commun.
+    var dictateShortcutSetting: Shortcut? {
+        get { dictateShortcut }
+        set { if let newValue { dictateShortcut = newValue } }
+    }
+
     /// Le polissage s'applique à chaque dictée quand il est activé — un seul
     /// raccourci, pas deux.
     @Published var polishEnabled = UserDefaults.standard.object(forKey: "polishEnabled") as? Bool ?? false {
@@ -263,25 +286,25 @@ final class AppState: ObservableObject {
     var triggerHint: String {
         let keys = dictateShortcut.display
         let base = switch triggerMode {
-        case .hold: String(localized: "Maintenez la combinaison en parlant, puis relâchez pour insérer.")
-        case .toggle: String(localized: "Pressez pour démarrer, à nouveau pour insérer.")
-        case .doubleTap: String(localized: "Double-pressez pour démarrer, une fois pour insérer.")
+        case .hold: L.t("Maintenez la combinaison en parlant, puis relâchez pour insérer.")
+        case .toggle: L.t("Pressez pour démarrer, à nouveau pour insérer.")
+        case .doubleTap: L.t("Double-pressez pour démarrer, une fois pour insérer.")
         }
         let suffix = polishEnabled
-            ? " " + String(localized: "Le texte est poli avant l'insertion.")
+            ? " " + L.t("Le texte est poli avant l'insertion.")
             : ""
         return "\(keys) · " + base + suffix
     }
 
     var readinessTitle: String {
-        if !microphoneGranted { return "Configurez votre microphone" }
-        if !accessibilityGranted { return "Autorisez l'accessibilité" }
+        if !microphoneGranted { return L.t("Configurez votre microphone") }
+        if !accessibilityGranted { return L.t("Autorisez l'accessibilité") }
         switch phase {
-        case .preparing: return "Préparation du modèle…"
-        case .recording: return "Enregistrement en cours"
-        case .transcribing: return "Transcription…"
-        case .polishing: return "Polissage…"
-        case .idle: return "Prêt à dicter"
+        case .idle where isPreparingModel: return L.t("Préparation du modèle…")
+        case .recording: return L.t("Enregistrement en cours")
+        case .transcribing: return L.t("Transcription…")
+        case .polishing: return L.t("Polissage…")
+        case .idle: return L.t("Prêt à dicter")
         }
     }
 
@@ -294,32 +317,41 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// Nom d'une langue, dans la langue de l'interface.
     func displayName(for localeID: String) -> String {
         if localeID == Self.autoLocaleID {
-            return "Détection automatique"
+            return L.t("Détection automatique")
         }
-        let french = Locale(identifier: "fr_FR")
-        let name = french.localizedString(forIdentifier: localeID) ?? localeID
+        let name = L.locale.localizedString(forIdentifier: localeID) ?? localeID
         return name.prefix(1).capitalized + name.dropFirst()
     }
 
     var menuBarSymbol: String {
+        if isPreparingModel, phase == .idle { return "arrow.down.circle" }
         switch phase {
-        case .idle: "waveform"
-        case .preparing: "arrow.down.circle"
-        case .recording: "waveform.circle.fill"
-        case .transcribing: "ellipsis.circle"
-        case .polishing: "sparkles"
+        case .idle: return "waveform"
+        case .recording: return "waveform.circle.fill"
+        case .transcribing: return "ellipsis.circle"
+        case .polishing: return "sparkles"
         }
     }
 
-    private let hotkey = HotkeyManager()
+    /// Modèle en cours de téléchargement ou de chargement. N'empêche pas de
+    /// dicter : l'audio attend le moteur (voir `EngineFeed`).
+    @Published var isPreparingModel = false
+
+    let hotkey = HotkeyManager()
     /// Polissage sur l'appareil, par le modèle du système.
-    private let polisher = FoundationModelsPolisher()
-    private var recorder: AudioRecorder?
-    private var engine: DictationEngine?
-    private var capturedTarget: CapturedTextTarget?
-    private var pendingPolish = false
+    let polisher = FoundationModelsPolisher()
+    /// Dictée en cours, du déclenchement à l'insertion.
+    var session: DictationSession?
+    /// Dernière insertion, pour pouvoir l'annuler.
+    @Published var lastInsertion: InsertionRecord?
+    /// Message bref affiché par la pill (erreur, annulation…). Les erreurs
+    /// restent aussi dans `lastError`, lisible dans les réglages.
+    @Published var notice: Notice?
+    var preparingCount = 0
+    var maintenanceTask: Task<Void, Never>?
 
     func bootstrap() async {
         L.setLanguage(interfaceLanguage)
@@ -340,346 +372,30 @@ final class AppState: ObservableObject {
             Task { @MainActor in AppState.shared.refreshPermissions() }
         }
 
-        hotkey.onStart = { [weak self] in
-            Task { @MainActor in self?.startDictation() }
-        }
+        hotkey.onStart = { [weak self] kind in self?.startDictation(kind: kind) }
         hotkey.onStop = { [weak self] in
             Task { @MainActor in await self?.stopDictation() }
         }
+        hotkey.onCancel = { [weak self] reason in
+            guard let self else { return }
+            // Une combinaison (Fn + ↑) n'annule qu'un enregistrement ; pendant
+            // le traitement, elle concerne l'app, pas la dictée précédente.
+            if reason == .chord, self.phase != .recording { return }
+            self.cancelDictation()
+        }
         hotkey.start()
 
-        // Appliquer la rétention au lancement.
-        if let days = retentionDays {
-            HistoryStore.shared.deleteOlderThan(days: days)
-        }
+        applyRetention()
+        scheduleDailyMaintenance()
 
         let supported = await TranscriptionSession.supportedLocales()
             .map { $0.identifier(.bcp47) }
         appleLocaleIDs = supported
 
-        // Pré-télécharge le modèle de la langue choisie pour ne pas payer
-        // l'attente à la première dictée.
-        phase = .preparing
-        do {
-            try await TranscriptionSession.prepareAssets(for: Locale(identifier: dictationLocaleID))
-        } catch {
-            lastError = "Modèle de transcription indisponible : \(error.localizedDescription)"
-            log.error("asset preparation failed: \(error)")
-        }
-        phase = .idle
+        // Charge le moteur choisi pour ne pas payer l'attente à la première
+        // dictée.
+        await preloadEngine()
 
         await UpdateChecker.shared.checkIfDue()
-    }
-
-    func toggleDictation() {
-        if phase == .recording {
-            Task { await stopDictation() }
-        } else if phase == .idle {
-            startDictation()
-        }
-    }
-
-    func startDictation() {
-        guard phase == .idle else { return }
-        guard microphoneGranted else {
-            // Jamais demandé (onboarding passé) : poser la question maintenant.
-            Task {
-                if await requestMicrophone() { startDictation() }
-            }
-            return
-        }
-        lastError = nil
-        volatileTranscript = ""
-        pendingPolish = polishEnabled
-
-        // Retour immédiat d'abord. Le préchargement du modèle et la capture
-        // d'accessibilité sont synchrones et peuvent bloquer plusieurs
-        // secondes — la capture interroge une autre application —, ce qui
-        // retardait l'apparition de la pill.
-        phase = .recording
-        playSound(start: true)
-        Diagnostics.log("dictée démarrée · moteur \(engineChoice.rawValue) · langue \(dictationLocaleID) · polissage \(polishEnabled)")
-
-        // La pill ne prend pas le focus : capturer juste après reste correct.
-        capturedTarget = CapturedTextTarget(captureAccessibility: insertInOriginalField)
-        if polishEnabled {
-            let template = PolishCatalog.resolved(polishTemplateID)
-            Task.detached(priority: .utility) { [polisher] in
-                polisher.prewarm(template: template)
-            }
-        }
-        Task {
-            do {
-                let isAuto = dictationLocaleID == Self.autoLocaleID
-                let engine: DictationEngine
-                if let whisperModel = engineChoice.whisperModel {
-                    // Un modèle anglais seul ne sait rien détecter d'autre :
-                    // lui laisser deviner la langue produirait du charabia.
-                    let language: String? = engineChoice.isEnglishOnly
-                        ? "en"
-                        : (isAuto
-                            ? nil
-                            : Locale(identifier: dictationLocaleID).language.languageCode?.identifier)
-                    engine = try WhisperEngine(model: whisperModel, language: language)
-                } else if let sherpa = engineChoice.sherpaModel {
-                    engine = try SherpaEngine(
-                        model: sherpa,
-                        language: isAuto
-                            ? nil
-                            : Locale(identifier: dictationLocaleID).language.languageCode?.identifier)
-                } else {
-                    // Le moteur système exige une langue explicite.
-                    let locale = Locale(identifier: isAuto ? "fr-FR" : dictationLocaleID)
-                    engine = try await TranscriptionSession(locale: locale) { volatile in
-                        Task { @MainActor in self.volatileTranscript = volatile }
-                    }
-                }
-                self.engine = engine
-
-                let recorder = AudioRecorder()
-                try recorder.start(
-                    options: AudioRecorder.Options(
-                        deviceID: inputDeviceID,
-                        noiseReduction: noiseReduction,
-                        trimSilence: trimSilence,
-                        silenceMargin: Float(silenceMargin)),
-                    onBuffer: { buffer in
-                        engine.feed(buffer)
-                    },
-                    onLevel: { level in
-                        Task { @MainActor in self.pushLevel(level) }
-                    }
-                )
-                self.recorder = recorder
-                self.recordingStart = Date()
-                log.info("dictation started (\(self.engineChoice.rawValue))")
-            } catch {
-                self.phase = .idle
-                self.lastError = "Démarrage impossible : \(error.localizedDescription)"
-                log.error("start failed: \(error)")
-            }
-        }
-    }
-
-    func stopDictation() async {
-        guard phase == .recording, let engine else { return }
-        let shouldPolish = pendingPolish
-        pendingPolish = false
-        phase = .transcribing
-        playSound(start: false)
-        let peak = recorder?.peakLevel ?? 0
-        recorder?.stop()
-        recorder = nil
-        let audioDurationMs = Int((recordingStart.map { -$0.timeIntervalSinceNow } ?? 0) * 1000)
-        recordingStart = nil
-        audioLevels = Array(repeating: 0, count: audioLevels.count)
-
-        // Silence absolu : inutile d'interroger le moteur, et surtout il faut
-        // le dire — macOS ne signale pas une autorisation micro manquante,
-        // il livre simplement des blocs vides.
-        Diagnostics.log("prise terminée · \(audioDurationMs) ms · crête \(String(format: "%.3f", peak))")
-        guard peak > 0.001 else {
-            self.engine = nil
-            phase = .idle
-            microphoneGranted = Permissions.isMicrophoneGranted()
-            lastError = microphoneGranted
-                ? L.t("Aucun son capté. Vérifiez que le micro choisi est le bon et qu'il n'est pas coupé.")
-                : L.t("Aucun son capté : VoiceFlow n'a pas l'autorisation micro. Réglages Système › Confidentialité › Microphone.")
-            log.error("no audio captured (peak 0) — microphone granted: \(self.microphoneGranted)")
-            return
-        }
-
-        do {
-            let sttStart = Date()
-            let text = try await engine.finish()
-            let sttDurationMs = Int(-sttStart.timeIntervalSinceNow * 1000)
-            self.engine = nil
-            volatileTranscript = ""
-            phase = .idle
-
-            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.isEmpty else {
-                // Silence complet plutôt qu'échec : le dire, sinon l'app a
-                // l'air de tourner dans le vide.
-                Diagnostics.log("transcription vide (coupe du silence : \(trimSilence))")
-            lastError = trimSilence
-                    ? L.t("Aucune parole reconnue. Si cela se répète, baissez la sensibilité de la coupe du silence, ou désactivez-la.")
-                    : L.t("Aucune parole reconnue.")
-                log.info("empty transcription (trimSilence=\(self.trimSilence))")
-                return
-            }
-
-            // Dictionnaire et extraits avant tout le reste.
-            let corrected = VocabularyStore.shared.apply(to: trimmed)
-
-            var final = corrected
-            var polishDurationMs: Int?
-            if shouldPolish {
-                phase = .polishing
-                let polishStart = Date()
-                // Une règle d'application l'emporte sur le style par défaut.
-                let templateID = VocabularyStore.shared
-                    .templateID(forBundleID: capturedTarget?.bundleID) ?? polishTemplateID
-                do {
-                    final = try await polisher.polish(
-                        corrected, template: PolishCatalog.resolved(templateID),
-                        locale: dictationLocaleID == Self.autoLocaleID ? nil : dictationLocaleID)
-                    polishDurationMs = Int(-polishStart.timeIntervalSinceNow * 1000)
-                    log.info("polished (\(templateID))")
-                } catch {
-                    // Le polissage ne doit jamais faire perdre la dictée :
-                    // on insère le texte brut et on signale l'échec.
-                    lastError = "Polissage ignoré, texte brut inséré : \(error.localizedDescription)"
-                    log.error("polish failed: \(error)")
-                }
-                phase = .idle
-            }
-            Diagnostics.log("transcrit \(trimmed.count) caractères en \(sttDurationMs) ms")
-            lastTranscript = final
-            insert(final)
-            CorrectionWatcher.watch(inserted: final, in: capturedTarget?.accessibility)
-
-            HistoryStore.shared.insert(
-                rawText: trimmed, finalText: final,
-                appName: capturedTarget?.appName,
-                engine: engineChoice.historyEngine,
-                model: engineChoice.historyModel,
-                language: dictationLocaleID,
-                audioDurationMs: audioDurationMs, sttDurationMs: sttDurationMs,
-                polishDurationMs: polishDurationMs,
-                polishEngine: polishDurationMs == nil ? nil : "foundation-models")
-            refreshHistory()
-        } catch {
-            self.engine = nil
-            phase = .idle
-            Diagnostics.log("échec transcription : \(error.localizedDescription)")
-            lastError = "Transcription échouée : \(error.localizedDescription)"
-            log.error("transcription failed: \(error)")
-        }
-    }
-
-    /// Vrai si l'interception clavier globale fonctionne (permission
-    /// Accessibilité accordée).
-    var hotkeyTapActive: Bool { hotkey.isTapActive }
-
-    /// Enregistre la prochaine combinaison pressée dans le raccourci donné.
-    func captureShortcut(into keyPath: ReferenceWritableKeyPath<AppState, Shortcut>,
-                         completion: @escaping () -> Void) {
-        hotkey.beginCapture { [weak self] keyCode, flags in
-            Task { @MainActor in
-                guard let self else { return }
-                defer { completion() }
-                // Échap annule. Une touche seule n'est acceptée que si elle ne
-                // sert pas à écrire : modificateur (Fn, ⌘…) ou touche de fonction.
-                guard keyCode != 53 else { return }
-                guard Shortcut.isAssignable(keyCode: keyCode, modifiers: flags) else {
-                    self.lastError = "Raccourci refusé : une touche ordinaire seule serait avalée partout. Utilisez Fn, une touche de fonction, ou ajoutez un modificateur."
-                    return
-                }
-                let relevant = flags.intersection([.control, .option, .shift, .command])
-                self[keyPath: keyPath] = Shortcut(keyCode: keyCode, modifiers: relevant.rawValue)
-            }
-        }
-    }
-
-    func cancelShortcutCapture() {
-        hotkey.endCapture()
-    }
-
-    func refreshHistory() {
-        entries = HistoryStore.shared.recent()
-        let today = HistoryStore.shared.todayStats()
-        todayStats = today.stats
-        hourlyWords = today.hourly
-        weekUsage = HistoryStore.shared.usage(days: 7).usage
-    }
-
-    /// Demande l'accès micro (boîte système, une seule fois dans la vie de
-    /// l'app). Appelé depuis l'onboarding ou à la première dictée.
-    @discardableResult
-    func requestMicrophone() async -> Bool {
-        let granted = await Permissions.requestMicrophone()
-        microphoneGranted = granted
-        if !granted {
-            lastError = "Accès micro refusé — Réglages Système › Confidentialité › Microphone"
-        }
-        return granted
-    }
-
-    /// Affiche l'invite d'accessibilité du système.
-    func requestAccessibility() {
-        Permissions.ensureAccessibility()
-        refreshPermissions()
-    }
-
-    /// Réévalue les permissions (à l'ouverture de la fenêtre).
-    func refreshPermissions() {
-        let wasGranted = accessibilityGranted
-        accessibilityGranted = Permissions.isAccessibilityTrusted()
-        microphoneGranted = Permissions.isMicrophoneGranted()
-
-        // L'autorisation vient d'arriver : mettre en place l'interception.
-        if accessibilityGranted, !wasGranted {
-            hotkey.restartIfNeeded()
-            log.info("accessibility granted, hotkey restarted")
-        }
-    }
-
-    func deleteEntry(_ entry: HistoryEntry) {
-        HistoryStore.shared.delete(id: entry.id)
-        refreshHistory()
-    }
-
-    func clearHistory() {
-        HistoryStore.shared.deleteAll()
-        refreshHistory()
-    }
-
-    func insertEntry(_ entry: HistoryEntry) {
-        insert(entry.finalText)
-    }
-
-    private func playSound(start: Bool) {
-        guard soundsEnabled else { return }
-        BeepPlayer.shared.play(start: start)
-    }
-
-    private func pushLevel(_ level: Float) {
-        audioLevels.removeFirst()
-        audioLevels.append(level)
-    }
-
-    /// « Coller » vise le champ qui a le focus maintenant, pas celui de la
-    /// dictée précédente : l'utilisateur a pu changer de champ ou d'app.
-    func reinsertLast() {
-        guard !lastTranscript.isEmpty else { return }
-        insert(lastTranscript, intoCapturedTarget: false)
-    }
-
-    private func insert(_ text: String, intoCapturedTarget: Bool = true) {
-        // Priorité à la cible accessibilité capturée au démarrage (insertion
-        // sans réactiver l'app) ; sinon injection dans le focus courant.
-        if intoCapturedTarget, let target = capturedTarget {
-            do {
-                _ = try target.insertBackground(text)
-                Diagnostics.log("inséré dans le champ d'origine")
-                return
-            } catch InjectionError.noCapturedTarget {
-                log.info("no captured field, injecting into the current focus")
-            } catch {
-                Diagnostics.log("champ d'origine indisponible (\(error.localizedDescription)), repli sur le focus courant")
-            }
-        }
-        DispatchQueue.global(qos: .userInitiated).async {
-            do {
-                let method = try TextInjector.insert(text)
-                Diagnostics.log("inséré via \(String(describing: method))")
-            } catch {
-                Task { @MainActor in
-                    self.lastError = "Insertion échouée : \(error.localizedDescription)"
-                }
-                log.error("injection failed: \(error)")
-            }
-        }
     }
 }

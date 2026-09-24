@@ -5,13 +5,13 @@ import WhisperKit
 /// Accumule l'audio en 16 kHz mono Float32 pendant l'enregistrement,
 /// transcrit en une passe à la fin. Le modèle est téléchargé depuis
 /// Hugging Face au premier usage puis mis en cache par WhisperKit.
-final class WhisperEngine: DictationEngine {
+final class WhisperEngine: DictationEngine, @unchecked Sendable {
     enum EngineError: LocalizedError {
         case emptyRecording
 
         var errorDescription: String? {
             switch self {
-            case .emptyRecording: "Aucun audio capturé"
+            case .emptyRecording: L.t("Aucun audio capturé")
             }
         }
     }
@@ -19,14 +19,17 @@ final class WhisperEngine: DictationEngine {
     private let model: String
     /// Code langue Whisper ("fr", "en", …) ; nil = détection automatique.
     private let language: String?
+    /// Termes du dictionnaire, passés au décodeur comme contexte.
+    private let hints: [String]
 
     private let resampler: AudioResampler
     private var samples: [Float] = []
     private let lock = NSLock()
 
-    init(model: String, language: String?) throws {
+    init(model: String, language: String?, hints: [String] = []) throws {
         self.model = model
         self.language = language
+        self.hints = hints
         resampler = AudioResampler(to: try AudioResampler.standard16k())
     }
 
@@ -55,11 +58,45 @@ final class WhisperEngine: DictationEngine {
         let options = DecodingOptions(
             task: .transcribe,
             language: language,
-            detectLanguage: language == nil
+            detectLanguage: language == nil,
+            promptTokens: Self.promptTokens(for: hints, tokenizer: kit.tokenizer)
         )
-        let results = try await kit.transcribe(audioArray: audio, decodeOptions: options)
-        return results.map(\.text).joined(separator: " ")
+        let results = try await WhisperKitCache.decoding.run {
+            try await kit.transcribe(audioArray: audio, decodeOptions: options)
+        }
+        let text = results.map(\.text).joined(separator: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
+        return Self.removingEchoedPrompt(text, hints: hints)
+    }
+}
+
+extension WhisperEngine {
+    /// Sur un audio presque muet, Whisper recrache parfois son prompt : la
+    /// liste du glossaire arrive alors comme si elle avait été dite.
+    static func removingEchoedPrompt(_ text: String, hints: [String]) -> String {
+        guard !hints.isEmpty else { return text }
+        let prompt = hints.prefix(40).joined(separator: ", ")
+        let normalized = text.trimmingCharacters(in: CharacterSet(charactersIn: " ."))
+        if normalized.caseInsensitiveCompare(prompt) == .orderedSame { return "" }
+        if text.hasPrefix(prompt) {
+            // Seulement la ponctuation qui suivait le prompt, pas celle de
+            // la fin de la dictée.
+            return String(text.dropFirst(prompt.count)
+                .drop(while: { " .,".contains($0) || $0.isWhitespace }))
+        }
+        return text
+    }
+
+    /// Le prompt initial de Whisper sert de contexte au décodeur : un
+    /// glossaire y fait écrire les noms propres et le jargon comme voulu.
+    /// Court exprès — au-delà d'une centaine de jetons, il prend la place
+    /// de l'audio dans la fenêtre du décodeur.
+    static func promptTokens(for hints: [String], tokenizer: WhisperTokenizer?) -> [Int]? {
+        guard !hints.isEmpty, let tokenizer else { return nil }
+        let text = " " + hints.prefix(40).joined(separator: ", ") + "."
+        let tokens = tokenizer.encode(text: text)
+            .filter { $0 < tokenizer.specialTokens.specialTokenBegin }
+        return tokens.isEmpty ? nil : Array(tokens.prefix(120))
     }
 }
 
@@ -118,9 +155,10 @@ final class WhisperModelStore: ObservableObject {
         let folder = try await WhisperKit.download(
             variant: variant,
             downloadBase: Self.downloadBase
-        ) { progress in
+        ) { @Sendable progress in
+            let fraction = progress.fractionCompleted
             Task { @MainActor in
-                WhisperModelStore.shared.downloading = (variant, progress.fractionCompleted)
+                WhisperModelStore.shared.downloading = (variant, fraction)
             }
         }
         remember(variant, folder: folder)
@@ -129,10 +167,17 @@ final class WhisperModelStore: ObservableObject {
     }
 }
 
-/// Garde les pipelines WhisperKit chargés : le chargement d'un modèle prend
-/// plusieurs secondes, on ne le paie qu'une fois par modèle et par session.
+/// Le pipeline n'est jamais utilisé par deux décodages à la fois : ils
+/// passent un par un par `WhisperKitCache.decoding`.
+extension WhisperKit: @retroactive @unchecked Sendable {}
+
+/// Garde le pipeline WhisperKit chargé : le chargement d'un modèle prend
+/// plusieurs secondes, on ne le paie qu'une fois par session. Un seul modèle
+/// reste en mémoire — un Large v3 pèse à lui seul autour de 3 Go.
 actor WhisperKitCache {
     static let shared = WhisperKitCache()
+    /// Un décodage à la fois sur le pipeline partagé.
+    static let decoding = SerialWork()
     private var instances: [String: WhisperKit] = [:]
     private var loading: [String: Task<WhisperKit, Error>] = [:]
 
@@ -154,7 +199,13 @@ actor WhisperKitCache {
         loading[model] = task
         defer { loading[model] = nil }
         let kit = try await task.value
-        instances[model] = kit
+        // Changer de modèle libère le précédent ; une dictée qui l'utilise
+        // encore garde sa propre référence jusqu'au bout.
+        instances = [model: kit]
         return kit
+    }
+
+    func preload(model: String) async throws {
+        _ = try await instance(model: model)
     }
 }

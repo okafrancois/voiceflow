@@ -30,8 +30,8 @@ NOTARY_PROFILE="${NOTARY_PROFILE:-voiceflow-notary}"
 APP="dist/VoiceFlow.app"
 DMG="dist/VoiceFlow.dmg"
 
-# Le durcissement d'exécution est exigé pour la notarisation ; les
-# autorisations micro et Apple Events sont déclarées ici.
+# Le durcissement d'exécution est exigé pour la notarisation ; seule
+# l'entrée audio est déclarée (l'app n'envoie aucun Apple Event).
 codesign --force --deep --options runtime --timestamp \
 	--entitlements voiceflow.entitlements \
 	--sign "$DEV_ID" "$APP"

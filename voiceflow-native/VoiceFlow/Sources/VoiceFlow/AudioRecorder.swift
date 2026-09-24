@@ -9,14 +9,23 @@ import CoreAudio
 /// de voix.
 final class AudioRecorder {
     private let engine = AVAudioEngine()
-    private var trimmer = SilenceTrimmer()
     private var onStopped: (() -> Void)?
     private(set) var isRunning = false
+
+    /// Ce que le fil audio écrit et que le fil principal lit.
+    private struct Meter {
+        var trimmer = SilenceTrimmer()
+        var peak: Float = 0
+        var passed = 0
+        var dropped = 0
+    }
+    private let lock = NSLock()
+    private var meter = Meter()
 
     /// Niveau le plus fort entendu pendant la prise. Reste à zéro quand macOS
     /// renvoie du silence — ce qu'il fait, sans erreur, si l'autorisation
     /// micro manque ou si l'entrée est coupée.
-    private(set) var peakLevel: Float = 0
+    var peakLevel: Float { lock.withLock { meter.peak } }
 
     struct Options {
         var deviceID: AudioDeviceID = AudioDevices.systemDefaultID
@@ -43,38 +52,48 @@ final class AudioRecorder {
         // d'écho, sans modèle à embarquer.
         do {
             try input.setVoiceProcessingEnabled(options.noiseReduction)
+            if options.noiseReduction {
+                // Le traitement vocal baisse par défaut le son des autres
+                // apps comme pour un appel : pendant une dictée, la musique
+                // n'a pas à s'effondrer.
+                input.voiceProcessingOtherAudioDuckingConfiguration =
+                    AVAudioVoiceProcessingOtherAudioDuckingConfiguration(
+                        enableAdvancedDucking: false, duckingLevel: .min)
+            }
         } catch {
             log.warning("voice processing unavailable: \(error.localizedDescription)")
         }
 
-        trimmer = SilenceTrimmer(margin: options.silenceMargin)
+        lock.withLock { meter = Meter(trimmer: SilenceTrimmer(margin: options.silenceMargin)) }
         let trimSilence = options.trimSilence
 
         // Le format doit être relu après le changement de périphérique.
         let format = input.outputFormat(forBus: 0)
-        peakLevel = 0
-        var passed = 0
-        var dropped = 0
         input.installTap(onBus: 0, bufferSize: 4096, format: format) { [weak self] buffer, _ in
             let level = Self.level(of: buffer)
             onLevel?(level)
             guard let self else { return }
-            self.peakLevel = max(self.peakLevel, level)
-            if trimSilence, !self.trimmer.shouldPass(level: level) {
-                dropped += 1
-                return
+            let pass: Bool = self.lock.withLock {
+                self.meter.peak = max(self.meter.peak, level)
+                if trimSilence, !self.meter.trimmer.shouldPass(level: level) {
+                    self.meter.dropped += 1
+                    return false
+                }
+                self.meter.passed += 1
+                return true
             }
-            passed += 1
-            onBuffer(buffer)
+            if pass { onBuffer(buffer) }
         }
         onStopped = { [weak self] in
-            let total = max(1, passed + dropped)
+            guard let self else { return }
+            let meter = self.lock.withLock { self.meter }
+            let total = max(1, meter.passed + meter.dropped)
             Diagnostics.log(
-                "audio · \(passed) blocs transmis, \(dropped) coupés "
-                + "(\(dropped * 100 / total) %) · "
-                + "crête \(String(format: "%.3f", self?.peakLevel ?? 0)) · "
-                + "plancher \(String(format: "%.3f", self?.trimmer.noiseFloor ?? 0)) · "
-                + "seuil \(String(format: "%.3f", self?.trimmer.gate ?? 0)) · "
+                "audio · \(meter.passed) blocs transmis, \(meter.dropped) coupés "
+                + "(\(meter.dropped * 100 / total) %) · "
+                + "crête \(String(format: "%.3f", meter.peak)) · "
+                + "plancher \(String(format: "%.3f", meter.trimmer.noiseFloor)) · "
+                + "seuil \(String(format: "%.3f", meter.trimmer.gate)) · "
                 + "bruit \(options.noiseReduction) · silence \(trimSilence)")
         }
 

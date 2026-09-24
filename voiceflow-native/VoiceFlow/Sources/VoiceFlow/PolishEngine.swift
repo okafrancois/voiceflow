@@ -99,7 +99,7 @@ enum PolishCatalog {
     }
 
     static func name(_ id: String) -> String {
-        definitions.first { $0.id == id }?.name ?? id
+        definitions.first { $0.id == id }.map { L.t($0.name) } ?? id
     }
 
     /// Le style tel qu'il sera réellement envoyé au modèle.
@@ -171,7 +171,70 @@ enum PolishGuard {
     }
 }
 
-protocol PolishEngine {
+/// Découpe d'un texte long en morceaux polis séparément.
+///
+/// Le modèle du système a une fenêtre de contexte réduite : consignes,
+/// dictée et réponse doivent y tenir ensemble. Au-delà de quelques centaines
+/// de mots, le polissage échouait et la dictée partait brute. On coupe entre
+/// deux phrases, on garde à l'identique ce qui les séparait.
+enum PolishChunker {
+    struct Chunk: Equatable {
+        let text: String
+        /// Ce qui suivait le morceau dans l'original (espace, saut de ligne).
+        let separator: String
+    }
+
+    static let defaultMaxWords = 250
+
+    static func chunks(of text: String, maxWords: Int = defaultMaxWords) -> [Chunk] {
+        let units = sentences(of: text)
+        var chunks: [Chunk] = []
+        var current: [Chunk] = []
+        var words = 0
+        for unit in units {
+            let count = PolishGuard.wordCount(unit.text)
+            if !current.isEmpty, words + count > maxWords {
+                chunks.append(merge(current))
+                current = []
+                words = 0
+            }
+            current.append(unit)
+            words += count
+        }
+        if !current.isEmpty { chunks.append(merge(current)) }
+        return chunks
+    }
+
+    static func join(_ texts: [String], like chunks: [Chunk]) -> String {
+        zip(texts, chunks).map { $0 + $1.separator }.joined()
+    }
+
+    private static func merge(_ units: [Chunk]) -> Chunk {
+        let body = units.dropLast().map { $0.text + $0.separator }.joined()
+        return Chunk(text: body + (units.last?.text ?? ""), separator: units.last?.separator ?? "")
+    }
+
+    /// Phrases, chacune avec l'espace qui la suit.
+    private static func sentences(of text: String) -> [Chunk] {
+        guard let regex = try? NSRegularExpression(pattern: #"(?<=[.!?…])\s+"#) else {
+            return [Chunk(text: text, separator: "")]
+        }
+        let nsText = text as NSString
+        var units: [Chunk] = []
+        var start = 0
+        for match in regex.matches(in: text, range: NSRange(location: 0, length: nsText.length)) {
+            let sentence = nsText.substring(with: NSRange(location: start, length: match.range.location - start))
+            units.append(Chunk(text: sentence, separator: nsText.substring(with: match.range)))
+            start = match.range.location + match.range.length
+        }
+        if start < nsText.length {
+            units.append(Chunk(text: nsText.substring(from: start), separator: ""))
+        }
+        return units
+    }
+}
+
+protocol PolishEngine: Actor {
     /// Réduit la latence perçue en chargeant le modèle pendant la dictée.
     func prewarm(template: PolishTemplate)
     /// `locale` est l'identifiant de langue de dictée, `nil` en détection
@@ -181,23 +244,29 @@ protocol PolishEngine {
 
 /// Moteur de polissage local : Foundation Models (Apple Intelligence),
 /// entièrement sur l'appareil. Aucun téléchargement, aucune clé d'API.
-final class FoundationModelsPolisher: PolishEngine {
+///
+/// Un acteur : la session préchauffée est posée au démarrage de la dictée et
+/// reprise à la fin, depuis des tâches différentes.
+actor FoundationModelsPolisher: PolishEngine {
     enum PolishError: LocalizedError {
         case unavailable(String)
         case contentLost
         case languageChanged
         case refused
+        case emptyResult
 
         var errorDescription: String? {
             switch self {
             case .unavailable(let reason):
-                "Apple Intelligence indisponible (\(reason)) — activer dans Réglages Système › Apple Intelligence"
+                L.t("Apple Intelligence indisponible — activer dans Réglages Système › Apple Intelligence") + " (\(reason))"
             case .contentLost:
-                "le modèle a répondu au texte au lieu de le reformuler"
+                L.t("le modèle a répondu au texte au lieu de le reformuler")
             case .languageChanged:
-                "le modèle a traduit le texte au lieu de le reformuler"
+                L.t("le modèle a traduit le texte au lieu de le reformuler")
             case .refused:
-                "Apple Intelligence a refusé ce texte (filtre de contenu)"
+                L.t("Apple Intelligence a refusé ce texte (filtre de contenu)")
+            case .emptyResult:
+                L.t("le modèle n'a rien rendu")
             }
         }
     }
@@ -231,6 +300,21 @@ final class FoundationModelsPolisher: PolishEngine {
         let expected = locale.flatMap { Locale(identifier: $0).language.languageCode }
             .map { NLLanguage($0.identifier) }
 
+        let chunks = PolishChunker.chunks(of: text)
+        guard chunks.count > 1 else {
+            return try await polishChunk(text, template: template, expected: expected)
+        }
+        Diagnostics.log("polissage en \(chunks.count) morceaux")
+        var polished: [String] = []
+        for chunk in chunks {
+            polished.append(try await polishChunk(chunk.text, template: template, expected: expected))
+        }
+        return PolishChunker.join(polished, like: chunks)
+    }
+
+    private func polishChunk(
+        _ text: String, template: PolishTemplate, expected: NLLanguage?
+    ) async throws -> String {
         let first = try await run(text, template: template, session: takePrewarmed(for: template))
         if let verdict = reject(raw: text, polished: first, template: template, expected: expected) {
             // Une session neuve et un second tirage suffisent le plus souvent :
@@ -278,6 +362,35 @@ final class FoundationModelsPolisher: PolishEngine {
             // anodines ; son message brut n'apprend rien à l'utilisateur.
             guard case .guardrailViolation = error else { throw error }
             Diagnostics.log("polissage refusé par le filtre de contenu Apple")
+            throw PolishError.refused
+        }
+    }
+
+    // MARK: - Mode commande
+
+    private static let commandInstructions = """
+        You edit text on the user's behalf. The user gives a spoken instruction and, optionally, a text selected in their document.
+        When a selection is given, apply the instruction to it and return only the transformed text, nothing else.
+        When no selection is given, write the text the instruction asks for and return only that text.
+        Keep the language of the selection unless the instruction asks for another one. Never add explanations, quotes, greetings or sign-offs that were not requested. Output plain text without emphasis, tables, code fences or blockquotes.
+        """
+
+    /// Applique une consigne dite à voix haute à un texte sélectionné, ou
+    /// rédige à partir de la consigne seule.
+    func transform(selection: String?, instruction: String) async throws -> String {
+        try Self.checkAvailability()
+        var prompt = "Instruction: \(instruction)"
+        if let selection {
+            prompt += "\n\nSelected text:\n" + PolishCatalog.userTurn(for: selection)
+        }
+        let session = LanguageModelSession(instructions: Self.commandInstructions)
+        do {
+            let response = try await session.respond(to: prompt, options: Self.options)
+            let output = PolishCatalog.unwrap(response.content)
+            guard !output.isEmpty else { throw PolishError.emptyResult }
+            return output
+        } catch let error as LanguageModelSession.GenerationError {
+            guard case .guardrailViolation = error else { throw error }
             throw PolishError.refused
         }
     }

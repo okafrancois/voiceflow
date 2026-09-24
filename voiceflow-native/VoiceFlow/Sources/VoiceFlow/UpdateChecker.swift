@@ -21,7 +21,11 @@ final class UpdateChecker: ObservableObject {
     }
 
     @Published var latest: Release?
-    @Published var lastCheck: Date?
+    /// Conservée d'un lancement à l'autre : sans elle, « une fois par jour »
+    /// voulait dire « à chaque lancement ».
+    @Published var lastCheck: Date? = UserDefaults.standard.object(forKey: "lastUpdateCheck") as? Date {
+        didSet { UserDefaults.standard.set(lastCheck, forKey: "lastUpdateCheck") }
+    }
     @Published var checking = false
     @Published var error: String?
 
@@ -56,18 +60,21 @@ final class UpdateChecker: ObservableObject {
 
     func check() async {
         guard let url = URL(string: feedURL), !feedURL.isEmpty else {
-            error = "Aucune adresse de flux configurée."
+            error = L.t("Aucune adresse de flux configurée.")
             return
         }
         checking = true
         error = nil
         defer { checking = false }
         do {
-            let (data, _) = try await URLSession.shared.data(from: url)
+            let (data, response) = try await URLSession.shared.data(from: url)
+            if let http = response as? HTTPURLResponse, http.statusCode != 200 {
+                throw URLError(.badServerResponse)
+            }
             latest = try JSONDecoder().decode(Release.self, from: data)
             lastCheck = Date()
         } catch {
-            self.error = "Vérification impossible : \(error.localizedDescription)"
+            self.error = L.t("Vérification impossible") + " : \(error.localizedDescription)"
         }
     }
 }

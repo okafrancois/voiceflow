@@ -3,15 +3,15 @@ import Speech
 
 /// Une dictée = une session : SpeechAnalyzer + SpeechTranscriber (API macOS 26),
 /// entièrement sur l'appareil.
-final class TranscriptionSession {
+final class TranscriptionSession: @unchecked Sendable {
     enum SessionError: LocalizedError {
         case unsupportedLocale
         case noAudioFormat
 
         var errorDescription: String? {
             switch self {
-            case .unsupportedLocale: "Langue non prise en charge par SpeechAnalyzer"
-            case .noAudioFormat: "Aucun format audio compatible avec le transcripteur"
+            case .unsupportedLocale: L.t("Langue non prise en charge par SpeechAnalyzer")
+            case .noAudioFormat: L.t("Aucun format audio compatible avec le transcripteur")
             }
         }
     }
@@ -65,7 +65,8 @@ final class TranscriptionSession {
         }
     }
 
-    init(locale requested: Locale, onVolatile: @escaping (String) -> Void) async throws {
+    init(locale requested: Locale, hints: [String] = [],
+         onVolatile: @escaping @Sendable (String) -> Void) async throws {
         let locale = try await Self.resolve(requested)
 
         transcriber = SpeechTranscriber(
@@ -105,6 +106,18 @@ final class TranscriptionSession {
             return finalText
         }
 
+        // Termes du dictionnaire : le modèle les privilégie quand l'audio
+        // hésite entre plusieurs graphies.
+        if !hints.isEmpty {
+            let context = AnalysisContext()
+            context.contextualStrings[.general] = hints
+            do {
+                try await analyzer.setContext(context)
+            } catch {
+                log.warning("speech context rejected: \(error.localizedDescription)")
+            }
+        }
+
         try await analyzer.start(inputSequence: inputStream)
     }
 
@@ -131,6 +144,13 @@ final class TranscriptionSession {
             conversionErrors += 1
             log.error("audio conversion failed: \(error)")
         }
+    }
+
+    /// Dictée annulée : couper l'analyse sans attendre de résultat.
+    func cancel() async {
+        inputContinuation.finish()
+        await analyzer.cancelAndFinishNow()
+        resultsTask?.cancel()
     }
 
     /// Clôt le flux, attend la fin de l'analyse et rend le texte final.

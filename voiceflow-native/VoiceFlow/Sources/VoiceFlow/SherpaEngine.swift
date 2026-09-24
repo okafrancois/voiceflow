@@ -62,13 +62,13 @@ struct SherpaModel: Identifiable, Equatable {
 /// Moteur sherpa-onnx. Accumule l'audio en 16 kHz mono Float32 pendant
 /// l'enregistrement, décode en une passe à la fin — comme Whisper, et
 /// contrairement au moteur d'Apple qui travaille en continu.
-final class SherpaEngine: DictationEngine {
+final class SherpaEngine: DictationEngine, @unchecked Sendable {
     enum EngineError: LocalizedError {
         case emptyRecording
 
         var errorDescription: String? {
             switch self {
-            case .emptyRecording: "Aucun audio capturé"
+            case .emptyRecording: L.t("Aucun audio capturé")
             }
         }
     }
@@ -82,9 +82,13 @@ final class SherpaEngine: DictationEngine {
 
     init(model: SherpaModel, language: String?) throws {
         self.model = model
-        // SenseVoice accepte un indice de langue ; Qwen3-ASR détecte seul.
-        self.language = model.kind == .senseVoice ? (language ?? "") : ""
+        self.language = Self.languageKey(model: model, language: language)
         resampler = AudioResampler(to: try AudioResampler.standard16k())
+    }
+
+    /// SenseVoice accepte un indice de langue ; Qwen3-ASR détecte seul.
+    static func languageKey(model: SherpaModel, language: String?) -> String {
+        model.kind == .senseVoice ? (language ?? "") : ""
     }
 
     func feed(_ buffer: AVAudioPCMBuffer) {
@@ -110,17 +114,24 @@ final class SherpaEngine: DictationEngine {
 
         // Le décodage est bloquant et gourmand : il ne doit pas s'exécuter
         // sur l'acteur principal, sinon l'interface se fige le temps du calcul.
-        return try await Task.detached(priority: .userInitiated) {
-            let result = recognizer.decode(samples: audio, sampleRate: 16000)
-            return result.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        }.value
+        return try await SherpaRecognizerCache.decoding.run {
+            await Task.detached(priority: .userInitiated) {
+                let result = recognizer.decode(samples: audio, sampleRate: 16000)
+                return result.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            }.value
+        }
     }
 }
+
+/// Un seul décodage à la fois, par `SherpaRecognizerCache.decoding`.
+extension SherpaOnnxOfflineRecognizer: @retroactive @unchecked Sendable {}
 
 /// Garde les reconnaisseurs chargés : construire celui de Qwen3-ASR prend
 /// plusieurs secondes, on ne le paie qu'une fois par modèle et par session.
 actor SherpaRecognizerCache {
     static let shared = SherpaRecognizerCache()
+    /// Un décodage à la fois sur le reconnaisseur partagé.
+    static let decoding = SerialWork()
 
     private var instances: [String: SherpaOnnxOfflineRecognizer] = [:]
     private var loading: [String: Task<SherpaOnnxOfflineRecognizer, Error>] = [:]
@@ -136,7 +147,7 @@ actor SherpaRecognizerCache {
         let task = Task<SherpaOnnxOfflineRecognizer, Error> {
             let folder = try await SherpaModelStore.shared.ensureAvailable(model)
             log.info("loading sherpa-onnx model \(model.id)…")
-            let recognizer = try await Task.detached(priority: .userInitiated) {
+            let recognizer = await Task.detached(priority: .userInitiated) {
                 Self.build(model: model, language: language, folder: folder)
             }.value
             log.info("sherpa-onnx model \(model.id) ready")
@@ -145,8 +156,20 @@ actor SherpaRecognizerCache {
         loading[key] = task
         defer { loading[key] = nil }
         let recognizer = try await task.value
-        instances[key] = recognizer
+        // Un seul reconnaisseur en mémoire, comme pour Whisper.
+        instances = [key: recognizer]
         return recognizer
+    }
+
+    func preload(model: SherpaModel, language: String?) async throws {
+        _ = try await recognizer(
+            model: model, language: SherpaEngine.languageKey(model: model, language: language))
+    }
+
+    /// Le décodage CPU profite des cœurs de performance ; deux fils
+    /// laissaient la plupart d'entre eux inactifs.
+    private static var threadCount: Int {
+        min(6, max(2, ProcessInfo.processInfo.activeProcessorCount / 2))
     }
 
     private static func build(
@@ -161,7 +184,7 @@ actor SherpaRecognizerCache {
         case .senseVoice:
             modelConfig = sherpaOnnxOfflineModelConfig(
                 tokens: path("tokens.txt"),
-                numThreads: 2,
+                numThreads: Self.threadCount,
                 provider: "cpu",
                 senseVoice: sherpaOnnxOfflineSenseVoiceModelConfig(
                     model: path("model.int8.onnx"),
@@ -173,7 +196,7 @@ actor SherpaRecognizerCache {
             // vit dans le dossier tokenizer.
             modelConfig = sherpaOnnxOfflineModelConfig(
                 tokens: "",
-                numThreads: 2,
+                numThreads: Self.threadCount,
                 provider: "cpu",
                 qwen3Asr: sherpaOnnxOfflineQwen3ASRModelConfig(
                     convFrontend: path("conv_frontend.onnx"),
@@ -201,8 +224,8 @@ final class SherpaModelStore: ObservableObject {
 
         var errorDescription: String? {
             switch self {
-            case .badURL(let file): "Adresse de téléchargement invalide : \(file)"
-            case .badResponse(let file): "Téléchargement refusé par le serveur : \(file)"
+            case .badURL(let file): L.t("Adresse de téléchargement invalide") + " : \(file)"
+            case .badResponse(let file): L.t("Téléchargement refusé par le serveur") + " : \(file)"
             }
         }
     }
@@ -294,7 +317,7 @@ final class SherpaModelStore: ObservableObject {
     }
 
     private static func fileSize(_ url: URL) -> Int64 {
-        (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int64) as? Int64 ?? 0
+        (try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? Int64 ?? 0
     }
 
     /// Taille de chaque fichier, pour une barre de progression honnête :
@@ -317,9 +340,9 @@ final class SherpaModelStore: ObservableObject {
 /// Relaie l'avancement d'un téléchargement : l'API asynchrone d'URLSession
 /// rend le fichier d'un coup, sans rien dire du chemin parcouru.
 private final class DownloadProgress: NSObject, URLSessionDownloadDelegate {
-    private let onProgress: (Int64) -> Void
+    private let onProgress: @Sendable (Int64) -> Void
 
-    init(onProgress: @escaping (Int64) -> Void) {
+    init(onProgress: @escaping @Sendable (Int64) -> Void) {
         self.onProgress = onProgress
     }
 

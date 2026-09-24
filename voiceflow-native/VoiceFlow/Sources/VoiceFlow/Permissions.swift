@@ -20,9 +20,9 @@ enum Permissions {
     /// Nécessaire pour le CGEventTap (raccourci) et l'injection.
     @discardableResult
     static func ensureAccessibility() -> Bool {
-        let options = [
-            kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true
-        ] as CFDictionary
+        // Valeur de `kAXTrustedCheckOptionPrompt`, variable globale C que
+        // Swift 6 refuse de lire hors isolation.
+        let options = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
         return AXIsProcessTrustedWithOptions(options)
     }
 }

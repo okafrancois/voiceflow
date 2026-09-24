@@ -40,10 +40,32 @@ struct Shortcut: Codable, Equatable {
         }
     }
 
+    /// Bits propres à chaque côté du clavier (`NX_DEVICE…KEYMASK`), présents
+    /// dans les drapeaux bruts. Le drapeau générique `.command` reste levé
+    /// tant que l'un *ou* l'autre ⌘ est tenu : ⌘ droite relâché pendant que
+    /// ⌘ gauche est enfoncé passerait sinon pour toujours pressé.
+    private static func sideMask(for keyCode: UInt16) -> UInt? {
+        switch keyCode {
+        case 59: 0x0001  // ⌃ gauche
+        case 56: 0x0002  // ⇧ gauche
+        case 60: 0x0004  // ⇧ droite
+        case 55: 0x0008  // ⌘ gauche
+        case 54: 0x0010  // ⌘ droite
+        case 58: 0x0020  // ⌥ gauche
+        case 61: 0x0040  // ⌥ droite
+        case 62: 0x2000  // ⌃ droite
+        default: nil
+        }
+    }
+
     /// La touche modificatrice est-elle enfoncée dans cet état de drapeaux ?
     static func isPressed(_ keyCode: UInt16, _ flags: NSEvent.ModifierFlags) -> Bool {
-        guard let flag = flag(for: keyCode) else { return false }
-        return flags.contains(flag)
+        guard let flag = flag(for: keyCode), flags.contains(flag) else { return false }
+        guard let side = sideMask(for: keyCode) else { return true }
+        // Événement synthétique sans bits de côté : s'en tenir au générique.
+        let anySide: UInt = 0x207F
+        guard flags.rawValue & anySide != 0 else { return true }
+        return flags.rawValue & side != 0
     }
 
     /// Fn est avalée quand elle sert de raccourci, sinon macOS ouvre le
@@ -65,16 +87,16 @@ struct Shortcut: Codable, Equatable {
         if isModifierOnly {
             switch keyCode {
             case 63: return "Fn"
-            case 54: return "⌘ droite"
+            case 54: return L.t("⌘ droite")
             case 55: return "⌘"
             case 56: return "⇧"
             case 57: return "⇪"
             case 58: return "⌥"
             case 59: return "⌃"
-            case 60: return "⇧ droite"
-            case 61: return "⌥ droite"
-            case 62: return "⌃ droite"
-            default: return "Touche \(keyCode)"
+            case 60: return L.t("⇧ droite")
+            case 61: return L.t("⌥ droite")
+            case 62: return L.t("⌃ droite")
+            default: return Self.unknownKey(keyCode)
             }
         }
         var text = ""
@@ -93,13 +115,17 @@ struct Shortcut: Codable, Equatable {
         return keyCode == self.keyCode && flags.intersection(relevant) == self.flags.intersection(relevant)
     }
 
+    private static func unknownKey(_ keyCode: UInt16) -> String {
+        String(format: L.t("Touche %d"), Int(keyCode))
+    }
+
     static func keyName(_ keyCode: UInt16) -> String {
         switch Int(keyCode) {
-        case kVK_Space: return "Espace"
-        case kVK_Return: return "Retour"
-        case kVK_Tab: return "Tab"
-        case kVK_Escape: return "Échap"
-        case kVK_Delete: return "Suppr"
+        case kVK_Space: return L.t("Espace")
+        case kVK_Return: return L.t("Retour")
+        case kVK_Tab: return L.t("Tab")
+        case kVK_Escape: return L.t("Échap")
+        case kVK_Delete: return L.t("Suppr")
         case kVK_F1: return "F1"
         case kVK_F2: return "F2"
         case kVK_F3: return "F3"
@@ -118,7 +144,7 @@ struct Shortcut: Codable, Equatable {
         // Lettre ou chiffre : demander au clavier courant.
         guard let source = TISCopyCurrentKeyboardLayoutInputSource()?.takeRetainedValue(),
               let pointer = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData)
-        else { return "Touche \(keyCode)" }
+        else { return unknownKey(keyCode) }
         let data = Unmanaged<CFData>.fromOpaque(pointer).takeUnretainedValue() as Data
         var deadKeys: UInt32 = 0
         var length = 0
@@ -132,7 +158,7 @@ struct Shortcut: Codable, Equatable {
                 UInt32(LMGetKbdType()), OptionBits(kUCKeyTranslateNoDeadKeysBit),
                 &deadKeys, characters.count, &length, &characters)
         }
-        guard status == noErr, length > 0 else { return "Touche \(keyCode)" }
+        guard status == noErr, length > 0 else { return unknownKey(keyCode) }
         return String(utf16CodeUnits: characters, count: length).uppercased()
     }
 }
@@ -164,6 +190,18 @@ enum ShortcutSettings {
     static var dictate: Shortcut {
         get { load("shortcutDictate") ?? .dictateDefault }
         set { store(newValue, "shortcutDictate") }
+    }
+
+    /// Raccourci du mode commande ; aucun par défaut.
+    static var command: Shortcut? {
+        get { load("shortcutCommand") }
+        set {
+            if let newValue {
+                store(newValue, "shortcutCommand")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "shortcutCommand")
+            }
+        }
     }
 
     static var mode: TriggerMode {

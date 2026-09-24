@@ -141,6 +141,9 @@ pnpm --filter @voiceflow/desktop build && pnpm --filter @voiceflow/shared typech
 
 # Website
 pnpm --filter @voiceflow/website build && pnpm --filter @voiceflow/website lint
+
+# Native macOS app (Swift)
+cd voiceflow-native/VoiceFlow && swift build && swift test && cd .. && tools/check-strings.py
 ```
 
 ---

@@ -5,28 +5,17 @@ import SwiftUI
 struct HistoryPage: View {
     @ObservedObject var state: AppState
     @State private var search = ""
-    @State private var filter: Filter = .all
+    /// Moteur filtré ; `nil` = tous.
+    @State private var engine: String?
 
-    enum Filter: String, CaseIterable, Identifiable {
-        case all, apple, whisper
-        var id: String { rawValue }
-        var title: String {
-            switch self {
-            case .all: L.t("Tout")
-            case .apple: L.t("Apple")
-            case .whisper: L.t("Whisper")
-            }
-        }
+    /// Les moteurs présents dans l'historique, quels qu'ils soient.
+    private var engines: [String] {
+        Array(Set(state.entries.map(\.sttEngine))).sorted()
     }
 
     private var filtered: [HistoryEntry] {
         state.entries.filter { entry in
-            let engineMatches = switch filter {
-            case .all: true
-            case .apple: entry.sttEngine == "apple"
-            case .whisper: entry.sttEngine == "whisper"
-            }
-            return engineMatches
+            (engine == nil || entry.sttEngine == engine)
                 && (search.isEmpty || entry.finalText.localizedCaseInsensitiveContains(search))
         }
     }
@@ -36,9 +25,13 @@ struct HistoryPage: View {
             HStack(spacing: 10) {
                 VFSearchField(text: $search)
                     .frame(maxWidth: 320)
-                ForEach(Filter.allCases) { item in
-                    Button(item.title) { filter = item }
-                        .buttonStyle(VFButtonStyle(prominent: filter == item))
+                Button(L.t("Tout")) { engine = nil }
+                    .buttonStyle(VFButtonStyle(prominent: engine == nil))
+                if engines.count > 1 {
+                    ForEach(engines, id: \.self) { item in
+                        Button(EngineChoice.historyDisplayName(item)) { engine = item }
+                            .buttonStyle(VFButtonStyle(prominent: engine == item))
+                    }
                 }
                 Spacer()
                 if !state.entries.isEmpty {
@@ -50,8 +43,8 @@ struct HistoryPage: View {
             if filtered.isEmpty {
                 VFCard {
                     Text(state.entries.isEmpty
-                        ? "Votre prochaine transcription apparaîtra ici."
-                        : "Aucune transcription ne correspond.")
+                        ? L.t("Votre prochaine transcription apparaîtra ici.")
+                        : L.t("Aucune transcription ne correspond."))
                         .font(.system(size: 14))
                         .foregroundStyle(VF.labelMuted)
                         .padding(.vertical, 20)
@@ -86,9 +79,9 @@ struct HistoryPage: View {
 
     private func dayLabel(_ day: Date) -> String {
         let calendar = Calendar.current
-        if calendar.isDateInToday(day) { return "Aujourd'hui" }
-        if calendar.isDateInYesterday(day) { return "Hier" }
-        return day.formatted(.dateTime.weekday(.wide).day().month(.wide))
+        if calendar.isDateInToday(day) { return L.t("Aujourd'hui") }
+        if calendar.isDateInYesterday(day) { return L.t("Hier") }
+        return day.formatted(.dateTime.weekday(.wide).day().month(.wide).locale(L.locale))
     }
 }
 
@@ -174,7 +167,7 @@ struct DictionaryPage: View {
                                 .font(.system(size: 12))
                                 .foregroundStyle(VF.labelFaint)
                             VFTextField(placeholder: "Écrire", text: $replacement)
-                            Button("Ajouter", action: add)
+                            Button(L.t("Ajouter"), action: add)
                                 .buttonStyle(VFButtonStyle(prominent: true))
                                 .disabled(heard.isEmpty || replacement.isEmpty)
                         }
@@ -192,7 +185,7 @@ struct DictionaryPage: View {
                             Text(L.t("Apprendre mes corrections"))
                                 .font(.system(size: 14))
                                 .foregroundStyle(VF.label)
-                            Text(L.t("Après une insertion, VoiceFlow relit le champ et retient les mots que vous avez remplacés."))
+                            Text(L.t("Après une insertion, VoiceFlow relit le champ et propose les mots que vous avez remplacés. Une suggestion s'applique une fois acceptée, ou vue trois fois."))
                                 .font(.system(size: 12))
                                 .foregroundStyle(VF.labelMuted)
                         }
@@ -226,10 +219,10 @@ struct DictionaryPage: View {
             do {
                 let added = try store.importCSV(from: url)
                 importReport = added == 0
-                    ? "Aucune nouvelle entrée : le fichier doit contenir « entendu,correction » par ligne."
-                    : "\(added) terme\(added > 1 ? "s" : "") importé\(added > 1 ? "s" : "")."
+                    ? L.t("Aucune nouvelle entrée : le fichier doit contenir « entendu,correction » par ligne.")
+                    : String(format: L.t("%d terme(s) importé(s)."), added)
             } catch {
-                importReport = "Import impossible : \(error.localizedDescription)"
+                importReport = L.t("Import impossible") + " : \(error.localizedDescription)"
             }
         }
     }
@@ -257,12 +250,22 @@ struct DictionaryPage: View {
                         .foregroundStyle(VF.label)
                 }
                 if !entry.variants.isEmpty {
-                    Text("aussi entendu : " + entry.variants.joined(separator: ", "))
+                    Text(L.t("aussi entendu") + " : " + entry.variants.joined(separator: ", "))
                         .font(.system(size: 12))
                         .foregroundStyle(VF.labelFaint)
                 }
+                if let sightings = entry.pendingSightings {
+                    Text(String(format: L.t("Suggestion · vue %d fois · s'appliquera après %d"),
+                                sightings, VocabularyStore.sightingsToActivate))
+                        .font(.system(size: 12))
+                        .foregroundStyle(VF.amber)
+                }
             }
             Spacer()
+            if !entry.isActive {
+                Button(L.t("Accepter")) { store.accept(entry) }
+                    .buttonStyle(VFButtonStyle(prominent: true))
+            }
             if entry.useCount > 0 {
                 Text("\(entry.useCount)×")
                     .font(.system(size: 12))
@@ -349,7 +352,7 @@ struct SnippetsPage: View {
                     .frame(height: 90)
                     HStack {
                         Spacer()
-                        Button("Ajouter", action: add)
+                        Button(L.t("Ajouter"), action: add)
                             .buttonStyle(VFButtonStyle(prominent: true))
                             .disabled(trigger.isEmpty || expansion.isEmpty)
                     }
@@ -440,7 +443,7 @@ struct StylesPage: View {
                             Text(L.t("Règles par application"))
                                 .font(.system(size: 15, weight: .medium))
                                 .foregroundStyle(VF.label)
-                            Text(L.t("Le style choisi ici remplace le style par défaut dans cette app."))
+                            Text(L.t("Style de polissage et langue de dictée propres à une app ; le reste suit les réglages généraux."))
                                 .font(.system(size: 13))
                                 .foregroundStyle(VF.labelMuted)
                         }
@@ -471,10 +474,29 @@ struct StylesPage: View {
                                             store.appRules[position].templateID = newValue
                                         }
                                     })) {
-                                    ForEach(PolishCatalog.all) { Text($0.name).tag($0.id) }
+                                    Text(L.t("Style par défaut")).tag(String?.none)
+                                    Divider()
+                                    ForEach(PolishCatalog.all) { Text(L.t($0.name)).tag(String?.some($0.id)) }
                                 }
                                 .labelsHidden()
                                 .fixedSize()
+                                .help(L.t("Style de polissage dans cette app"))
+                                Picker("", selection: Binding(
+                                    get: { rule.localeID },
+                                    set: { newValue in
+                                        if let position = store.appRules.firstIndex(where: { $0.id == rule.id }) {
+                                            store.appRules[position].localeID = newValue
+                                        }
+                                    })) {
+                                    Text(L.t("Langue par défaut")).tag(String?.none)
+                                    Divider()
+                                    ForEach(state.availableLocaleIDs, id: \.self) { id in
+                                        Text(state.displayName(for: id)).tag(String?.some(id))
+                                    }
+                                }
+                                .labelsHidden()
+                                .fixedSize()
+                                .help(L.t("Langue de dictée dans cette app"))
                                 Button {
                                     store.appRules.removeAll { $0.id == rule.id }
                                 } label: {
@@ -519,14 +541,14 @@ struct StylesPage: View {
                             ? VF.green : VF.labelFaint)
                 }
                 .buttonStyle(.plain)
-                .help("Choisir comme style par défaut")
+                .help(L.t("Choisir comme style par défaut"))
 
                 Text(L.t(template.name))
                     .font(.system(size: 14))
                     .foregroundStyle(VF.label)
 
                 // Le badge dit d'un coup d'œil si le prompt est celui d'origine.
-                Text(template.isCustomized ? "modifié" : "système")
+                Text(template.isCustomized ? L.t("modifié") : L.t("système"))
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(template.isCustomized ? VF.amber : VF.labelFaint)
                     .padding(.horizontal, 7)
@@ -543,7 +565,7 @@ struct StylesPage: View {
                     }
                 } label: {
                     HStack(spacing: 5) {
-                        Text(isOpen ? "Masquer le prompt" : "Voir le prompt")
+                        Text(isOpen ? L.t("Masquer le prompt") : L.t("Voir le prompt"))
                             .font(.system(size: 12))
                         Image(systemName: isOpen ? "chevron.up" : "chevron.down")
                             .font(.system(size: 10))
@@ -590,8 +612,8 @@ struct PromptEditor: View {
 
             HStack(spacing: 8) {
                 Text(isCustomized
-                    ? "Prompt modifié — il remplace celui livré avec l'app."
-                    : "Prompt d'origine, livré avec l'app.")
+                    ? L.t("Prompt modifié — il remplace celui livré avec l'app.")
+                    : L.t("Prompt d'origine, livré avec l'app."))
                     .font(.system(size: 12))
                     .foregroundStyle(VF.labelMuted)
 
@@ -632,6 +654,8 @@ struct SettingsPage: View {
     @ObservedObject private var models = WhisperModelStore.shared
     @ObservedObject private var sherpaModels = SherpaModelStore.shared
     @ObservedObject private var updates = UpdateChecker.shared
+    @ObservedObject private var vocabulary = VocabularyStore.shared
+    @State private var importReport: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -667,6 +691,26 @@ struct SettingsPage: View {
                     .padding(.horizontal, 20)
                     .padding(.vertical, 13)
                 }
+                divider
+                row("Aider la reconnaissance avec le dictionnaire",
+                    help: "Les termes du dictionnaire sont signalés au moteur, qui les écrit du premier coup.") {
+                    Toggle("", isOn: $vocabulary.biasRecognition).labelsHidden().toggleStyle(.switch)
+                }
+                divider
+                row("Commandes vocales",
+                    help: "« À la ligne », « nouveau paragraphe », « new line »… dits seuls, entre deux pauses.") {
+                    Toggle("", isOn: $state.voiceCommandsEnabled).labelsHidden().toggleStyle(.switch)
+                }
+                divider
+                row("Espace et majuscule automatiques",
+                    help: "Raccorde la dictée au texte qui précède le curseur, quand le champ le permet.") {
+                    Toggle("", isOn: $state.smartSpacingEnabled).labelsHidden().toggleStyle(.switch)
+                }
+                divider
+                row("Transcription en direct dans la pill",
+                    help: "Moteur d'Apple uniquement : les mots s'affichent pendant que vous parlez.") {
+                    Toggle("", isOn: $state.showLivePreview).labelsHidden().toggleStyle(.switch)
+                }
             }
 
             VFCard(padding: 0) {
@@ -692,7 +736,7 @@ struct SettingsPage: View {
 
             settingsCard("Raccourcis") {
                 row("Raccourci de dictée") {
-                    ShortcutRecorder(state: state, keyPath: \.dictateShortcut)
+                    ShortcutRecorder(state: state, keyPath: \.dictateShortcutSetting)
                 }
                 divider
                 row("Déclenchement", help: state.triggerMode.help) {
@@ -700,6 +744,15 @@ struct SettingsPage: View {
                         ForEach(TriggerMode.allCases) { Text($0.title).tag($0) }
                     }
                     .labelsHidden().fixedSize()
+                }
+                divider
+                row("Mode commande",
+                    help: "Sélectionnez du texte, gardez ce raccourci et dites quoi en faire (« traduis en anglais », « plus formel »). Sans sélection, le texte demandé s'écrit au curseur.") {
+                    ShortcutRecorder(state: state, keyPath: \.commandShortcut, clearable: true)
+                }
+                divider
+                row("Annuler une dictée", help: "Pendant l'enregistrement ou le traitement.") {
+                    VFKeycap(text: L.t("Échap"))
                 }
             }
 
@@ -881,7 +934,7 @@ struct SettingsPage: View {
                 }
                 divider
                 row(updateStatusTitle, help: updates.latest?.notes) {
-                    Button(updates.checking ? "Vérification…" : "Vérifier") {
+                    Button(updates.checking ? L.t("Vérification…") : L.t("Vérifier")) {
                         Task { await updates.check() }
                     }
                     .buttonStyle(VFButtonStyle())
@@ -913,7 +966,7 @@ struct SettingsPage: View {
                 divider
                 row("Journal de diagnostic",
                     help: "Ce que l'app a fait à chaque dictée : audio capté, durée, erreurs.") {
-                    Button("Ouvrir le journal") {
+                    Button(L.t("Ouvrir le journal")) {
                         NSWorkspace.shared.open(Diagnostics.fileURL)
                     }
                     .buttonStyle(VFButtonStyle())
@@ -925,6 +978,14 @@ struct SettingsPage: View {
                             [URL.applicationSupportDirectory.appending(path: "VoiceFlow")])
                     }
                     .buttonStyle(VFButtonStyle())
+                }
+                if TauriImport.isAvailable {
+                    divider
+                    row("Reprendre les données de Voice Flow (Tauri)",
+                        help: importReport ?? "Historique, dictionnaire et extraits de l'ancienne app. Relançable sans doublon.") {
+                        Button(L.t("Importer")) { importFromTauri() }
+                            .buttonStyle(VFButtonStyle())
+                    }
                 }
                 divider
                 row("Effacer l'historique") {
@@ -965,7 +1026,7 @@ struct SettingsPage: View {
                 needsModel: true,
                 downloaded: models.isDownloaded(variant),
                 fraction: models.downloading.flatMap { $0.variant == variant ? $0.fraction : nil },
-                start: { Task { try? await models.ensureAvailable(variant) } },
+                start: { Task { await state.download { try await models.ensureAvailable(variant) } } },
                 remove: { models.forget(variant) })
         }
         if let model = choice.sherpaModel {
@@ -975,7 +1036,7 @@ struct SettingsPage: View {
                 fraction: sherpaModels.downloading.flatMap {
                     $0.model == model.id ? $0.fraction : nil
                 },
-                start: { Task { try? await sherpaModels.ensureAvailable(model) } },
+                start: { Task { await state.download { try await sherpaModels.ensureAvailable(model) } } },
                 remove: { sherpaModels.forget(model) })
         }
         return DownloadState()
@@ -1026,7 +1087,7 @@ struct SettingsPage: View {
                             .foregroundStyle(VF.labelMuted)
                     }
                     .buttonStyle(.plain)
-                    .help("Supprimer le modèle de l'appareil")
+                    .help(L.t("Supprimer le modèle de l'appareil"))
                 }
             } else if download.needsModel {
                 Button(L.t("Télécharger"), action: download.start)
@@ -1040,6 +1101,18 @@ struct SettingsPage: View {
         .onTapGesture { state.engineChoiceID = choice.rawValue }
     }
 
+    private func importFromTauri() {
+        do {
+            let report = try TauriImport.importAll()
+            importReport = String(
+                format: L.t("Importé : %d transcriptions, %d termes, %d extraits."),
+                report.history, report.dictionary, report.snippets)
+            state.refreshHistory()
+        } catch {
+            importReport = L.t("Import impossible") + " : \(error.localizedDescription)"
+        }
+    }
+
     private var languageHelp: String {
         state.engineChoice.detectsLanguage
             ? "La détection automatique laisse le moteur reconnaître la langue parlée."
@@ -1048,10 +1121,10 @@ struct SettingsPage: View {
 
     private var updateStatusTitle: String {
         if updates.updateAvailable, let version = updates.latest?.version {
-            return "Version \(version) disponible"
+            return String(format: L.t("Version %@ disponible"), version)
         }
-        if updates.latest != nil { return "Vous êtes à jour" }
-        return "Rechercher une mise à jour"
+        if updates.latest != nil { return L.t("Vous êtes à jour") }
+        return L.t("Rechercher une mise à jour")
     }
 
     private var divider: some View {
@@ -1125,13 +1198,14 @@ struct AboutPage: View {
                             .font(.system(size: 20, weight: .semibold, design: .serif))
                             .italic()
                             .foregroundStyle(VF.label)
-                        Text(L.t("Version 0.1.0 — native, macOS 26+"))
+                        Text(String(format: L.t("Version %@ — native, macOS 26+"),
+                                    UpdateChecker.shared.currentVersion))
                             .font(.system(size: 13))
                             .foregroundStyle(VF.labelMuted)
                     }
                 }
                 Rectangle().fill(VF.divider).frame(height: 1)
-                Text(L.t("Transcription par SpeechAnalyzer ou Whisper, polissage par Apple Intelligence. Tout se passe sur cet appareil."))
+                Text(L.t("Transcription par SpeechAnalyzer, Whisper, SenseVoice ou Qwen3-ASR, polissage par Apple Intelligence. Tout se passe sur cet appareil."))
                     .font(.system(size: 14))
                     .foregroundStyle(VF.labelMuted)
                     .fixedSize(horizontal: false, vertical: true)

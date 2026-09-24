@@ -5,26 +5,46 @@ import SwiftUI
 /// combinaison voulue. Échap annule.
 struct ShortcutRecorder: View {
     @ObservedObject var state: AppState
-    let keyPath: ReferenceWritableKeyPath<AppState, Shortcut>
+    let keyPath: ReferenceWritableKeyPath<AppState, Shortcut?>
+    /// Le raccourci peut être retiré (mode commande).
+    var clearable = false
     @State private var recording = false
     @State private var monitors: [Any] = []
 
+    private var currentDisplay: String {
+        state[keyPath: keyPath]?.display ?? L.t("Aucun")
+    }
+
     var body: some View {
-        Button {
-            recording ? stop() : start()
-        } label: {
-            Text(recording ? L.t("Pressez une combinaison…") : state[keyPath: keyPath].display)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(recording ? VF.labelMuted : VF.label)
-                .frame(minWidth: 130)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-                .background(
-                    Capsule().strokeBorder(recording ? VF.purple : VF.border, lineWidth: 1))
+        HStack(spacing: 8) {
+            Button {
+                recording ? stop() : start()
+            } label: {
+                Text(recording ? L.t("Pressez une combinaison…") : currentDisplay)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(recording ? VF.labelMuted : VF.label)
+                    .frame(minWidth: 130)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(
+                        Capsule().strokeBorder(recording ? VF.purple : VF.border, lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(L.t("Raccourci actuel") + " : " + currentDisplay)
+            .accessibilityHint(L.t("Activer, puis presser la combinaison souhaitée"))
+
+            if clearable, state[keyPath: keyPath] != nil, !recording {
+                Button {
+                    state[keyPath: keyPath] = nil
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 13))
+                        .foregroundStyle(VF.labelFaint)
+                }
+                .buttonStyle(.plain)
+                .help(L.t("Retirer le raccourci"))
+            }
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Raccourci actuel : \(state[keyPath: keyPath].display)")
-        .accessibilityHint("Activer, puis presser la combinaison souhaitée")
         .onDisappear(perform: stop)
     }
 

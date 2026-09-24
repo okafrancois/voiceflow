@@ -2,12 +2,96 @@ import AVFoundation
 
 /// Un moteur de dictée reçoit les buffers micro pendant l'enregistrement
 /// et rend le texte final à la fin.
-protocol DictationEngine {
+///
+/// Partagé entre fils : l'audio arrive du fil du micro (toujours sous le
+/// verrou d'`EngineFeed`), la fin est demandée depuis l'app.
+protocol DictationEngine: AnyObject, Sendable {
     func feed(_ buffer: AVAudioPCMBuffer)
     func finish() async throws -> String
+    /// Dictée abandonnée : libérer ce qui tourne encore.
+    func cancel() async
+}
+
+extension DictationEngine {
+    func cancel() async {}
 }
 
 extension TranscriptionSession: DictationEngine {}
+
+/// Exécute des travaux asynchrones un par un, dans l'ordre d'arrivée.
+///
+/// Une dictée annulée pendant sa transcription laisse la main à la
+/// suivante : deux décodages pourraient alors se croiser sur le même
+/// modèle, que ni WhisperKit ni sherpa-onnx ne garantissent pour cet usage.
+actor SerialWork {
+    private var tail: Task<Void, Never>?
+
+    func run<T: Sendable>(_ work: @escaping @Sendable () async throws -> T) async throws -> T {
+        let previous = tail
+        let task = Task<T, Error> {
+            await previous?.value
+            return try await work()
+        }
+        tail = Task { _ = try? await task.value }
+        return try await task.value
+    }
+}
+
+/// Relais entre le micro et le moteur.
+///
+/// Le micro démarre dès la pression du raccourci, le moteur peut mettre
+/// plusieurs centaines de millisecondes à être prêt (celui d'Apple interroge
+/// ses modèles installés) : tout ce qui est dit dans cet intervalle est gardé
+/// ici, puis transmis dans l'ordre dès que le moteur arrive.
+///
+/// Les blocs mis en attente sont copiés : le tap d'`AVAudioEngine` peut
+/// réutiliser sa mémoire une fois le rappel terminé.
+final class EngineFeed: @unchecked Sendable {
+    private let lock = NSLock()
+    private var pending: [AVAudioPCMBuffer] = []
+    private var engine: DictationEngine?
+
+    /// Échantillons en attente du moteur, pour le journal.
+    var pendingFrames: Int {
+        lock.withLock { pending.reduce(0) { $0 + Int($1.frameLength) } }
+    }
+
+    /// Appelé depuis le fil audio. Le verrou couvre aussi la transmission au
+    /// moteur : sans lui, un bloc frais pourrait doubler la file vidée par
+    /// `attach`.
+    func push(_ buffer: AVAudioPCMBuffer) {
+        lock.withLock {
+            if let engine {
+                engine.feed(buffer)
+            } else if let copy = Self.copy(buffer) {
+                pending.append(copy)
+            }
+        }
+    }
+
+    func attach(_ engine: DictationEngine) {
+        lock.withLock {
+            for buffer in pending { engine.feed(buffer) }
+            pending = []
+            self.engine = engine
+        }
+    }
+
+    private static func copy(_ buffer: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
+        guard let copy = AVAudioPCMBuffer(
+            pcmFormat: buffer.format, frameCapacity: buffer.frameLength)
+        else { return nil }
+        copy.frameLength = buffer.frameLength
+        let source = UnsafeMutableAudioBufferListPointer(
+            UnsafeMutablePointer(mutating: buffer.audioBufferList))
+        let target = UnsafeMutableAudioBufferListPointer(copy.mutableAudioBufferList)
+        for (from, to) in zip(source, target) {
+            guard let fromData = from.mData, let toData = to.mData else { continue }
+            memcpy(toData, fromData, Int(min(from.mDataByteSize, to.mDataByteSize)))
+        }
+        return copy
+    }
+}
 
 /// Choix de moteur exposé dans le menu : le moteur système d'Apple, ou un
 /// modèle Whisper (WhisperKit). Conçu pour accueillir d'autres familles de
@@ -143,6 +227,17 @@ enum EngineChoice: String, CaseIterable, Identifiable {
     }
 
     var historyModel: String? { whisperModel ?? sherpaModel?.id }
+
+    /// Nom affichable d'un moteur tel qu'enregistré dans l'historique.
+    static func historyDisplayName(_ engine: String) -> String {
+        switch engine {
+        case "apple": "Apple"
+        case "whisper": "Whisper"
+        case "sensevoice": "SenseVoice"
+        case "qwen3-asr": "Qwen3-ASR"
+        default: engine
+        }
+    }
 
     /// Modèles entraînés sur l'anglais seul : proposer d'autres langues
     /// donnerait une transcription silencieusement fausse.
