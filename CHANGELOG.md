@@ -2,7 +2,12 @@
 
 All notable changes to the desktop application will be documented in this file.
 
-## Unreleased
+## v1.3.0 (2026-09-25)
+
+### Features
+
+- Add opt-in Apple speech engine on macOS 26 (5ee17ab)
+- Decode long Whisper dictations while recording (6b84236)
 
 ### Bug Fixes
 
