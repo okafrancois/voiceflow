@@ -241,6 +241,8 @@
   "model.available.accuracy": "Точность",
   "model.hint.cjkBest": "CJK оптимален",
   "model.hint.multiLang": "20+ языков",
+  "model.hint.appleStreaming": "распознаёт во время речи · выберите язык диктовки",
+  "model.available.builtIn": "Встроено в macOS",
   "model.performanceSection.title": "Производительность",
   "model.performanceSection.description": "Настроить параметры производительности модели",
   "model.polishSection.title": "Обработка текста",

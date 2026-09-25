@@ -208,6 +208,18 @@ const voiceModel: ModelInfo = {
   downloaded: false,
   speed_score: 5,
   accuracy_score: 10,
+  built_in: false,
+};
+
+const appleModel: ModelInfo = {
+  name: "apple-speech",
+  display_name: "Apple (fast)",
+  size_mb: 0,
+  url: "",
+  downloaded: true,
+  speed_score: 10,
+  accuracy_score: 7,
+  built_in: true,
 };
 
 const polishStatus: PolishModelStatus = {
@@ -288,5 +300,15 @@ describe("ModelSettings voice model downloads", () => {
     await waitFor(() => {
       expect(showErrorToastMock).toHaveBeenCalledWith("download integrity check failed");
     });
+  });
+
+  it("shows a built-in model without size or delete action", async () => {
+    getModelsMock.mockResolvedValue([appleModel]);
+
+    render(<ModelSettings />);
+
+    expect(await screen.findAllByText(/model\.available\.builtIn/)).not.toHaveLength(0);
+    expect(screen.queryByText(/0MB/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "model.available.delete" })).toBeNull();
   });
 });

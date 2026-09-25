@@ -1267,6 +1267,7 @@ pub fn update_settings(
                     if settings.stt_engine_language != v {
                         state.engine_manager.clear_cache();
                     }
+                    state.engine_manager.set_dictation_language(v);
                     settings.stt_engine_language = v.to_string();
                 }
             }

@@ -242,6 +242,8 @@
   "model.available.accuracy": "Accuracy",
   "model.hint.cjkBest": "CJK best",
   "model.hint.multiLang": "20+ langs",
+  "model.hint.appleStreaming": "transcribes while you speak · set your dictation language",
+  "model.available.builtIn": "Built into macOS",
   "model.performanceSection.title": "Performance",
   "model.performanceSection.description": "Configure model performance settings",
   "model.polishSection.title": "Text Polish",

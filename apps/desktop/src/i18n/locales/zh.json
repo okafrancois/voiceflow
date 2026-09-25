@@ -240,6 +240,8 @@
   "model.available.accuracy": "准确率",
   "model.hint.cjkBest": "中日韩最佳",
   "model.hint.multiLang": "20+语言",
+  "model.hint.appleStreaming": "边说边转写 · 请设置听写语言",
+  "model.available.builtIn": "macOS 内置",
   "model.performanceSection.title": "性能",
   "model.performanceSection.description": "配置模型性能设置",
   "model.polishSection.title": "文本润色",

@@ -241,6 +241,8 @@
   "model.available.accuracy": "정확도",
   "model.hint.cjkBest": "중일한 최적",
   "model.hint.multiLang": "20+ 언어",
+  "model.hint.appleStreaming": "말하는 동안 받아쓰기 · 받아쓰기 언어 설정",
+  "model.available.builtIn": "macOS 내장",
   "model.performanceSection.title": "성능",
   "model.performanceSection.description": "모델 성능 설정 구성",
   "model.polishSection.title": "텍스트 다듬기",

@@ -223,6 +223,7 @@ impl AppState {
         let models_dir = crate::stt_engine::UnifiedEngineManager::default_models_dir();
         let engine_manager = Arc::new(crate::stt_engine::UnifiedEngineManager::new(models_dir));
         engine_manager.set_provider(settings.gpu_acceleration);
+        engine_manager.set_dictation_language(&settings.stt_engine_language);
 
         // Initialize unified polish manager
         let polish_manager = Arc::new(crate::polish_engine::UnifiedPolishManager::new());

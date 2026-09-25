@@ -58,6 +58,8 @@ pub struct ModelDefinition {
     pub files: &'static [&'static ModelFile],
     pub prefer_lang: &'static [&'static str],
     pub description: &'static str,
+    /// Ships with the operating system: nothing to download or delete.
+    pub built_in: bool,
 }
 
 impl ModelDefinition {
@@ -90,6 +92,7 @@ pub const SENSE_VOICE_SMALL: ModelDefinition = ModelDefinition {
     ],
     prefer_lang: &["zh", "yue", "ja", "ko", "en"],
     description: "SenseVoice Small for Chinese, Japanese, Korean, Cantonese, and English",
+    built_in: false,
 };
 
 /// Whisper Base - general purpose for all languages
@@ -108,6 +111,7 @@ pub const WHISPER_BASE: ModelDefinition = ModelDefinition {
     ],
     prefer_lang: &[], // Empty = all languages
     description: "Whisper Base for all languages, fast and lightweight",
+    built_in: false,
 };
 
 /// Whisper Small - better accuracy for all languages
@@ -126,6 +130,7 @@ pub const WHISPER_SMALL: ModelDefinition = ModelDefinition {
     ],
     prefer_lang: &[], // Empty = all languages
     description: "Whisper Small for all languages, better accuracy than Base",
+    built_in: false,
 };
 
 /// Whisper Tiny INT8 - smallest multilingual Whisper variant
@@ -144,6 +149,7 @@ pub const WHISPER_TINY: ModelDefinition = ModelDefinition {
     ],
     prefer_lang: &[],
     description: "Whisper Tiny INT8 for fast multilingual transcription",
+    built_in: false,
 };
 
 /// Whisper Medium INT8 - higher-accuracy multilingual Whisper variant
@@ -170,6 +176,7 @@ pub const WHISPER_MEDIUM: ModelDefinition = ModelDefinition {
     ],
     prefer_lang: &[],
     description: "Whisper Medium INT8 for higher-accuracy multilingual transcription",
+    built_in: false,
 };
 
 /// Whisper Large v3 INT8 - highest-accuracy Whisper option
@@ -196,6 +203,7 @@ pub const WHISPER_LARGE_V3: ModelDefinition = ModelDefinition {
     ],
     prefer_lang: &[],
     description: "Whisper Large v3 INT8 for maximum multilingual accuracy",
+    built_in: false,
 };
 
 /// Whisper Turbo INT8 - Large v3 quality with a smaller decoder
@@ -214,6 +222,7 @@ pub const WHISPER_TURBO: ModelDefinition = ModelDefinition {
     ],
     prefer_lang: &[],
     description: "Whisper Turbo INT8 for high-accuracy multilingual transcription",
+    built_in: false,
 };
 
 /// Qwen3-ASR 0.6B INT8 - high accuracy multilingual ASR via sherpa-onnx
@@ -235,6 +244,22 @@ pub const QWEN3_ASR_0_6B_INT8: ModelDefinition = ModelDefinition {
     ],
     prefer_lang: &[],
     description: "Qwen3-ASR 0.6B INT8 for high-accuracy multilingual transcription",
+    built_in: false,
+};
+
+/// Apple SpeechAnalyzer - on-device, transcribes while recording (macOS 26+)
+pub const APPLE_SPEECH: ModelDefinition = ModelDefinition {
+    name: "apple-speech",
+    display_name: "Apple (fast)",
+    size_mb: 0,
+    speed_score: 10,
+    accuracy_score: 7,
+    engine_type: EngineType::Apple,
+    repository: None,
+    files: &[],
+    prefer_lang: &[],
+    description: "Apple on-device speech recognition that transcribes while you speak",
+    built_in: true,
 };
 
 /// Default model for general use
@@ -250,6 +275,7 @@ pub const ALL: &[&ModelDefinition] = &[
     &WHISPER_SMALL,
     &WHISPER_TURBO,
     &WHISPER_LARGE_V3,
+    &APPLE_SPEECH,
 ];
 
 // ============================================================================
@@ -273,8 +299,9 @@ pub fn is_sensevoice_preferred(lang: &str) -> bool {
 /// For other languages: returns Whisper Base only
 pub fn recommend_by_language(lang: &str) -> Vec<&'static ModelDefinition> {
     if lang == "auto" {
-        // Return all models for auto-detect, sorted by accuracy
-        let mut models: Vec<_> = ALL.to_vec();
+        // Return all downloadable models for auto-detect, sorted by accuracy.
+        // Built-in engines are opt-in and never recommended automatically.
+        let mut models: Vec<_> = ALL.iter().copied().filter(|m| !m.built_in).collect();
         models.sort_by_key(|model| std::cmp::Reverse(model.accuracy_score));
         return models;
     }
@@ -337,7 +364,9 @@ mod tests {
         assert_eq!(QWEN3_ASR_0_6B_INT8.engine_type, EngineType::Qwen3Asr);
         assert_eq!(QWEN3_ASR_0_6B_INT8.files.len(), 6);
 
-        assert_eq!(ALL.len(), 8);
+        assert_eq!(ALL.len(), 9);
+        assert_eq!(APPLE_SPEECH.engine_type, EngineType::Apple);
+        assert!(APPLE_SPEECH.built_in && APPLE_SPEECH.files.is_empty());
         assert!(find_by_name("whisper-tiny").is_some());
         assert!(find_by_name("whisper-medium").is_some());
         assert!(find_by_name("whisper-large-v3").is_some());
@@ -438,6 +467,7 @@ mod tests {
     fn test_recommend_by_language_auto() {
         let auto_models = recommend_by_language("auto");
         assert_eq!(auto_models.len(), 8);
+        assert!(auto_models.iter().all(|model| !model.built_in));
         // Should be sorted by accuracy descending
         assert!(auto_models[0].accuracy_score >= auto_models[1].accuracy_score);
         assert!(auto_models[1].accuracy_score >= auto_models[2].accuracy_score);

@@ -56,9 +56,20 @@ jobs:
   # ── macOS ──────────────────────────────────────────────────────────────────
   build-macos:
     needs: preflight
-    runs-on: macos-latest
+    # The Apple speech engine needs the macOS 26 SDK (SpeechAnalyzer). An older
+    # SDK would silently build the unsupported stub, so the check below fails.
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
+
+      - name: Check macOS SDK
+        run: |
+          SDK=$(xcrun --show-sdk-version --sdk macosx)
+          echo "macOS SDK: $SDK · Xcode: $(xcodebuild -version | head -1)"
+          if [ "${SDK%%.*}" -lt 26 ]; then
+            echo "::error::macOS SDK $SDK too old — 26 or later is required for the Apple speech engine."
+            exit 1
+          fi
 
       - name: Install Rust (universal targets)
         uses: dtolnay/rust-toolchain@stable

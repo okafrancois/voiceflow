@@ -26,6 +26,9 @@ function getModelLanguageHint(modelName: string, t: (key: string) => string): st
   if (modelName.startsWith("whisper-") || modelName === "qwen3-asr-0.6b-int8") {
     return " · " + t("model.hint.multiLang");
   }
+  if (modelName === "apple-speech") {
+    return " · " + t("model.hint.appleStreaming");
+  }
   return "";
 }
 
@@ -128,7 +131,8 @@ export function VoiceInputSection({
                     )}
                   </div>
                   <div className="text-xs text-muted-foreground mt-0.5">
-                    {m.size_mb}MB · {t("model.available.speed")}:{" "}
+                    {m.built_in ? t("model.available.builtIn") : `${m.size_mb}MB`} ·{" "}
+                    {t("model.available.speed")}:{" "}
                     {m.speed_score}/10 · {t("model.available.accuracy")}:{" "}
                     {m.accuracy_score}/10{getModelLanguageHint(m.name, t)}
                   </div>
@@ -147,7 +151,7 @@ export function VoiceInputSection({
                   )}
                 </div>
                 <div className="ml-3 flex gap-2">
-                  {m.downloaded ? (
+                  {m.downloaded && m.built_in ? null : m.downloaded ? (
                     <Button
                       variant="outline"
                       size="sm"
@@ -199,7 +203,11 @@ export function VoiceInputSection({
                 <span className="text-muted-foreground">
                   {t("model.info.size")}
                 </span>
-                <span>{selectedModel.size_mb}MB</span>
+                <span>
+                  {selectedModel.built_in
+                    ? t("model.available.builtIn")
+                    : `${selectedModel.size_mb}MB`}
+                </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">

@@ -106,6 +106,8 @@ Versioned feature specs with verification status. Each lives under `feat/<name>/
 | [Cloud Service Tab UI](./feat/cloud-service/1.0.0/prd/erd.md) | 1.0.0 | Active |
 | [Correction Learning](./feat/correction-learning/0.1.0/prd/erd.md) | 0.1.0 | Active |
 | [Polish Model Device Compatibility Warnings](./feat/polish-model-compatibility/0.1.0/prd/erd.md) | 0.1.0 | Active |
+| [Faster Long Dictation](./feat/incremental-local-transcription/0.1.0/prd/erd.md) | 0.1.0 | Active |
+| [Apple Speech Engine](./feat/apple-speech-engine/0.1.0/prd/erd.md) | 0.1.0 | Active |
 
 ### Completed
 

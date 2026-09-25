@@ -6,6 +6,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use tracing::{error, info, instrument};
 
+use super::apple::{self, AppleSpeechEngine, AppleSpeechStatus};
 use super::models;
 use super::sherpa_onnx::SherpaOnnxEngine;
 use super::traits::{EngineType, TranscriptionRequest, TranscriptionResult};
@@ -65,6 +66,8 @@ pub struct ModelInfo {
     pub speed_score: u8,
     pub accuracy_score: u8,
     pub engine: String,
+    /// Ships with the operating system: no download size, cannot be deleted.
+    pub built_in: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -94,6 +97,13 @@ pub struct UnifiedEngineManager {
     models_dir: PathBuf,
     engine_cache: Arc<Mutex<Option<(EngineCacheKey, EngineInstance)>>>,
     provider: Arc<Mutex<InferenceProvider>>,
+    /// Dictation language setting; the Apple engine needs it to check assets.
+    dictation_language: Arc<Mutex<String>>,
+    /// Last Apple engine status and the language it was computed for. Bridge
+    /// queries block, and model listings run on the main thread where a
+    /// blocking query freezes the app, so they only run on background threads.
+    apple_status_cache: Arc<Mutex<Option<(String, AppleSpeechStatus)>>>,
+    apple_status_refreshing: Arc<AtomicBool>,
 }
 
 impl UnifiedEngineManager {
@@ -103,7 +113,52 @@ impl UnifiedEngineManager {
             models_dir,
             engine_cache: Arc::new(Mutex::new(None)),
             provider: Arc::new(Mutex::new(InferenceProvider::Cpu)),
+            dictation_language: Arc::new(Mutex::new("auto".to_string())),
+            apple_status_cache: Arc::new(Mutex::new(None)),
+            apple_status_refreshing: Arc::new(AtomicBool::new(false)),
         }
+    }
+
+    pub fn set_dictation_language(&self, language: &str) {
+        *self.dictation_language.lock().unwrap() = language.to_string();
+        self.refresh_apple_status();
+    }
+
+    pub fn dictation_language(&self) -> String {
+        self.dictation_language.lock().unwrap().clone()
+    }
+
+    /// Apple engine availability for the current dictation language, read
+    /// from the cache. Until a background query answers, the engine is treated
+    /// as unsupported, which hides it instead of blocking the caller.
+    fn apple_status(&self) -> AppleSpeechStatus {
+        let language = self.dictation_language();
+        if let Some((cached_language, status)) = self.apple_status_cache.lock().unwrap().as_ref() {
+            if *cached_language == language {
+                return *status;
+            }
+        }
+        self.refresh_apple_status();
+        AppleSpeechStatus::OsUnsupported
+    }
+
+    /// Queries the Apple engine status on a background thread.
+    pub fn refresh_apple_status(&self) {
+        if self
+            .apple_status_refreshing
+            .swap(true, std::sync::atomic::Ordering::AcqRel)
+        {
+            return;
+        }
+        let language = self.dictation_language();
+        let cache = Arc::clone(&self.apple_status_cache);
+        let refreshing = Arc::clone(&self.apple_status_refreshing);
+        std::thread::spawn(move || {
+            let status = apple::bridge::status(&language);
+            info!(language = %language, status = ?status, "apple_speech_status_refreshed");
+            *cache.lock().unwrap() = Some((language, status));
+            refreshing.store(false, std::sync::atomic::Ordering::Release);
+        });
     }
 
     pub fn set_provider(&self, gpu_acceleration: bool) {
@@ -140,6 +195,7 @@ impl UnifiedEngineManager {
                     SherpaOnnxEngine::new(&self.models_dir, model_def, language, provider)?;
                 Ok(EngineInstance::Local(engine))
             }
+            EngineType::Apple => Ok(EngineInstance::Apple(AppleSpeechEngine::new(language))),
             EngineType::Cloud => {
                 Err("Cloud STT uses streaming lifecycle, not batch transcription.".to_string())
             }
@@ -242,42 +298,39 @@ impl UnifiedEngineManager {
     // ==================== Model Management Functions ====================
 
     pub fn get_models(&self, engine_type: EngineType) -> Vec<ModelInfo> {
-        models::ALL
-            .iter()
-            .filter(|m| m.engine_type == engine_type)
-            .map(|def| {
-                let downloaded = self.is_model_downloaded(engine_type, def.name);
-                ModelInfo {
-                    name: def.name.to_string(),
-                    display_name: def.display_name.to_string(),
-                    size_mb: def.size_mb as u64,
-                    filename: def.name.to_string(),
-                    downloaded,
-                    speed_score: def.speed_score,
-                    accuracy_score: def.accuracy_score,
-                    engine: def.engine_type.as_str().to_string(),
-                }
-            })
+        self.listed_models()
+            .filter(|def| def.engine_type == engine_type)
+            .map(|def| self.model_info(def))
             .collect()
     }
 
     pub fn get_all_models(&self) -> Vec<ModelInfo> {
+        self.listed_models()
+            .map(|def| self.model_info(def))
+            .collect()
+    }
+
+    /// Models this system can run. The Apple engine is hidden before macOS 26.
+    fn listed_models(&self) -> impl Iterator<Item = &'static models::ModelDefinition> + '_ {
+        let apple_supported = self.apple_status() != AppleSpeechStatus::OsUnsupported;
         models::ALL
             .iter()
-            .map(|def| {
-                let downloaded = self.is_model_downloaded(def.engine_type, def.name);
-                ModelInfo {
-                    name: def.name.to_string(),
-                    display_name: def.display_name.to_string(),
-                    size_mb: def.size_mb as u64,
-                    filename: def.name.to_string(),
-                    downloaded,
-                    speed_score: def.speed_score,
-                    accuracy_score: def.accuracy_score,
-                    engine: def.engine_type.as_str().to_string(),
-                }
-            })
-            .collect()
+            .copied()
+            .filter(move |def| def.engine_type != EngineType::Apple || apple_supported)
+    }
+
+    fn model_info(&self, def: &models::ModelDefinition) -> ModelInfo {
+        ModelInfo {
+            name: def.name.to_string(),
+            display_name: def.display_name.to_string(),
+            size_mb: def.size_mb as u64,
+            filename: def.name.to_string(),
+            downloaded: self.is_model_downloaded(def.engine_type, def.name),
+            speed_score: def.speed_score,
+            accuracy_score: def.accuracy_score,
+            engine: def.engine_type.as_str().to_string(),
+            built_in: def.built_in,
+        }
     }
 
     pub fn get_engine_by_model_name(model_name: &str) -> Option<EngineType> {
@@ -296,6 +349,10 @@ impl UnifiedEngineManager {
 
         if model_def.engine_type != engine_type {
             return false;
+        }
+
+        if engine_type == EngineType::Apple {
+            return self.apple_status() == AppleSpeechStatus::Ready;
         }
 
         let model_subdir = self.models_dir.join(model_def.name);
@@ -330,7 +387,8 @@ impl UnifiedEngineManager {
             }
         }
 
-        for model_def in models::ALL {
+        // Built-in engines are opt-in: only an explicit selection uses them.
+        for model_def in models::ALL.iter().filter(|def| !def.built_in) {
             if self.is_model_downloaded(model_def.engine_type, model_def.name) {
                 tracing::warn!(
                     requested = requested_model,
@@ -345,8 +403,19 @@ impl UnifiedEngineManager {
         (default.engine_type, default.name.to_string())
     }
 
+    /// First downloaded model for `language` whose engine is not `excluded`,
+    /// used when the selected engine fails at runtime.
+    pub fn fallback_model(&self, language: &str, excluded: EngineType) -> Option<String> {
+        models::recommend_by_language(language)
+            .into_iter()
+            .chain(models::ALL.iter().copied())
+            .filter(|def| def.engine_type != excluded && !def.built_in)
+            .find(|def| self.is_model_downloaded(def.engine_type, def.name))
+            .map(|def| def.name.to_string())
+    }
+
     pub fn get_model_path(&self, engine_type: EngineType, model_name: &str) -> PathBuf {
-        if engine_type == EngineType::Cloud {
+        if matches!(engine_type, EngineType::Cloud | EngineType::Apple) {
             return PathBuf::new();
         }
         self.models_dir.join(model_name)
@@ -376,6 +445,21 @@ impl UnifiedEngineManager {
             return self
                 .download_qwen3_asr_model(model_name, cancel_flag, progress_callback)
                 .await;
+        }
+
+        if engine_type == EngineType::Apple {
+            let language = self.dictation_language();
+            info!(language = %language, "apple_speech_assets_install_started");
+            let status = tokio::task::spawn_blocking(move || {
+                apple::bridge::install_assets(&language)?;
+                Ok::<_, String>((language.clone(), apple::bridge::status(&language)))
+            })
+            .await
+            .map_err(|e| format!("Apple speech asset task failed: {e}"))??;
+            *self.apple_status_cache.lock().unwrap() = Some(status);
+            progress_callback(1, 1);
+            info!(model = %model_name, "apple_speech_assets_installed");
+            return Ok(PathBuf::new());
         }
 
         let repo = model_def
@@ -596,6 +680,13 @@ impl UnifiedEngineManager {
     }
 
     pub fn delete_model(&self, engine_type: EngineType, model_name: &str) -> Result<(), String> {
+        if models::find_by_name(model_name).is_some_and(|def| def.built_in) {
+            return Err(format!(
+                "Model '{}' is built into the system and cannot be deleted",
+                model_name
+            ));
+        }
+
         let model_subdir = self.models_dir.join(model_name);
 
         if !model_subdir.exists() {
@@ -760,6 +851,7 @@ fn extract_tar_bz2_archive(archive_path: &Path, output_dir: &Path) -> Result<(),
 #[derive(Clone)]
 pub(crate) enum EngineInstance {
     Local(SherpaOnnxEngine),
+    Apple(AppleSpeechEngine),
 }
 
 impl EngineInstance {
@@ -769,6 +861,7 @@ impl EngineInstance {
     ) -> Result<TranscriptionResult, String> {
         match self {
             EngineInstance::Local(engine) => engine.transcribe(request).await,
+            EngineInstance::Apple(engine) => engine.transcribe(request).await,
         }
     }
 }
@@ -801,7 +894,8 @@ mod tests {
     #[test]
     fn test_available_engines() {
         let engines = UnifiedEngineManager::available_engines();
-        assert_eq!(engines.len(), 4);
+        assert_eq!(engines.len(), 5);
+        assert!(engines.contains(&EngineType::Apple));
         assert!(engines.contains(&EngineType::Whisper));
         assert!(engines.contains(&EngineType::SenseVoice));
         assert!(engines.contains(&EngineType::Qwen3Asr));
@@ -810,7 +904,7 @@ mod tests {
 
     #[test]
     fn test_model_definitions() {
-        assert_eq!(models::ALL.len(), 8);
+        assert_eq!(models::ALL.len(), 9);
         assert_eq!(models::SENSE_VOICE_SMALL.name, "sense-voice-small");
         assert_eq!(models::WHISPER_TINY.name, "whisper-tiny");
         assert_eq!(models::WHISPER_BASE.name, "whisper-base");
@@ -987,6 +1081,64 @@ mod tests {
         assert_eq!(model_name, models::DEFAULT.name);
 
         let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn apple_status_is_resolved_in_the_background() {
+        let manager = UnifiedEngineManager::new(std::env::temp_dir());
+        manager.set_dictation_language("fr");
+
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while manager.apple_status_cache.lock().unwrap().is_none() {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the background status query should answer"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+
+        let cached = manager.apple_status_cache.lock().unwrap().clone();
+        assert_eq!(cached.map(|(language, _)| language), Some("fr".to_string()));
+    }
+
+    #[test]
+    fn built_in_models_cannot_be_deleted() {
+        let temp_dir = std::env::temp_dir().join("test_delete_built_in_model");
+        let manager = UnifiedEngineManager::new(temp_dir);
+
+        let error = manager
+            .delete_model(EngineType::Apple, models::APPLE_SPEECH.name)
+            .expect_err("a built-in model must not be deleted");
+
+        assert!(error.contains("built into the system"));
+    }
+
+    #[test]
+    fn fallback_model_skips_the_excluded_engine_and_built_in_models() {
+        let temp_dir = std::env::temp_dir().join("test_fallback_model_excludes_engine");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(&temp_dir).expect("temp dir should be created");
+        let manager = UnifiedEngineManager::new(temp_dir.clone());
+        write_sparse_model_files(&temp_dir, &models::WHISPER_BASE);
+
+        assert_eq!(
+            manager.fallback_model("fr", EngineType::Apple),
+            Some(models::WHISPER_BASE.name.to_string())
+        );
+        assert_eq!(manager.fallback_model("fr", EngineType::Whisper), None);
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn model_list_exposes_the_built_in_flag() {
+        let temp_dir = std::env::temp_dir().join("test_model_list_built_in_flag");
+        let manager = UnifiedEngineManager::new(temp_dir);
+
+        for info in manager.get_all_models() {
+            let definition = models::find_by_name(&info.name).expect("listed model is defined");
+            assert_eq!(info.built_in, definition.built_in, "{}", info.name);
+        }
     }
 
     fn write_sparse_model_files(base_dir: &std::path::Path, model: &models::ModelDefinition) {

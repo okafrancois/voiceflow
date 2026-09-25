@@ -241,6 +241,8 @@
   "model.available.accuracy": "Precisão",
   "model.hint.cjkBest": "CJK ótimo",
   "model.hint.multiLang": "20+ idiomas",
+  "model.hint.appleStreaming": "transcreve enquanto você fala · defina o idioma do ditado",
+  "model.available.builtIn": "Integrado ao macOS",
   "model.performanceSection.title": "Desempenho",
   "model.performanceSection.description": "Configurar definições de desempenho do modelo",
   "model.polishSection.title": "Polimento de texto",

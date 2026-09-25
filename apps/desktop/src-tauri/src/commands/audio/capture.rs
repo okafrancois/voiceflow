@@ -15,7 +15,7 @@ use crate::services::transcription_finalize::{
 use crate::state::app_state::AppState;
 use crate::state::unified_state::StreamingSttState;
 use crate::stt_engine::cloud::StreamingSttClient;
-use crate::stt_engine::traits::RecordingConsumer;
+use crate::stt_engine::traits::{EngineType, RecordingConsumer};
 use crate::utils::AppPaths;
 
 use super::polish::{maybe_polish_transcription_text_for_profile, PolishProcessingResult};
@@ -559,7 +559,7 @@ pub(super) fn start_unified_recording(
                 )
             };
 
-            let (_resolved_engine_type, resolved_model_name) = state_inner
+            let (resolved_engine_type, mut resolved_model_name) = state_inner
                 .engine_manager
                 .resolve_available_model(&model_name, &lang);
 
@@ -578,15 +578,38 @@ pub(super) fn start_unified_recording(
                 );
             }
 
-            let engine = crate::stt_engine::buffering_engine::BufferingConsumer::new(
-                state_inner.engine_manager.clone(),
-                resolved_model_name,
-                lang,
-                Some(initial_prompt),
-                stt_context,
-            );
+            let apple_consumer = if resolved_engine_type == EngineType::Apple {
+                match crate::stt_engine::apple::AppleStreamingConsumer::start(lang.clone()).await {
+                    Ok(consumer) => Some(consumer),
+                    Err(e) => {
+                        warn!(task_id, error = %e, "apple_speech_start_failed-falling_back");
+                        if let Some(fallback) = state_inner
+                            .engine_manager
+                            .fallback_model(&lang, EngineType::Apple)
+                        {
+                            info!(task_id, fallback = %fallback, "model_fallback_applied");
+                            resolved_model_name = fallback;
+                        }
+                        None
+                    }
+                }
+            } else {
+                None
+            };
 
-            Box::new(engine) as Box<dyn RecordingConsumer>
+            match apple_consumer {
+                Some(consumer) => Box::new(consumer) as Box<dyn RecordingConsumer>,
+                None => {
+                    let engine = crate::stt_engine::buffering_engine::BufferingConsumer::new(
+                        state_inner.engine_manager.clone(),
+                        resolved_model_name,
+                        lang,
+                        Some(initial_prompt),
+                        stt_context,
+                    );
+                    Box::new(engine) as Box<dyn RecordingConsumer>
+                }
+            }
         };
 
         let mut chunks_sent = 0;

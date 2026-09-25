@@ -387,8 +387,11 @@ impl SherpaOnnxEngine {
                     hotwords: None,
                 };
             }
-            EngineType::Cloud => {
-                return Err("Cloud engine not supported by SherpaOnnxEngine".to_string());
+            EngineType::Apple | EngineType::Cloud => {
+                return Err(format!(
+                    "{} engine not supported by SherpaOnnxEngine",
+                    model_def.engine_type
+                ));
             }
         }
 
