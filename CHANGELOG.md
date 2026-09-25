@@ -2,6 +2,12 @@
 
 All notable changes to the desktop application will be documented in this file.
 
+## Unreleased
+
+### Features
+
+- Add Apple Intelligence polish on macOS 26 (ffdb4ca)
+
 ## v1.3.0 (2026-09-25)
 
 ### Features

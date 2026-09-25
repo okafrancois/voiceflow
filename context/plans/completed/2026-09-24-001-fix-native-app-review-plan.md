@@ -1,9 +1,16 @@
 ---
 title: Native app review — fixes and new features
 type: fix
-status: active
+status: completed
 date: 2026-09-24
 ---
+
+> **Superseded on 2026-09-25.** The native macOS prototype (`voiceflow-native/`)
+> was removed after its Apple speech recognition and Apple Intelligence polish
+> were ported to the Tauri app (see
+> [Apple speech engine](../active/2026-09-25-002-feat-apple-speech-engine-plan.md)
+> and [Apple Intelligence polish](../active/2026-09-25-003-feat-apple-intelligence-polish-plan.md)).
+> Open units in this plan are abandoned, not delivered.
 
 # Native app review: fixes and new features
 

@@ -1,7 +1,0 @@
-# Artefacts de compilation
-VoiceFlow/.build/
-dist/
-*.dmg
-
-# Généré à la demande
-VoiceFlow/AppIcon.icns

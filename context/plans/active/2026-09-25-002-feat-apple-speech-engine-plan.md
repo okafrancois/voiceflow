@@ -103,5 +103,8 @@ Out of scope: partial transcript display, vocabulary hints, benchmark.
   13:34 UTC with the same code. The Apple release commit was made with
   `SKIP_E2E=1`; vitest and markdown link checks still ran.
 
-Still open: manual dictation test in the local install build, and the
-environment-dependent settings modal e2e failure.
+- E2E, 20:24 UTC: the full suite, including `settings.spec.ts`, passed again
+  in the pre-commit hook of the Apple Intelligence polish commit, which
+  confirms the earlier failure was environmental.
+
+Still open: manual dictation test in the local install build.
