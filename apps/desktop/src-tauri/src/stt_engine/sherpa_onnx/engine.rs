@@ -21,6 +21,14 @@ const WHISPER_MIN_SEGMENT_SAMPLES: usize = AUDIO_SAMPLE_RATE * 5;
 const WHISPER_BOUNDARY_SEARCH_SAMPLES: usize = AUDIO_SAMPLE_RATE * 3;
 const WHISPER_ENERGY_WINDOW_SAMPLES: usize = AUDIO_SAMPLE_RATE * 80 / 1_000;
 const WHISPER_ENERGY_HOP_SAMPLES: usize = AUDIO_SAMPLE_RATE * 20 / 1_000;
+/// A window closes during recording only once the audio after it is long
+/// enough that the final window can never fall below the minimum window.
+const WHISPER_INCREMENTAL_THRESHOLD_SAMPLES: usize =
+    WHISPER_MAX_SEGMENT_SAMPLES + WHISPER_MIN_SEGMENT_SAMPLES;
+const WHISPER_INCREMENTAL_EARLIEST_CUT_SAMPLES: usize =
+    WHISPER_MAX_SEGMENT_SAMPLES - 2 * WHISPER_BOUNDARY_SEARCH_SAMPLES;
+const WHISPER_INCREMENTAL_IDEAL_CUT_SAMPLES: usize =
+    WHISPER_MAX_SEGMENT_SAMPLES - WHISPER_BOUNDARY_SEARCH_SAMPLES;
 
 // SAFETY: OfflineRecognizer wraps a C++ pointer (*const) that lacks
 // auto-derived Send/Sync. We gate all access through a Mutex, so no
@@ -75,6 +83,26 @@ fn transcription_segment_ranges(samples: &[f32], engine_type: EngineType) -> Vec
 
     ranges.push(segment_start..samples.len());
     ranges
+}
+
+/// Returns where to close a Whisper window while the recording is still
+/// running, or `None` until the pending audio holds a full window plus the
+/// minimum remainder.
+///
+/// The cut lands on the quietest audio between 22 and 28 seconds, so the closed
+/// window respects the same bounds as `transcription_segment_ranges` and the
+/// remaining audio is at least the minimum window.
+pub(crate) fn incremental_whisper_boundary(pending: &[f32]) -> Option<usize> {
+    if pending.len() < WHISPER_INCREMENTAL_THRESHOLD_SAMPLES {
+        return None;
+    }
+
+    Some(quietest_boundary(
+        pending,
+        WHISPER_INCREMENTAL_EARLIEST_CUT_SAMPLES,
+        WHISPER_MAX_SEGMENT_SAMPLES,
+        WHISPER_INCREMENTAL_IDEAL_CUT_SAMPLES,
+    ))
 }
 
 fn quietest_boundary(
@@ -398,6 +426,52 @@ mod tests {
     use super::*;
 
     const SAMPLE_RATE: usize = 16_000;
+
+    #[test]
+    fn incremental_boundary_waits_for_a_full_window_plus_minimum_remainder() {
+        let pending = vec![0.5; SAMPLE_RATE * 33 - 1];
+
+        assert_eq!(incremental_whisper_boundary(&pending), None);
+    }
+
+    #[test]
+    fn incremental_boundary_cuts_between_22_and_28_seconds() {
+        for seconds in [33, 34, 40] {
+            let pending = vec![0.5; SAMPLE_RATE * seconds];
+
+            let cut = incremental_whisper_boundary(&pending)
+                .expect("a 33-second pending buffer should close a window");
+
+            assert!((SAMPLE_RATE * 22..=SAMPLE_RATE * 28).contains(&cut));
+            assert!(pending.len() - cut >= SAMPLE_RATE * 5);
+        }
+    }
+
+    #[test]
+    fn incremental_boundary_defaults_to_25_seconds_on_uniform_audio() {
+        let pending = vec![0.5; SAMPLE_RATE * 33];
+
+        assert_eq!(
+            incremental_whisper_boundary(&pending),
+            Some(SAMPLE_RATE * 25)
+        );
+    }
+
+    #[test]
+    fn incremental_boundary_prefers_nearby_low_energy_audio() {
+        let mut pending = vec![0.8; SAMPLE_RATE * 33];
+        let silence_start = SAMPLE_RATE * 23;
+        let silence_end = SAMPLE_RATE * 23 + SAMPLE_RATE / 2;
+        pending[silence_start..silence_end].fill(0.0);
+
+        let cut = incremental_whisper_boundary(&pending)
+            .expect("a 33-second pending buffer should close a window");
+
+        assert!(
+            (silence_start..silence_end).contains(&cut),
+            "boundary {cut} should fall in {silence_start}..{silence_end}"
+        );
+    }
 
     #[test]
     fn short_whisper_audio_is_decoded_once_without_copying_or_truncation() {
