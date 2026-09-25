@@ -90,7 +90,9 @@ async fn build_polish_model_status(
         } else {
             false
         };
-        let runtime_ready = polish_manager.is_local_runtime_ready();
+        // Built-in engines run without the local llama runtime.
+        let runtime_ready = engine_type == Some(crate::polish_engine::PolishEngineType::Apple)
+            || polish_manager.is_local_runtime_ready();
 
         Ok(serde_json::json!({
             "is_loaded": is_downloaded && runtime_ready,

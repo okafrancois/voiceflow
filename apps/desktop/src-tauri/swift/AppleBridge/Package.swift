@@ -2,15 +2,15 @@
 import PackageDescription
 
 // Static library linked into the Tauri binary by build.rs. It exposes a small
-// C ABI over Apple's SpeechAnalyzer, which is only reachable from Swift.
+// C ABI over the Swift-only SpeechAnalyzer and Foundation Models APIs.
 let package = Package(
-    name: "AppleSpeech",
+    name: "AppleBridge",
     platforms: [.macOS(.v12)],
     products: [
-        .library(name: "AppleSpeech", type: .static, targets: ["AppleSpeech"]),
+        .library(name: "AppleBridge", type: .static, targets: ["AppleBridge"]),
     ],
     targets: [
-        .target(name: "AppleSpeech"),
+        .target(name: "AppleBridge"),
     ],
     swiftLanguageModes: [.v5]
 )

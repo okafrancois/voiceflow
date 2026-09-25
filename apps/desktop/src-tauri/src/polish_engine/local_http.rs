@@ -349,7 +349,7 @@ fn fallback_timeout(text: &str) -> Duration {
     .min(LOCAL_POLISH_FALLBACK_MAX_TIMEOUT)
 }
 
-fn build_local_system_prompt(
+pub(crate) fn build_local_system_prompt(
     system_context: &SystemContext,
     language: &str,
     no_think_directive: bool,

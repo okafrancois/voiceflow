@@ -242,6 +242,7 @@
   "model.hint.multiLang": "20+语言",
   "model.hint.appleStreaming": "边说边转写 · 请设置听写语言",
   "model.available.builtIn": "macOS 内置",
+  "model.polish.appleIntelligenceHint": "请在系统设置 › Apple 智能与 Siri 中开启 Apple 智能。",
   "model.performanceSection.title": "性能",
   "model.performanceSection.description": "配置模型性能设置",
   "model.polishSection.title": "文本润色",

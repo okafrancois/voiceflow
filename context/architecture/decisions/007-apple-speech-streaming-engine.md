@@ -29,7 +29,7 @@ accurate choice.
 - Fallback: when the engine is unavailable (older macOS, other platforms,
   unsupported locale), model resolution falls back to a downloaded local model.
 
-The Swift-only API is reached through a Swift package (`swift/AppleSpeech`)
+The Swift-only API is reached through a Swift package (`swift/AppleBridge`)
 compiled by `build.rs` for the Rust target triple and linked statically behind
 a small C ABI, instead of a sidecar process, to avoid an extra signed binary
 and IPC latency.

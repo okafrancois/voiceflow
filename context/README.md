@@ -108,6 +108,7 @@ Versioned feature specs with verification status. Each lives under `feat/<name>/
 | [Polish Model Device Compatibility Warnings](./feat/polish-model-compatibility/0.1.0/prd/erd.md) | 0.1.0 | Active |
 | [Faster Long Dictation](./feat/incremental-local-transcription/0.1.0/prd/erd.md) | 0.1.0 | Active |
 | [Apple Speech Engine](./feat/apple-speech-engine/0.1.0/prd/erd.md) | 0.1.0 | Active |
+| [Apple Intelligence Polish](./feat/apple-intelligence-polish/0.1.0/prd/erd.md) | 0.1.0 | Active |
 
 ### Completed
 

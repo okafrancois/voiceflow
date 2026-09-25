@@ -243,6 +243,7 @@
   "model.hint.multiLang": "20+ 언어",
   "model.hint.appleStreaming": "말하는 동안 받아쓰기 · 받아쓰기 언어 설정",
   "model.available.builtIn": "macOS 내장",
+  "model.polish.appleIntelligenceHint": "시스템 설정 › Apple Intelligence 및 Siri에서 Apple Intelligence를 켜세요.",
   "model.performanceSection.title": "성능",
   "model.performanceSection.description": "모델 성능 설정 구성",
   "model.polishSection.title": "텍스트 다듬기",

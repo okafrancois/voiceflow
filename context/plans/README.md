@@ -33,6 +33,7 @@ A plan is only completed when all implementation units are closed, verification 
 |------|------|------|--------|
 | [Incremental local Whisper transcription](./active/2026-09-25-001-feat-incremental-local-transcription-plan.md) | feat | 2026-09-25 | Active |
 | [Apple speech engine](./active/2026-09-25-002-feat-apple-speech-engine-plan.md) | feat | 2026-09-25 | Active |
+| [Apple Intelligence polish](./active/2026-09-25-003-feat-apple-intelligence-polish-plan.md) | feat | 2026-09-25 | Active |
 | [Native app review — fixes and features](./active/2026-09-24-001-fix-native-app-review-plan.md) | fix | 2026-09-24 | Active |
 | [Original Dictation Target](./active/2026-09-04-001-feat-original-dictation-target-plan.md) | feat | 2026-09-04 | Active |
 | [Logging Standardization](./active/2026-04-03-001-fix-logging-standardization-plan.md) | fix | 2026-04-03 | Active |

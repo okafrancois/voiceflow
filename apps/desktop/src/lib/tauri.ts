@@ -357,6 +357,8 @@ export interface PolishModelInfo {
   downloaded: boolean;
   compatibility: PolishModelCompatibility;
   latency_profile: PolishModelLatencyProfile;
+  /** Ships with the operating system: no download size, cannot be deleted. */
+  built_in: boolean;
 }
 
 export interface PolishModelStatus {

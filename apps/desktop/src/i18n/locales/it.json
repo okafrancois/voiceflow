@@ -243,6 +243,7 @@
   "model.hint.multiLang": "20+ lingue",
   "model.hint.appleStreaming": "trascrive mentre parli · imposta la lingua di dettatura",
   "model.available.builtIn": "Integrato in macOS",
+  "model.polish.appleIntelligenceHint": "Attiva Apple Intelligence in Impostazioni di Sistema › Apple Intelligence e Siri.",
   "model.performanceSection.title": "Prestazioni",
   "model.performanceSection.description": "Configura impostazioni prestazioni modello",
   "model.polishSection.title": "Raffinamento testo",

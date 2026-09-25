@@ -324,7 +324,7 @@ pub fn delete_model(
 pub fn get_polish_models(_state: State<'_, AppState>) -> Vec<serde_json::Value> {
     let device = polish::DeviceProfile::current();
 
-    polish::get_all_models()
+    let mut models: Vec<serde_json::Value> = polish::get_all_models()
         .into_iter()
         .map(|(id, name, size)| {
             let downloaded = PolishModel::from_id(&id)
@@ -339,11 +339,41 @@ pub fn get_polish_models(_state: State<'_, AppState>) -> Vec<serde_json::Value> 
                 "size": size,
                 "downloaded": downloaded,
                 "compatibility": compatibility,
-                "latency_profile": latency_profile
+                "latency_profile": latency_profile,
+                "built_in": false
             })
         })
-        .collect()
+        .collect();
+    models.extend(apple_polish_model_entry(
+        polish::apple::bridge::status(),
+        &device,
+    ));
+    models
 }
+
+/// Apple Intelligence entry, listed on systems that can run Foundation Models.
+/// `downloaded` means available: it ships with macOS and is never downloaded.
+fn apple_polish_model_entry(
+    status: polish::apple::AppleLlmStatus,
+    device: &polish::DeviceProfile,
+) -> Option<serde_json::Value> {
+    if status == polish::apple::AppleLlmStatus::OsUnsupported {
+        return None;
+    }
+    let id = polish::apple::APPLE_POLISH_MODEL_ID;
+    Some(serde_json::json!({
+        "id": id,
+        "name": polish::apple::APPLE_POLISH_DISPLAY_NAME,
+        "size": "",
+        "downloaded": status == polish::apple::AppleLlmStatus::Available,
+        "compatibility": polish::assess_polish_model_compatibility(id, device),
+        "latency_profile": polish::polish_model_latency_profile(id),
+        "built_in": true
+    }))
+}
+
+const APPLE_POLISH_BUILT_IN_ERROR: &str =
+    "Apple Intelligence is built into macOS: enable it in System Settings > Apple Intelligence & Siri";
 
 #[tauri::command]
 pub fn get_current_polish_model(state: State<'_, AppState>) -> String {
@@ -356,7 +386,12 @@ pub fn is_polish_model_downloaded(_state: State<'_, AppState>) -> bool {
 }
 
 #[tauri::command]
-pub fn is_polish_model_downloaded_for_model(model_id: String, _state: State<'_, AppState>) -> bool {
+pub fn is_polish_model_downloaded_for_model(model_id: String, state: State<'_, AppState>) -> bool {
+    if polish::apple::is_apple_model(&model_id) {
+        return state
+            .polish_manager
+            .is_model_downloaded(polish::PolishEngineType::Apple, &model_id);
+    }
     PolishModel::from_id(&model_id)
         .map(polish::is_polish_model_downloaded_for)
         .unwrap_or(false)
@@ -376,6 +411,9 @@ pub async fn download_polish_model_by_id(
     model_id: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    if polish::apple::is_apple_model(&model_id) {
+        return Err(APPLE_POLISH_BUILT_IN_ERROR.to_string());
+    }
     let model =
         PolishModel::from_id(&model_id).ok_or_else(|| format!("Unknown model: {}", model_id))?;
     download_polish_model_internal(app, model, state).await
@@ -501,6 +539,9 @@ pub fn delete_polish_model_by_id(
     model_id: String,
     _state: State<'_, AppState>,
 ) -> Result<(), String> {
+    if polish::apple::is_apple_model(&model_id) {
+        return Err(APPLE_POLISH_BUILT_IN_ERROR.to_string());
+    }
     let model =
         PolishModel::from_id(&model_id).ok_or_else(|| format!("Unknown model: {}", model_id))?;
     delete_polish_model_internal(app, model)
@@ -653,4 +694,41 @@ pub fn get_polish_custom_templates(
 ) -> Vec<crate::commands::settings::CustomPolishTemplate> {
     let settings = state.settings.lock();
     settings.polish_custom_templates.clone()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn device() -> polish::DeviceProfile {
+        polish::DeviceProfile {
+            platform: "macos",
+            arch: "aarch64",
+            logical_cpu_count: 8,
+            total_memory_mb: Some(16 * 1024),
+        }
+    }
+
+    #[test]
+    fn apple_polish_entry_is_hidden_on_unsupported_systems() {
+        assert!(
+            apple_polish_model_entry(polish::apple::AppleLlmStatus::OsUnsupported, &device())
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn apple_polish_entry_is_built_in_and_downloaded_when_available() {
+        let available =
+            apple_polish_model_entry(polish::apple::AppleLlmStatus::Available, &device())
+                .expect("listed on supported systems");
+        assert_eq!(available["id"], "apple-intelligence");
+        assert_eq!(available["built_in"], true);
+        assert_eq!(available["downloaded"], true);
+
+        let disabled =
+            apple_polish_model_entry(polish::apple::AppleLlmStatus::Unavailable, &device())
+                .expect("listed while Apple Intelligence is disabled");
+        assert_eq!(disabled["downloaded"], false);
+    }
 }

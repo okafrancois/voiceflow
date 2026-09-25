@@ -302,7 +302,7 @@ export function PolishSection({
               onChange={(e) => handlePolishModelSelect(e.target.value)}
               options={downloadedPolishModels.map((m) => ({
                 value: m.id,
-                label: `${m.name} · ${m.size} · ${getLatencyLabel(m, t)}`,
+                label: `${m.name} · ${m.built_in ? t("model.available.builtIn") : m.size} · ${getLatencyLabel(m, t)}`,
               }))}
               placeholder={
                 downloadedPolishModels.length === 0
@@ -413,8 +413,13 @@ export function PolishSection({
                       )}
                     </div>
                     <div className="text-xs text-muted-foreground mt-0.5">
-                      {m.size}
+                      {m.built_in ? t("model.available.builtIn") : m.size}
                     </div>
+                    {m.built_in && !m.downloaded && (
+                      <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                        {t("model.polish.appleIntelligenceHint")}
+                      </p>
+                    )}
                     <div className="mt-2 space-y-1 text-xs leading-5 text-muted-foreground">
                       <p>
                         {getLatencyLabel(m, t)} · {getLatencySummary(m, t)}
@@ -441,7 +446,7 @@ export function PolishSection({
                     )}
                   </div>
                   <div className="ml-3">
-                    {m.downloaded ? (
+                    {m.built_in ? null : m.downloaded ? (
                       <Button
                         variant="outline"
                         size="sm"

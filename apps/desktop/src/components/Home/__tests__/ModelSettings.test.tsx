@@ -198,6 +198,7 @@ const polishModel: PolishModelInfo = {
     recommended_templates: ["filler"],
     caution_templates: [],
   },
+  built_in: false,
 };
 
 const voiceModel: ModelInfo = {

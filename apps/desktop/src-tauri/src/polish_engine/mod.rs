@@ -1,3 +1,4 @@
+pub mod apple;
 pub mod cloud;
 mod compatibility;
 pub mod gemma;

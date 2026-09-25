@@ -4,43 +4,13 @@ import Speech
 
 // C ABI over SpeechAnalyzer (macOS 26+). Every function except `feed` blocks
 // the calling thread until the asynchronous Swift work completes, so Rust must
-// call them from blocking threads. Strings returned to Rust are allocated with
-// `strdup` and released through `vf_apple_speech_free`.
+// call them from blocking threads.
 
 private enum Status: Int32 {
     case ready = 0
     case assetsMissing = 1
     case localeUnsupported = 2
     case osUnsupported = 3
-}
-
-private final class ResultBox<T>: @unchecked Sendable {
-    var value: T?
-}
-
-/// Runs async work to completion from a synchronous C entry point.
-private func blocking<T>(_ operation: @escaping @Sendable () async -> T) -> T {
-    let semaphore = DispatchSemaphore(value: 0)
-    let box = ResultBox<T>()
-    Task.detached {
-        box.value = await operation()
-        semaphore.signal()
-    }
-    semaphore.wait()
-    return box.value!
-}
-
-private func duplicate(_ string: String) -> UnsafeMutablePointer<CChar> {
-    strdup(string)
-}
-
-private func json(_ payload: [String: String]) -> String {
-    guard let data = try? JSONSerialization.data(withJSONObject: payload),
-          let text = String(data: data, encoding: .utf8)
-    else {
-        return #"{"error":"failed to encode the transcription result"}"#
-    }
-    return text
 }
 
 private func requestedLocale(_ identifier: UnsafePointer<CChar>) -> Locale {
@@ -319,9 +289,4 @@ public func vf_apple_speech_cancel(_ id: Int64) {
           let session = SessionRegistry.shared.remove(id) as? Session
     else { return }
     blocking { await session.cancel() }
-}
-
-@_cdecl("vf_apple_speech_free")
-public func vf_apple_speech_free(_ pointer: UnsafeMutablePointer<CChar>?) {
-    free(pointer)
 }

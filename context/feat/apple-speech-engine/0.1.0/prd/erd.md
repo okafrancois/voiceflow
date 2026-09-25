@@ -51,12 +51,12 @@ On older systems and other platforms nothing changes.
 ## Architecture
 
 ```
-capture.rs ──(Apple model)──> AppleStreamingConsumer ──C ABI──> Swift AppleSpeech
+capture.rs ──(Apple model)──> AppleStreamingConsumer ──C ABI──> Swift AppleBridge
           └─(other local)───> BufferingConsumer
 UnifiedEngineManager ──> EngineInstance::Apple (batch: files, retry)
 ```
 
-- Swift package `src-tauri/swift/AppleSpeech`, compiled by `build.rs` for the
+- Swift package `src-tauri/swift/AppleBridge`, compiled by `build.rs` for the
   Rust target triple and linked statically on macOS with an SDK 26 or later.
   It owns sessions (SpeechAnalyzer + SpeechTranscriber), asset installation,
   and format conversion. Every entry point checks `#available(macOS 26, *)`.

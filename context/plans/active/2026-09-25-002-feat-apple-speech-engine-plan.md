@@ -34,7 +34,7 @@ Out of scope: partial transcript display, vocabulary hints, benchmark.
 
 ### Unit 1 — Swift bridge and build
 
-- Files: `src-tauri/swift/AppleSpeech/**`, `src-tauri/build.rs`,
+- Files: `src-tauri/swift/AppleBridge/**`, `src-tauri/build.rs`,
   `src-tauri/Cargo.toml` (build dependency `serde_json`)
 - `build.rs` compiles the package for the Rust target triple when the macOS SDK
   is 26+, links it statically, and sets `cfg(apple_speech)`.

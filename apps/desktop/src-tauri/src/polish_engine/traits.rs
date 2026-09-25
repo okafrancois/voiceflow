@@ -12,6 +12,8 @@ pub enum PolishEngineType {
     Lfm,
     Gemma,
     Glm,
+    /// Apple Intelligence (Foundation Models), built into macOS 26+.
+    Apple,
     Cloud,
 }
 
@@ -22,6 +24,7 @@ impl PolishEngineType {
             PolishEngineType::Lfm => "lfm",
             PolishEngineType::Gemma => "gemma",
             PolishEngineType::Glm => "glm",
+            PolishEngineType::Apple => "apple",
             PolishEngineType::Cloud => "cloud",
         }
     }
@@ -32,6 +35,7 @@ impl PolishEngineType {
             PolishEngineType::Lfm,
             PolishEngineType::Gemma,
             PolishEngineType::Glm,
+            PolishEngineType::Apple,
             PolishEngineType::Cloud,
         ]
     }
@@ -46,6 +50,7 @@ impl std::str::FromStr for PolishEngineType {
             "lfm" => Ok(PolishEngineType::Lfm),
             "gemma" => Ok(PolishEngineType::Gemma),
             "glm" => Ok(PolishEngineType::Glm),
+            "apple" => Ok(PolishEngineType::Apple),
             "cloud" => Ok(PolishEngineType::Cloud),
             _ => Err(format!("Unknown polish engine type: {}", s)),
         }
@@ -314,7 +319,8 @@ mod tests {
     #[test]
     fn test_polish_engine_type_all() {
         let all = PolishEngineType::all();
-        assert_eq!(all.len(), 5);
+        assert_eq!(all.len(), 6);
+        assert!(all.contains(&PolishEngineType::Apple));
         assert!(all.contains(&PolishEngineType::Qwen));
         assert!(all.contains(&PolishEngineType::Lfm));
         assert!(all.contains(&PolishEngineType::Gemma));

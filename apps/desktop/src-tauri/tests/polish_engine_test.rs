@@ -27,7 +27,8 @@ fn test_unified_manager_initialization() {
     let engines = manager.available_engines();
 
     // Should have all local engines registered
-    assert_eq!(engines.len(), 4);
+    assert_eq!(engines.len(), 5);
+    assert!(engines.contains(&PolishEngineType::Apple));
     assert!(engines.contains(&PolishEngineType::Qwen));
     assert!(engines.contains(&PolishEngineType::Lfm));
     assert!(engines.contains(&PolishEngineType::Gemma));

@@ -23,6 +23,7 @@ Feature specs are versioned delivery contracts. Each spec at `context/feat/[name
 | Correction Learning | 0.1.0 | Active | [erd.md](./correction-learning/0.1.0/prd/erd.md) |
 | Faster Long Dictation | 0.1.0 | Active | [erd.md](./incremental-local-transcription/0.1.0/prd/erd.md) |
 | Apple Speech Engine | 0.1.0 | Active | [erd.md](./apple-speech-engine/0.1.0/prd/erd.md) |
+| Apple Intelligence Polish | 0.1.0 | Active | [erd.md](./apple-intelligence-polish/0.1.0/prd/erd.md) |
 
 ## Draft Features
 

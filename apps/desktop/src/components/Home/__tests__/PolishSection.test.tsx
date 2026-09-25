@@ -147,14 +147,19 @@ const polishModel: PolishModelInfo = {
     recommended_templates: ["filler"],
     caution_templates: [],
   },
+  built_in: false,
 };
 
-function renderPolishSection(status: PolishModelStatus) {
+function renderPolishSection(
+  status: PolishModelStatus,
+  models: PolishModelInfo[] = [polishModel],
+  selectedModel = "qwen3.5-0.8b",
+) {
   getPolishModelStatusMock.mockResolvedValue(status);
   render(
     <PolishSection
-      polishModels={[polishModel]}
-      selectedPolishModel="qwen3.5-0.8b"
+      polishModels={models}
+      selectedPolishModel={selectedModel}
       setSelectedPolishModel={vi.fn()}
       polishDownloadingId={null}
       polishProgress={null}
@@ -200,5 +205,32 @@ describe("PolishSection local runtime readiness", () => {
       expect(screen.getByText("model.polish.localRuntime.readyStatus")).toBeInTheDocument();
     });
     expect(screen.queryByText("model.polish.localRuntime.notReadyHelp")).not.toBeInTheDocument();
+  });
+
+  it("shows a built-in polish model without size, download or delete action", async () => {
+    const appleModel: PolishModelInfo = {
+      ...polishModel,
+      id: "apple-intelligence",
+      name: "Apple Intelligence",
+      size: "",
+      downloaded: false,
+      built_in: true,
+    };
+    renderPolishSection(
+      {
+        is_loaded: false,
+        is_downloaded: false,
+        runtime_ready: true,
+        current_model: "qwen3.5-0.8b",
+        engine_type: "qwen",
+      },
+      [polishModel, appleModel],
+    );
+
+    expect(await screen.findByText("Apple Intelligence")).toBeInTheDocument();
+    expect(screen.getByText("model.polish.appleIntelligenceHint")).toBeInTheDocument();
+    expect(screen.getAllByText("model.available.builtIn")).not.toHaveLength(0);
+    expect(screen.getAllByRole("button", { name: "model.available.delete" })).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: "model.available.download" })).toBeNull();
   });
 });

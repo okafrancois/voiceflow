@@ -1,5 +1,5 @@
 use crate::polish_engine::traits::{PolishEngine, PolishEngineType, PolishRequest, PolishResult};
-use crate::polish_engine::{cloud::CloudPolishEngine, gemma, glm, lfm, qwen, PolishModel};
+use crate::polish_engine::{apple, cloud::CloudPolishEngine, gemma, glm, lfm, qwen, PolishModel};
 use crate::utils::{downloaded_file_is_complete, AppPaths};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -37,6 +37,12 @@ impl UnifiedPolishManager {
         // Register GLM engine
         engines.insert(PolishEngineType::Glm, Arc::new(glm::GlmPolishEngine::new()));
 
+        // Register Apple Intelligence engine (built into macOS 26+)
+        engines.insert(
+            PolishEngineType::Apple,
+            Arc::new(apple::ApplePolishEngine::new()),
+        );
+
         info!(engine_count = engines.len(), "polish_manager_initialized");
         Self {
             engines,
@@ -57,6 +63,8 @@ impl UnifiedPolishManager {
             Some(PolishEngineType::Gemma)
         } else if glm::is_glm_model(model_id) {
             Some(PolishEngineType::Glm)
+        } else if apple::is_apple_model(model_id) {
+            Some(PolishEngineType::Apple)
         } else {
             None
         }
@@ -137,6 +145,15 @@ impl UnifiedPolishManager {
 
     /// Load model into cache (for preloading)
     pub fn load_model(&self, engine_type: PolishEngineType, model_id: &str) -> Result<(), String> {
+        if engine_type == PolishEngineType::Apple {
+            // Built into the OS: nothing to load.
+            return if self.is_model_downloaded(engine_type, model_id) {
+                Ok(())
+            } else {
+                Err("Apple Intelligence is not available".to_string())
+            };
+        }
+
         let model_filename = self
             .get_model_filename(engine_type, model_id)
             .ok_or_else(|| format!("Model not found: {}", model_id))?;
@@ -185,8 +202,11 @@ impl UnifiedPolishManager {
 
         debug!(engine = ?engine_type, "polish_operation_start");
 
-        // If model_name is provided, use cached instance
-        if let Some(ref model_filename) = request.model_name {
+        // If model_name is provided, use cached instance. Built-in engines have
+        // no model file and no local runtime.
+        if let (Some(ref model_filename), false) =
+            (&request.model_name, engine_type == PolishEngineType::Apple)
+        {
             let _instance = self.get_or_create_engine_instance(engine_type, model_filename)?;
             let model_id = polish_model_id_from_filename(model_filename)
                 .unwrap_or_else(|| model_filename.to_string());
@@ -228,6 +248,10 @@ impl UnifiedPolishManager {
                     false
                 }
             }
+            PolishEngineType::Apple => {
+                apple::is_apple_model(model_id)
+                    && apple::bridge::status() == apple::AppleLlmStatus::Available
+            }
             PolishEngineType::Cloud => {
                 // Cloud engine doesn't have local models
                 false
@@ -253,6 +277,9 @@ impl UnifiedPolishManager {
             }
             PolishEngineType::Glm => {
                 glm::GlmModelDef::from_id(model_id).map(|m| m.filename.to_string())
+            }
+            PolishEngineType::Apple => {
+                apple::is_apple_model(model_id).then(|| model_id.to_string())
             }
             PolishEngineType::Cloud => {
                 // Cloud engine uses the model ID as the model name directly
@@ -301,7 +328,10 @@ impl UnifiedPolishManager {
         model_id: &str,
         model_filename: &str,
     ) -> Result<(), String> {
-        if engine_type == PolishEngineType::Cloud {
+        if matches!(
+            engine_type,
+            PolishEngineType::Cloud | PolishEngineType::Apple
+        ) {
             return Ok(());
         }
 
@@ -454,10 +484,36 @@ mod tests {
     use super::*;
 
     #[test]
+    fn apple_intelligence_routes_to_the_built_in_engine() {
+        let manager = UnifiedPolishManager::new();
+
+        assert_eq!(
+            UnifiedPolishManager::get_engine_by_model_id(apple::APPLE_POLISH_MODEL_ID),
+            Some(PolishEngineType::Apple)
+        );
+        assert!(manager
+            .available_engines()
+            .contains(&PolishEngineType::Apple));
+        assert_eq!(
+            manager.get_model_filename(PolishEngineType::Apple, apple::APPLE_POLISH_MODEL_ID),
+            Some(apple::APPLE_POLISH_MODEL_ID.to_string())
+        );
+        assert_eq!(
+            manager.get_model_filename(PolishEngineType::Apple, "qwen3-4b"),
+            None
+        );
+        assert_eq!(
+            manager.is_model_downloaded(PolishEngineType::Apple, apple::APPLE_POLISH_MODEL_ID),
+            apple::bridge::status() == apple::AppleLlmStatus::Available
+        );
+    }
+
+    #[test]
     fn test_unified_polish_manager_new() {
         let manager = UnifiedPolishManager::new();
         let engines = manager.available_engines();
-        assert_eq!(engines.len(), 4);
+        assert_eq!(engines.len(), 5);
+        assert!(engines.contains(&PolishEngineType::Apple));
         assert!(engines.contains(&PolishEngineType::Qwen));
         assert!(engines.contains(&PolishEngineType::Lfm));
         assert!(engines.contains(&PolishEngineType::Gemma));
@@ -468,7 +524,7 @@ mod tests {
     fn test_unified_polish_manager_default() {
         let manager = UnifiedPolishManager::default();
         let engines = manager.available_engines();
-        assert_eq!(engines.len(), 4);
+        assert_eq!(engines.len(), 5);
     }
 
     #[test]

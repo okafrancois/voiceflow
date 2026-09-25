@@ -1,4 +1,4 @@
-//! Safe wrappers over the Swift SpeechAnalyzer bridge (`swift/AppleSpeech`).
+//! Safe wrappers over the Swift bridge (`swift/AppleBridge`).
 //!
 //! Every function except [`AppleSpeechSession::feed`] blocks until the Swift
 //! side finishes its asynchronous work: call them from blocking threads.
@@ -15,7 +15,7 @@ pub enum AppleSpeechStatus {
 }
 
 impl AppleSpeechStatus {
-    #[cfg_attr(not(apple_speech), allow(dead_code))]
+    #[cfg_attr(not(apple_bridge), allow(dead_code))]
     fn from_code(code: i32) -> Self {
         match code {
             0 => Self::Ready,
@@ -27,13 +27,13 @@ impl AppleSpeechStatus {
 }
 
 #[derive(Deserialize)]
-#[cfg_attr(not(apple_speech), allow(dead_code))]
+#[cfg_attr(not(apple_bridge), allow(dead_code))]
 struct FinishPayload {
     text: Option<String>,
     error: Option<String>,
 }
 
-#[cfg_attr(not(apple_speech), allow(dead_code))]
+#[cfg_attr(not(apple_bridge), allow(dead_code))]
 fn parse_finish_payload(payload: &str) -> Result<String, String> {
     let parsed: FinishPayload =
         serde_json::from_str(payload).map_err(|e| format!("Invalid Apple speech result: {e}"))?;
@@ -44,7 +44,7 @@ fn parse_finish_payload(payload: &str) -> Result<String, String> {
     }
 }
 
-#[cfg(apple_speech)]
+#[cfg(apple_bridge)]
 mod ffi {
     use std::ffi::{c_char, CStr, CString};
 
@@ -55,7 +55,7 @@ mod ffi {
         fn vf_apple_speech_feed(id: i64, samples: *const i16, count: isize);
         fn vf_apple_speech_finish(id: i64) -> *mut c_char;
         fn vf_apple_speech_cancel(id: i64);
-        fn vf_apple_speech_free(pointer: *mut c_char);
+        fn vf_apple_bridge_free(pointer: *mut c_char);
     }
 
     fn locale_arg(locale: &str) -> CString {
@@ -68,12 +68,12 @@ mod ffi {
             return String::new();
         }
         // SAFETY: the bridge returns NUL-terminated strings from `strdup`,
-        // which stay valid until released with `vf_apple_speech_free`.
+        // which stay valid until released with `vf_apple_bridge_free`.
         let text = unsafe { CStr::from_ptr(pointer) }
             .to_string_lossy()
             .into_owned();
         // SAFETY: `pointer` came from the bridge and is released exactly once.
-        unsafe { vf_apple_speech_free(pointer) };
+        unsafe { vf_apple_bridge_free(pointer) };
         text
     }
 
@@ -125,18 +125,18 @@ mod ffi {
 }
 
 /// Reports whether the engine can transcribe `locale` (`auto` = system locale).
-#[cfg(apple_speech)]
+#[cfg(apple_bridge)]
 pub fn status(locale: &str) -> AppleSpeechStatus {
     AppleSpeechStatus::from_code(ffi::status(locale))
 }
 
-#[cfg(not(apple_speech))]
+#[cfg(not(apple_bridge))]
 pub fn status(_locale: &str) -> AppleSpeechStatus {
     AppleSpeechStatus::OsUnsupported
 }
 
 /// Downloads and installs the on-device speech assets for `locale`.
-#[cfg(apple_speech)]
+#[cfg(apple_bridge)]
 pub fn install_assets(locale: &str) -> Result<(), String> {
     let error = ffi::install(locale);
     if error.is_empty() {
@@ -146,20 +146,20 @@ pub fn install_assets(locale: &str) -> Result<(), String> {
     }
 }
 
-#[cfg(not(apple_speech))]
+#[cfg(not(apple_bridge))]
 pub fn install_assets(_locale: &str) -> Result<(), String> {
     Err("Apple speech recognition is not available in this build".to_string())
 }
 
 /// One analysis session. Dropping an unfinished session cancels it.
 pub struct AppleSpeechSession {
-    #[cfg_attr(not(apple_speech), allow(dead_code))]
+    #[cfg_attr(not(apple_bridge), allow(dead_code))]
     id: i64,
     finished: bool,
 }
 
 impl AppleSpeechSession {
-    #[cfg(apple_speech)]
+    #[cfg(apple_bridge)]
     pub fn start(locale: &str) -> Result<Self, String> {
         let id = ffi::start(locale)?;
         Ok(Self {
@@ -168,28 +168,28 @@ impl AppleSpeechSession {
         })
     }
 
-    #[cfg(not(apple_speech))]
+    #[cfg(not(apple_bridge))]
     pub fn start(_locale: &str) -> Result<Self, String> {
         Err("Apple speech recognition is not available in this build".to_string())
     }
 
     /// Queues 16 kHz mono samples. Returns without waiting for recognition.
-    #[cfg(apple_speech)]
+    #[cfg(apple_bridge)]
     pub fn feed(&self, samples: &[i16]) {
         ffi::feed(self.id, samples);
     }
 
-    #[cfg(not(apple_speech))]
+    #[cfg(not(apple_bridge))]
     pub fn feed(&self, _samples: &[i16]) {}
 
     /// Ends the input and waits for the final transcript.
-    #[cfg(apple_speech)]
+    #[cfg(apple_bridge)]
     pub fn finish(mut self) -> Result<String, String> {
         self.finished = true;
         parse_finish_payload(&ffi::finish(self.id))
     }
 
-    #[cfg(not(apple_speech))]
+    #[cfg(not(apple_bridge))]
     pub fn finish(mut self) -> Result<String, String> {
         self.finished = true;
         Err("Apple speech recognition is not available in this build".to_string())
@@ -199,7 +199,7 @@ impl AppleSpeechSession {
 impl Drop for AppleSpeechSession {
     fn drop(&mut self) {
         if !self.finished {
-            #[cfg(apple_speech)]
+            #[cfg(apple_bridge)]
             ffi::cancel(self.id);
         }
     }

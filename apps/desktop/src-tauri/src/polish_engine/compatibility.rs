@@ -95,7 +95,7 @@ pub fn assess_polish_model_compatibility(
 
 pub fn polish_model_latency_profile(model_id: &str) -> PolishModelLatencyProfile {
     match model_id {
-        "qwen3.5-0.8b" | "lfm2.5-1.2b" => PolishModelLatencyProfile {
+        "qwen3.5-0.8b" | "lfm2.5-1.2b" | "apple-intelligence" => PolishModelLatencyProfile {
             class: PolishModelLatencyClass::Fast,
             code: "fast_transcript_preserving",
             recommended_templates: vec!["filler", "chat"],
@@ -149,6 +149,11 @@ fn requirement_for_model(model_id: &str) -> PolishModelRequirement {
         "glm-4.7-flash-reap-23b-a3b" => PolishModelRequirement {
             minimum_memory_mb: 32 * 1024,
             recommended_memory_mb: 64 * 1024,
+        },
+        // Apple Intelligence requires 8 GB of memory and runs outside the app.
+        "apple-intelligence" => PolishModelRequirement {
+            minimum_memory_mb: 8 * 1024,
+            recommended_memory_mb: 8 * 1024,
         },
         _ => PolishModelRequirement {
             minimum_memory_mb: 8 * 1024,
