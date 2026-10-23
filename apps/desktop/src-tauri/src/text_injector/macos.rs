@@ -7,6 +7,9 @@ use std::ffi::c_void;
 use tracing::{info, warn};
 use unicode_segmentation::UnicodeSegmentation;
 
+mod main_queue;
+use main_queue::run_on_main_sync;
+
 pub struct MacosInjector;
 
 // ── GCD ───────────────────────────────────────────────────────────────────────
@@ -34,11 +37,6 @@ extern "C" {
     fn dispatch_time(when: DispatchTime, delta: i64) -> DispatchTime;
     fn dispatch_after_f(
         when: DispatchTime,
-        queue: DispatchQueue,
-        context: *mut c_void,
-        work: unsafe extern "C" fn(*mut c_void),
-    );
-    fn dispatch_sync_f(
         queue: DispatchQueue,
         context: *mut c_void,
         work: unsafe extern "C" fn(*mut c_void),
@@ -218,32 +216,6 @@ unsafe fn schedule_on_main<F: FnOnce() + Send + 'static>(delay_ms: u64, f: F) {
     let main_queue = &_dispatch_main_q as *const u8 as DispatchQueue;
     let when = dispatch_time(DISPATCH_TIME_NOW, (delay_ms * NSEC_PER_MSEC) as i64);
     dispatch_after_f(when, main_queue, ctx, trampoline::<F>);
-}
-
-unsafe fn run_on_main_sync<T: Send, F: FnOnce() -> T + Send>(f: F) -> T {
-    struct Ctx<T, F> {
-        f: Option<F>,
-        result: Option<T>,
-    }
-    extern "C" fn trampoline<T, F: FnOnce() -> T>(ctx: *mut c_void) {
-        unsafe {
-            let ctx = &mut *(ctx as *mut Ctx<T, F>);
-            if let Some(f) = ctx.f.take() {
-                ctx.result = Some(f());
-            }
-        }
-    }
-    let mut ctx = Ctx {
-        f: Some(f),
-        result: None,
-    };
-    let main_queue = &_dispatch_main_q as *const u8 as DispatchQueue;
-    dispatch_sync_f(
-        main_queue,
-        &mut ctx as *mut _ as *mut c_void,
-        trampoline::<T, F>,
-    );
-    ctx.result.expect("run_on_main_sync failed")
 }
 
 // ── NSPasteboard save/restore ─────────────────────────────────────────────────

@@ -98,8 +98,17 @@ After 3 consecutive failures:
 
 ## 6. Text Injection Debugging
 
-- Layer 0 (keyboard simulation): For short text ≤200 chars, no newlines
-- Layer 2 (clipboard paste): For long text >200 chars or multiline content
+- On macOS, keyboard simulation handles text up to 400 graphemes without
+  newlines, in chunks of up to 100 graphemes.
+- Clipboard paste handles longer or multiline text and keyboard fallback.
+- A macOS SIGTRAP with `dispatch_sync called on queue already owned by current
+  thread` indicates synchronous dispatch back to the caller's main queue.
+  Tray menu callbacks run on the main thread; clipboard helpers must execute
+  inline there and marshal only background callers. See the native regression
+  executable `macos_main_queue_test` in the testing guide.
+- A macOS status-icon click must not also activate the main window. Native
+  menu tracking and window activation conflict, especially across fullscreen
+  Spaces. Only the explicit Show Settings menu action should focus settings.
 - Check `apps/desktop/src-tauri/context/text_injection_fix.md` for known issues
 
 ## 7. Cloud Engine Debugging

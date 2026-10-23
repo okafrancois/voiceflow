@@ -89,6 +89,16 @@ cd apps/desktop/src-tauri && cargo test && cargo clippy --all-features -- -D war
 
 ## Rust Backend Testing
 
+### macOS main-thread regressions
+
+Rust's standard test harness runs tests on worker threads. For clipboard/menu
+threading regressions, run `cargo test --test macos_main_queue_test` on macOS
+(also included by `cargo test`). Its custom harness exercises the production
+main-queue helper on the real main thread and pumps the native run loop for
+worker-to-main calls. It never writes the clipboard, sends keys, or activates
+applications. This verifies dispatch safety, not fullscreen menu appearance;
+that still requires a native UI check with another app in a fullscreen Space.
+
 ### Unit Tests
 
 Place in `__test__/` directories alongside modules:

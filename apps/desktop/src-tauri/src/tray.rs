@@ -1,7 +1,7 @@
 //! System tray (status bar) implementation for Voice Flow.
 //!
 //! Provides a persistent tray icon in the system status bar with:
-//! - Click to show/hide main settings window
+//! - Native menu on macOS; click to open settings on other platforms
 //! - Context menu with: Show Settings, Toggle Recording, Paste Last Transcription, Quit
 //! - Visual indicator for recording state (icon changes)
 
@@ -156,32 +156,41 @@ fn handle_menu_event(app: &AppHandle, event: tauri::menu::MenuEvent) {
     }
 }
 
-/// Handle tray icon click events (direct clicks on the icon, not menu).
-fn handle_tray_icon_event(tray: &tauri::tray::TrayIcon, event: TrayIconEvent) {
+fn tray_icon_action_for_event(event: &TrayIconEvent) -> Option<TrayMenuAction> {
+    // The native macOS menu owns icon clicks. Activating our window here
+    // steals focus from the menu and can switch away from a fullscreen Space.
+    if cfg!(target_os = "macos") {
+        return None;
+    }
+
     match event {
         TrayIconEvent::Click {
             button: MouseButton::Left,
             button_state: MouseButtonState::Up,
             ..
-        } => {
-            let app = tray.app_handle();
-            show_main_window(app);
         }
+        | TrayIconEvent::DoubleClick {
+            button: MouseButton::Left,
+            ..
+        } => Some(TrayMenuAction::ShowSettings),
+        _ => None,
+    }
+}
+
+/// Handle tray icon clicks separately from explicit menu actions.
+fn handle_tray_icon_event(tray: &tauri::tray::TrayIcon, event: TrayIconEvent) {
+    if tray_icon_action_for_event(&event) == Some(TrayMenuAction::ShowSettings) {
+        show_main_window(tray.app_handle());
+    }
+    if matches!(
+        event,
         TrayIconEvent::Click {
             button: MouseButton::Right,
             button_state: MouseButtonState::Up,
             ..
-        } => {
-            info!("tray_right_clicked");
         }
-        TrayIconEvent::DoubleClick {
-            button: MouseButton::Left,
-            ..
-        } => {
-            let app = tray.app_handle();
-            show_main_window(app);
-        }
-        _ => {}
+    ) {
+        info!("tray_right_clicked");
     }
 }
 
@@ -298,9 +307,60 @@ pub fn update_tray_menu_recording_text(app: &AppHandle, is_recording: bool) -> t
 #[cfg(test)]
 mod tests {
     use super::{
-        tray_menu_action_for_id, TrayMenuAction, MENU_ID_PASTE_LAST_TRANSCRIPTION,
-        MENU_LABEL_PASTE_LAST_TRANSCRIPTION,
+        tray_icon_action_for_event, tray_menu_action_for_id, TrayMenuAction,
+        MENU_ID_PASTE_LAST_TRANSCRIPTION, MENU_LABEL_PASTE_LAST_TRANSCRIPTION,
     };
+    use tauri::tray::{MouseButton, MouseButtonState, TrayIconEvent};
+
+    fn click_event(button: MouseButton, button_state: MouseButtonState) -> TrayIconEvent {
+        TrayIconEvent::Click {
+            id: "voiceflow-tray".into(),
+            position: (0.0, 0.0).into(),
+            rect: tauri::Rect::default(),
+            button,
+            button_state,
+        }
+    }
+
+    #[test]
+    fn icon_clicks_preserve_native_menu_focus_on_macos() {
+        let expected = if cfg!(target_os = "macos") {
+            None
+        } else {
+            Some(TrayMenuAction::ShowSettings)
+        };
+        assert_eq!(
+            tray_icon_action_for_event(&click_event(MouseButton::Left, MouseButtonState::Up)),
+            expected
+        );
+        assert_eq!(
+            tray_icon_action_for_event(&TrayIconEvent::DoubleClick {
+                id: "voiceflow-tray".into(),
+                position: (0.0, 0.0).into(),
+                rect: tauri::Rect::default(),
+                button: MouseButton::Left,
+            }),
+            expected
+        );
+    }
+
+    #[test]
+    fn menu_opening_clicks_never_activate_settings() {
+        for (button, state) in [
+            (MouseButton::Left, MouseButtonState::Down),
+            (MouseButton::Right, MouseButtonState::Down),
+            (MouseButton::Right, MouseButtonState::Up),
+        ] {
+            assert_eq!(
+                tray_icon_action_for_event(&click_event(button, state)),
+                None
+            );
+        }
+        assert_eq!(
+            tray_menu_action_for_id(super::MENU_ID_SHOW_SETTINGS),
+            Some(TrayMenuAction::ShowSettings)
+        );
+    }
 
     #[test]
     fn paste_last_transcription_menu_contract_has_label_and_dispatch_action() {

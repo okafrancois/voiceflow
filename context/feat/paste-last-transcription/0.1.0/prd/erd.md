@@ -28,6 +28,12 @@ without opening or focusing the main window.
   The tray only triggers that backend action.
 - The action must not show or focus the settings window because that would
   replace the user's intended insertion target.
+- On macOS, status-icon clicks belong to the native menu and never activate
+  the main window, including while another app occupies a fullscreen Space.
+  Only the explicit Show Settings menu item activates that window.
+- Clipboard operations are valid from both main-thread menu callbacks and
+  background transcription tasks. Calling from the main thread must not
+  synchronously dispatch back to the same queue.
 
 ## Information architecture
 
@@ -118,6 +124,10 @@ And keeps the transcription in history for a later attempt.
 
 ## Verification
 
+- A native main-thread regression executable checks inline execution and
+  worker-to-main dispatch without changing the clipboard or sending keys.
+- Tray click regressions cover left-button press/release, double click and
+  right click without macOS main-window activation.
 - Rust store tests for newest-first selection, failed and blank row filtering,
   and empty history.
 - Rust action tests for keyboard success, clipboard success, injection failure,
@@ -129,6 +139,8 @@ And keeps the transcription in history for a later attempt.
   desktop harness does not expose status-bar menus.
 
 ## Verification evidence
+
+### Initial implementation
 
 - Three focused store tests passed for newest usable selection, blank and failed
   row filtering, deterministic timestamp ties, and empty history.
@@ -147,3 +159,20 @@ And keeps the transcription in history for a later attempt.
   logged `tray_created`. The `computer-use` integration was not approved to
   inspect Voice Flow, so clicking the native menu and observing focus remains a
   manual macOS check.
+
+### macOS crash and menu focus regression — 2026-10-23
+
+- The native regression reproduces the production SIGTRAP before the
+  main-thread guard and passes both main-thread and background dispatch cases
+  afterward. Four tray tests pass, including the previously failing macOS
+  click-activation regression.
+- The functional Rust suite passes 981 tests plus the two native checks, with
+  40 ignored tests and the existing resampling performance benchmark excluded.
+  The complete run fails only at that unchanged benchmark's 3 s time limit;
+  observed runs take 3.527 s and 3.758 s while the host is heavily loaded.
+- Clippy, formatting, desktop build, shared typecheck and i18n checks pass.
+- The separate local `Voice Flow Dev.app` builds successfully and passes strict
+  code-signature and development identity checks. These fixes are not published.
+- Fullscreen native menu behavior remains visually unverified: Computer Use
+  cannot access SystemUIServer and returns `timeoutReached`. Policy tests
+  verify that macOS icon clicks no longer activate the settings window.
