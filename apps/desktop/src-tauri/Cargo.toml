@@ -1,6 +1,6 @@
 [package]
 name = "voiceflow"
-version = "1.4.2"
+version = "1.4.3"
 description = "Voice Flow - Voice to Text Application"
 authors = ["Voice Flow Team"]
 edition = "2021"
@@ -79,6 +79,10 @@ tempfile = "3"
 
 [[test]]
 name = "macos_main_queue_test"
+harness = false
+
+[[test]]
+name = "macos_status_menu_test"
 harness = false
 
 [target.'cfg(target_os = "macos")'.dependencies]

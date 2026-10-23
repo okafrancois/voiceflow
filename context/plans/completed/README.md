@@ -13,6 +13,7 @@ A plan belongs in this directory only when all of the following are true:
 
 ## Completed Plans
 
+- [Invisible fullscreen status menu](./2026-10-23-005-fix-fullscreen-status-menu-plan.md) - fix - 2026-10-23
 - [macOS tray fixes release v1.4.2](./2026-10-23-004-release-v1.4.2-plan.md) - fix - 2026-10-23
 - [macOS tray paste crash and fullscreen menu focus](./2026-10-23-003-fix-macos-tray-paste-plan.md) - fix - 2026-10-23
 - [Recording audio integrity release v1.4.1](./2026-10-23-002-release-v1.4.1-plan.md) - fix - 2026-10-23

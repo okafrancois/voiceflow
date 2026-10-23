@@ -34,6 +34,10 @@ without opening or focusing the main window.
 - Clipboard operations are valid from both main-thread menu callbacks and
   background transcription tasks. Calling from the main thread must not
   synchronously dispatch back to the same queue.
+- On macOS, a background status menu temporarily uses Accessory activation
+  policy while tracking. Dismissal restores the preceding policy, preserving
+  the normal Dock behavior. An existing Accessory policy or an explicit
+  intervening policy change must not be overwritten.
 
 ## Information architecture
 
@@ -137,6 +141,10 @@ And keeps the transcription in history for a later attempt.
   checks.
 - Native tray behavior remains a manual macOS check because the automated
   desktop harness does not expose status-bar menus.
+- Fullscreen acceptance requires a visible menu above another application's
+  Space on both built-in and external displays, including when that application
+  is fullscreen before Voice Flow starts. Click-policy tests alone do not meet
+  this criterion.
 
 ## Verification evidence
 
@@ -182,3 +190,29 @@ And keeps the transcription in history for a later attempt.
 - Fullscreen native menu behavior remains visually unverified: Computer Use
   cannot access SystemUIServer and returns `timeoutReached`. Policy tests
   verify that macOS icon clicks no longer activate the settings window.
+
+### Reopened fullscreen menu failure — 2026-10-23
+
+The user reports that v1.4.2 still highlights the status icon without showing
+the menu above fullscreen apps on either display. The completed
+[fullscreen status-menu investigation](../../../../plans/completed/2026-10-23-005-fix-fullscreen-status-menu-plan.md)
+isolates native menu presentation from settings activation.
+
+### Verified fullscreen correction — 2026-10-24
+
+- The isolated menu remains invisible in Regular mode, including with direct
+  AppKit status-button handling. Accessory mode restores its visibility.
+- The user confirms that temporarily applying Accessory mode during tracking
+  also works. The final probe uses the exact production observer registration,
+  scoped to its NSMenu. The user confirms visible, usable menus on both built-in
+  and external displays without leaving the fullscreen Space.
+- Native logs record the policy change and restoration plus successful harmless
+  actions on both displays. No production paste or recording action is invoked.
+- Three actual-main-thread AppKit regressions pass for temporary mode and
+  duplicate notifications, existing Accessory mode, and an intervening explicit
+  policy change. The core regression fails before implementation.
+- The complete Rust suite passes 982 tests plus five native checks, with 40
+  explicitly ignored and no exclusions. Clippy, formatting, frontend build,
+  shared typecheck, i18n, Markdown links and a signed development bundle pass.
+- Corrective publication is tracked in the
+  [v1.4.3 release plan](../../../../plans/active/2026-10-24-001-release-v1.4.3-plan.md).

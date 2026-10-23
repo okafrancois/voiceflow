@@ -2,6 +2,14 @@
 
 All notable changes to the desktop application will be documented in this file.
 
+## [v1.4.3](https://github.com/okafrancois/voiceflow/releases/tag/v1.4.3) (2026-10-24)
+
+### Bug Fixes
+
+- Restore the macOS status menu above fullscreen applications on built-in and
+  external displays. Temporarily use status-bar application mode while the
+  menu is open, then restore normal Dock behavior when it closes.
+
 ## [v1.4.2](https://github.com/okafrancois/voiceflow/releases/tag/v1.4.2) (2026-10-23)
 
 Signed and notarized macOS universal release for Apple Silicon and Intel.

@@ -13,6 +13,9 @@ use tauri::{
 };
 use tracing::{error, info, instrument, warn};
 
+#[cfg(target_os = "macos")]
+mod macos_menu;
+
 /// Tray menu item IDs
 pub const MENU_ID_SHOW_SETTINGS: &str = "show-settings";
 pub const MENU_ID_TOGGLE_RECORDING: &str = "toggle-recording";
@@ -98,8 +101,20 @@ pub fn create_tray(app: &AppHandle) -> tauri::Result<()> {
 
     let _tray = builder.build(app)?;
 
+    #[cfg(target_os = "macos")]
+    macos_menu::install(&_tray)?;
+
     info!("tray_created");
     Ok(())
+}
+
+/// Release native menu observers before the application event loop exits.
+pub(crate) fn cleanup(app: &AppHandle) {
+    #[cfg(target_os = "macos")]
+    macos_menu::cleanup(app);
+
+    #[cfg(not(target_os = "macos"))]
+    let _ = app;
 }
 
 /// Remove the system tray icon.

@@ -109,6 +109,13 @@ After 3 consecutive failures:
 - A macOS status-icon click must not also activate the main window. Native
   menu tracking and window activation conflict, especially across fullscreen
   Spaces. Only the explicit Show Settings menu action should focus settings.
+- On the affected macOS 27.2 host, a background Regular application's menu
+  remained invisible over another app's fullscreen Space even with direct
+  AppKit status-button handling. Accessory activation policy restored visibility.
+  Voice Flow applies it only while its own status menu tracks, then restores
+  the preceding policy. Inspect `tray_menu_accessory_policy_applied` and
+  `tray_menu_activation_policy_restored` together; do not permanently change
+  Dock behavior or remove Tauri's tray overlay without behavioral evidence.
 - Check `apps/desktop/src-tauri/context/text_injection_fix.md` for known issues
 
 ## 7. Cloud Engine Debugging

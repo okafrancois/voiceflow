@@ -891,6 +891,7 @@ pub fn run() {
                 stop_managed_local_polish_runtime(app, "exit_requested");
             }
             tauri::RunEvent::Exit => {
+                tray::cleanup(app);
                 stop_managed_local_polish_runtime(app, "exit");
             }
             #[cfg(target_os = "macos")]

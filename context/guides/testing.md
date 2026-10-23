@@ -99,6 +99,21 @@ worker-to-main calls. It never writes the clipboard, sends keys, or activates
 applications. This verifies dispatch safety, not fullscreen menu appearance;
 that still requires a native UI check with another app in a fullscreen Space.
 
+`cargo test --test macos_status_menu_test` exercises the production status-menu
+activation-policy helper on the real AppKit main thread. It verifies the
+temporary Regular-to-Accessory transition, duplicate notifications, restoration,
+an existing Accessory policy, and an intervening explicit policy change. It
+does not create windows, activate an application, or touch the clipboard.
+
+For fullscreen regressions, compare an isolated status-menu application in
+Regular and Accessory modes before changing the production tray implementation.
+Record native begin/end tracking notifications and activation policy; an icon
+highlight or a populated NSMenu does not establish that the popup is visible.
+Validate the final production registration on both built-in and external
+displays while another app is already fullscreen, including a harmless menu
+action and dismissal without changing Spaces. Automated policy assertions
+complement this check and do not replace it.
+
 ### Unit Tests
 
 Place in `__test__/` directories alongside modules:
