@@ -171,8 +171,14 @@ And keeps the transcription in history for a later attempt.
   The complete run fails only at that unchanged benchmark's 3 s time limit;
   observed runs take 3.527 s and 3.758 s while the host is heavily loaded.
 - Clippy, formatting, desktop build, shared typecheck and i18n checks pass.
+- Release CI subsequently passes the complete macOS suite: 982 tests plus the
+  two native checks, including the audio benchmark, with 40 ignored tests and
+  no exclusions. Windows delivery checks and Clippy also pass on that commit.
 - The separate local `Voice Flow Dev.app` builds successfully and passes strict
-  code-signature and development identity checks. These fixes are not published.
+  code-signature and development identity checks.
+- Published in [Voice Flow v1.4.2](https://github.com/okafrancois/voiceflow/releases/tag/v1.4.2).
+  Downloaded universal binaries pass signature, notarization, archive integrity
+  and production updater compatibility checks; the live update manifest is 1.4.2.
 - Fullscreen native menu behavior remains visually unverified: Computer Use
   cannot access SystemUIServer and returns `timeoutReached`. Policy tests
   verify that macOS icon clicks no longer activate the settings window.

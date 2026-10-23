@@ -4,6 +4,8 @@ All notable changes to the desktop application will be documented in this file.
 
 ## [v1.4.2](https://github.com/okafrancois/voiceflow/releases/tag/v1.4.2) (2026-10-23)
 
+Signed and notarized macOS universal release for Apple Silicon and Intel.
+
 ### Bug Fixes
 
 - Prevent a macOS crash when pasting the last transcription from the status
