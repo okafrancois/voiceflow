@@ -135,3 +135,7 @@ isolated menu application before modifying tray overlay or Space behavior.
 Keep workaround state scoped to the actual menu and restore it on dismissal.
 This fix is verified on the affected macOS 27.2 machine; automated policy checks
 do not establish native visibility on every macOS release.
+
+Published as [v1.4.3](https://github.com/okafrancois/voiceflow/releases/tag/v1.4.3),
+with artifact and updater evidence in the
+[release plan](./2026-10-24-001-release-v1.4.3-plan.md).

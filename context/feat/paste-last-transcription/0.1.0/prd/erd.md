@@ -214,5 +214,8 @@ isolates native menu presentation from settings activation.
 - The complete Rust suite passes 982 tests plus five native checks, with 40
   explicitly ignored and no exclusions. Clippy, formatting, frontend build,
   shared typecheck, i18n, Markdown links and a signed development bundle pass.
-- Corrective publication is tracked in the
-  [v1.4.3 release plan](../../../../plans/active/2026-10-24-001-release-v1.4.3-plan.md).
+- Published in [Voice Flow v1.4.3](https://github.com/okafrancois/voiceflow/releases/tag/v1.4.3).
+  Exact-commit CI passes on macOS and Windows. Downloaded universal artifacts
+  pass digest, signature, notarization and updater compatibility checks; the
+  live update endpoint reports 1.4.3. Publication evidence is recorded in the
+  [v1.4.3 release plan](../../../../plans/completed/2026-10-24-001-release-v1.4.3-plan.md).
