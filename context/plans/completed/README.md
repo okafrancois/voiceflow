@@ -13,6 +13,7 @@ A plan belongs in this directory only when all of the following are true:
 
 ## Completed Plans
 
+- [Recording audio integrity release v1.4.1](./2026-10-23-002-release-v1.4.1-plan.md) - fix - 2026-10-23
 - [Dictation tail investigation and published branch alignment](./2026-10-23-001-fix-dictation-tail-investigation-plan.md) - fix - 2026-10-23
 - [Polish prompt rollback and v1.2.3](./2026-09-13-001-polish-prose-release-plan.md) - fix - 2026-09-13
 - [Polish profile structure and v1.2.2](./2026-09-09-001-polish-profile-structure-release-plan.md) - fix - 2026-09-09

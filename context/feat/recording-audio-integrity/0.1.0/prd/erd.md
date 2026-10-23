@@ -1,6 +1,6 @@
 # Recording audio integrity 0.1.0
 
-Status: Completed (local implementation and verification; not released).
+Status: Completed (released in v1.4.1).
 
 ## Goal and first principles
 
@@ -74,3 +74,11 @@ recognition or establish the cause of an unavailable historical recording.
 - Synthetic French speech through the unchanged Apple bridge retains its final
   marker with and without trailing silence. The original user audio is absent,
   so whole-phrase truncation remains unproven and needs a retained recording.
+
+## Release verification
+
+[Version 1.4.1](https://github.com/okafrancois/voiceflow/releases/tag/v1.4.1)
+ships these fixes. Rust/Clippy 1.99 and all macOS, Windows and frontend CI jobs
+pass. The published universal application, Apple signing/notarization and
+automatic-update signature were verified; see the
+[release plan](../../../../plans/completed/2026-10-23-002-release-v1.4.1-plan.md).

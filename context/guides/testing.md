@@ -53,6 +53,12 @@ sequentially: the desktop `build` script invokes `cargo clean`. Running it
 alongside Rust compilation can delete active build artifacts and fail with
 missing metadata. It also removes generated E2E capabilities.
 
+When Homebrew Rust and rustup coexist, verify both `rustc --version` and
+`cargo clippy --version` in the actual command environment. `rustup run <version>
+cargo` can still resolve a Homebrew `rustc` from PATH. To reproduce CI with a
+specific compiler, prepend that rustup toolchain's `bin` directory to PATH for
+the verification commands; do not infer the compiler version from Cargo alone.
+
 ```bash
 pnpm --filter @voiceflow/desktop build && pnpm --filter @voiceflow/shared typecheck && pnpm check:i18n
 cd apps/desktop/src-tauri && cargo test && cargo clippy --all-features -- -D warnings && cargo fmt -- --check

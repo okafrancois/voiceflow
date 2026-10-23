@@ -31,7 +31,6 @@ A plan is only completed when all implementation units are closed, verification 
 
 | Plan | Type | Date | Status |
 |------|------|------|--------|
-| [Recording audio integrity release v1.4.1](./active/2026-10-23-002-release-v1.4.1-plan.md) | fix | 2026-10-23 | Active |
 | [Incremental local Whisper transcription](./active/2026-09-25-001-feat-incremental-local-transcription-plan.md) | feat | 2026-09-25 | Active |
 | [Apple speech engine](./active/2026-09-25-002-feat-apple-speech-engine-plan.md) | feat | 2026-09-25 | Active |
 | [Apple Intelligence polish](./active/2026-09-25-003-feat-apple-intelligence-polish-plan.md) | feat | 2026-09-25 | Active |
@@ -43,6 +42,7 @@ A plan is only completed when all implementation units are closed, verification 
 
 | Plan | Type | Date |
 |------|------|------|
+| [Recording audio integrity release v1.4.1](./completed/2026-10-23-002-release-v1.4.1-plan.md) | fix | 2026-10-23 |
 | [Dictation tail investigation and published branch alignment](./completed/2026-10-23-001-fix-dictation-tail-investigation-plan.md) | fix | 2026-10-23 |
 | [Native app review — superseded, prototype removed](./completed/2026-09-24-001-fix-native-app-review-plan.md) | fix | 2026-09-24 |
 | [Polish prompt rollback and v1.2.3](./completed/2026-09-13-001-polish-prose-release-plan.md) | fix | 2026-09-13 |

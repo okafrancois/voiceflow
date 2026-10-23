@@ -130,3 +130,11 @@ the real-audio follow-up below and a future release remain separate work.
 - The installed app remains v1.4.0. Source fixes are local and are not a new
   published or installed release. A real problematic recording after a build
   containing retention repair is needed to attribute whole-phrase loss.
+
+## Subsequent authorized release
+
+The user subsequently requested publication. [Release v1.4.1](./2026-10-23-002-release-v1.4.1-plan.md)
+ships the verified fixes from `master`, resolves the pre-existing Clippy errors,
+and passes macOS/Windows/frontend CI and published artifact verification.
+The installed application was not replaced during publication. The need for
+original audio to diagnose any remaining whole-phrase omission still applies.
