@@ -55,6 +55,8 @@ The registry owns audio retention independently from transcription rows. A histo
 - The backend rejects unknown retention values through typed deserialization.
 - A successful transcription with `audio_retention = never` deletes its WAV and stores no `audio_path`.
 - A successful transcription with retained audio keeps the WAV and registers it.
+- The transcription task owns the raw audio until finalization, even after stop
+  removes the active recording state or another recording starts.
 - `text_retention = never` stores no dictated text. If audio is retained, only the audio registry remains.
 - Failed recordings obey audio retention. A failure entry never points to an audio file that policy deleted.
 - Startup uses both configured policies; no hard-coded 90-day cleanup remains.

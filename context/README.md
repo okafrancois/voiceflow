@@ -114,6 +114,7 @@ Versioned feature specs with verification status. Each lives under `feat/<name>/
 
 | Feature | Version | Status |
 |---------|---------|--------|
+| [Recording Audio Integrity](./feat/recording-audio-integrity/0.1.0/prd/erd.md) | 0.1.0 | Completed |
 | [Polish profile structure](./feat/polish-profile-structure/0.1.0/prd/erd.md) | 0.1.0 | Completed |
 | [Vibe coding](./feat/vibe-coding/0.1.0/prd/erd.md) | 0.1.0 | Completed |
 | [Dictation workspace](./feat/dictation-workspace/0.1.0/prd/erd.md) | 0.1.0 | Completed |

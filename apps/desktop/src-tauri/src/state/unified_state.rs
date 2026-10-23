@@ -29,10 +29,6 @@ pub struct StreamingSttState {
     pub accumulated_text: String,
     pub task_id: u64,
     pub streaming_task: Arc<Mutex<Option<JoinHandle<()>>>>,
-    /// Path where the raw audio will be saved (for retry functionality).
-    pub audio_save_path: Option<std::path::PathBuf>,
-    /// Accumulated raw PCM samples (before VAD/processing) for saving to file.
-    pub raw_audio_buffer: Arc<Mutex<Vec<i16>>>,
     /// Buffered raw device PCM that has not yet reached the chunk threshold.
     pub chunk_buffer: Arc<Mutex<Vec<i16>>>,
     /// Streaming processor used for chunk preprocessing and VAD.

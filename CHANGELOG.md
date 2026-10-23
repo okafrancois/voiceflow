@@ -2,6 +2,16 @@
 
 All notable changes to the desktop application will be documented in this file.
 
+## v1.4.1 (2026-10-23)
+
+### Bug Fixes
+
+- Preserve the full duration and final samples of resampled dictation audio,
+  including very short fragments when recording stops.
+- Save original recordings after transcription according to the configured
+  audio retention policy, restoring audio availability for playback and retry.
+- Restore compatibility with Rust 1.99 quality checks on macOS and Windows.
+
 ## v1.4.0 (2026-09-25)
 
 ### Features

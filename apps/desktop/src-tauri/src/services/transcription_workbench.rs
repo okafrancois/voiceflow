@@ -242,7 +242,9 @@ impl Drop for TemporaryMediaFiles {
 }
 
 fn transcode_media_to_wav(media: &ValidatedMedia) -> Result<TemporaryMediaFiles, String> {
-    let mut temporary = TemporaryMediaFiles::new();
+    let temporary = TemporaryMediaFiles::new();
+    #[cfg(target_os = "macos")]
+    let mut temporary = temporary;
 
     #[cfg(target_os = "macos")]
     {

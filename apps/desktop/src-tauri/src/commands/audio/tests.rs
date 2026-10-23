@@ -417,6 +417,21 @@ fn flush_pending_chunk_for_stop_processes_sub_threshold_tail_audio() {
 }
 
 #[test]
+fn flush_pending_chunk_for_stop_preserves_short_48khz_audio() {
+    let chunk_buffer = Arc::new(ParkingMutex::new(vec![16_384; 96]));
+    let processor = Arc::new(ParkingMutex::new(
+        crate::audio::stream_processor::StreamAudioProcessor::new("off", false, None),
+    ));
+
+    let flushed = flush_pending_chunk_for_stop(&chunk_buffer, &processor, 48_000, 1)
+        .expect("the final two milliseconds must reach the recognizer");
+
+    assert_eq!(flushed.len(), 32);
+    assert!(flushed.iter().any(|sample| sample.abs() > 10_000));
+    assert!(chunk_buffer.lock().is_empty());
+}
+
+#[test]
 fn flush_pending_chunk_for_stop_does_not_drop_tail_when_vad_rejects_it() {
     let chunk_buffer = Arc::new(ParkingMutex::new(vec![1_000; 1_600]));
     let processor = Arc::new(ParkingMutex::new(

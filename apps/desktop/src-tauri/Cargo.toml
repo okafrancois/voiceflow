@@ -1,6 +1,6 @@
 [package]
 name = "voiceflow"
-version = "1.4.0"
+version = "1.4.1"
 description = "Voice Flow - Voice to Text Application"
 authors = ["Voice Flow Team"]
 edition = "2021"
@@ -64,7 +64,7 @@ chrono = "0.4"
 pinyin = "0.10"
 thiserror = "2"
 unicode-segmentation = "1"
-async-trait = "0.1.89"
+async-trait = "0.1.92"
 tokio-tungstenite = { version = "0.29.0", features = ["native-tls"] }
 base64 = "0.22"
 rusqlite = { version = "0.34", features = ["bundled"] }

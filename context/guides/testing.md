@@ -48,9 +48,14 @@ cargo fmt -- --check                          # Format check
 
 ### Full Verification
 
+Run the desktop build before Cargo verification, or run the commands strictly
+sequentially: the desktop `build` script invokes `cargo clean`. Running it
+alongside Rust compilation can delete active build artifacts and fail with
+missing metadata. It also removes generated E2E capabilities.
+
 ```bash
-cd apps/desktop/src-tauri && cargo test && cargo clippy --all-features -- -D warnings && cargo fmt -- --check
 pnpm --filter @voiceflow/desktop build && pnpm --filter @voiceflow/shared typecheck && pnpm check:i18n
+cd apps/desktop/src-tauri && cargo test && cargo clippy --all-features -- -D warnings && cargo fmt -- --check
 ```
 
 ---

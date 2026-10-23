@@ -36,6 +36,7 @@ Feature specs are versioned delivery contracts. Each spec at `context/feat/[name
 
 | Feature | Version | Status | Spec |
 |---------|---------|--------|------|
+| Recording Audio Integrity | 0.1.0 | Completed | [erd.md](./recording-audio-integrity/0.1.0/prd/erd.md) |
 | Vibe coding | 0.1.0 | Completed | [erd.md](./vibe-coding/0.1.0/prd/erd.md) |
 | Local macOS development installation | 0.1.0 | Completed | [erd.md](./dev-local-install/0.1.0/prd/erd.md) |
 | Dictation-focused product simplification | 0.1.0 | Completed | [erd.md](./product-simplification/0.1.0/prd/erd.md) |

@@ -14,7 +14,7 @@ When asked to "check and fix" or "investigate":
 1. **Check latest logs first**:
    ```bash
    # macOS
-   cat ~/Library/Logs/voiceflow/voiceflow.log.$(date +%Y-%m-%d-)* | tail -200
+   tail -200 ~/Library/Logs/com.voiceflow.voicetotext/voiceflow.log.*
    
    # Or check for crash reports
    ls -la ~/Library/Logs/DiagnosticReports/ | grep -i voiceflow
@@ -35,10 +35,39 @@ When asked to "check and fix" or "investigate":
 
 | Platform | Path |
 |----------|------|
-| macOS | `~/Library/Logs/voiceflow/` |
+| macOS (installed app) | `~/Library/Logs/com.voiceflow.voicetotext/` |
 | Windows | `%LOCALAPPDATA%\voiceflow\logs\` |
 
-Log files are named `voiceflow.log.YYYY-MM-DDTHH` (hourly rotation).
+Log files are named `voiceflow.log.YYYY-MM-DD-HH` (hourly rotation).
+Local development and E2E bundle identifiers use separate directories.
+
+### Missing dictation endings
+
+Compare raw and final text lengths in the local history database before
+attributing a loss to polish. Check capture start/stop, sample rate/channels,
+chunk enqueue/send failures, VAD skip counts, and stop-tail flushing. A log
+saying every chunk was sent does not prove that preprocessing preserved every
+sample or that recognition returned every word.
+
+For replay, verify both the configured `audio_retention` and actual WAV paths
+in history. Before the October 23 fix, stop removed the recording state before
+the transcription task read it to save audio; even enabled retention therefore
+produced no file. The transcription task now owns its audio independently.
+
+Synthetic speech can verify finalization but cannot prove the cause of a lost
+phrase without the original recording. Record those limits explicitly.
+
+### Installed version and release source
+
+The default branch of this fork is `master`. The abandoned native prototype
+was removed before v1.4.0, but that release was tagged on `native-app`.
+On October 23, `master` was fast-forwarded to the exact v1.4.0 commit.
+
+Use `gh ... --repo okafrancois/voiceflow` for this fork: bare `gh` can select
+the upstream AriaType repository. Compare the peeled tag commit, the local
+branch, remote refs, and the installed app's `CFBundleShortVersionString`.
+The release's `targetCommitish` field alone is not evidence of tag ancestry.
+Updating the checkout does not replace the running installed binary.
 
 ## 3. IPC Log Access
 

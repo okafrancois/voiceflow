@@ -259,6 +259,8 @@ pub(super) fn start_unified_recording(
 
     let raw_audio_buffer: Arc<ParkingMutex<Vec<i16>>> = Arc::new(ParkingMutex::new(Vec::new()));
     let raw_audio_buffer_clone = raw_audio_buffer.clone();
+    let recording_audio =
+        crate::audio::wav_writer::RecordingAudio::new(audio_save_path, raw_audio_buffer);
 
     let device_name = if audio_device == "default" {
         None
@@ -297,8 +299,6 @@ pub(super) fn start_unified_recording(
         accumulated_text: String::new(),
         task_id,
         streaming_task: Arc::new(ParkingMutex::new(None)),
-        audio_save_path,
-        raw_audio_buffer: raw_audio_buffer.clone(),
         chunk_buffer: chunk_buffer.clone(),
         processor: processor.clone(),
         sample_rate: 0,
@@ -656,13 +656,7 @@ pub(super) fn start_unified_recording(
                 return;
             }
 
-            let audio_path = {
-                let state = app_clone.state::<AppState>();
-                let streaming_stt = state.streaming_stt.lock();
-                streaming_stt.as_ref().and_then(|s| {
-                    crate::audio::wav_writer::save_raw_audio_to_file(s, sr_for_async, ch_for_async)
-                })
-            };
+            let audio_path = recording_audio.save(sr_for_async, ch_for_async);
 
             match text_result {
                 Ok(text) => {

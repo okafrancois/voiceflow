@@ -263,16 +263,16 @@ pnpm --filter @voiceflow/desktop tauri:build:win
 
 | Platform | Path |
 |----------|------|
-| macOS | `~/Library/Logs/voiceflow/` |
+| macOS | `~/Library/Logs/com.voiceflow.voicetotext/` |
 | Windows | `%LOCALAPPDATA%\voiceflow\logs\` |
 
 **Quick Access**:
 ```bash
 # macOS - open log folder
-open ~/Library/Logs/voiceflow/
+open ~/Library/Logs/com.voiceflow.voicetotext/
 
 # macOS - tail latest log
-tail -f ~/Library/Logs/voiceflow/voiceflow.log.*
+tail -f ~/Library/Logs/com.voiceflow.voicetotext/voiceflow.log.*
 ```
 
 ---
