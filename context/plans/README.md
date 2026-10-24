@@ -31,7 +31,6 @@ A plan is only completed when all implementation units are closed, verification 
 
 | Plan | Type | Date | Status |
 |------|------|------|--------|
-| [Local MLX Audio and visual model selectors v1.5.0](./active/2026-10-24-004-release-v1.5.0-plan.md) | feat | 2026-10-24 | Active |
 | [Incremental local Whisper transcription](./active/2026-09-25-001-feat-incremental-local-transcription-plan.md) | feat | 2026-09-25 | Active |
 | [Apple speech engine](./active/2026-09-25-002-feat-apple-speech-engine-plan.md) | feat | 2026-09-25 | Active |
 | [Apple Intelligence polish](./active/2026-09-25-003-feat-apple-intelligence-polish-plan.md) | feat | 2026-09-25 | Active |
@@ -43,6 +42,7 @@ A plan is only completed when all implementation units are closed, verification 
 
 | Plan | Type | Date |
 |------|------|------|
+| [Local MLX Audio and visual model selectors v1.5.0](./completed/2026-10-24-004-release-v1.5.0-plan.md) | feat | 2026-10-24 |
 | [Visual model selectors](./completed/2026-10-24-003-feat-model-catalog-plan.md) | feat | 2026-10-24 |
 | [Local MLX Audio dictation](./completed/2026-10-24-002-feat-mlx-audio-stt-plan.md) | feat | 2026-10-24 |
 | [Fullscreen status menu release v1.4.3](./completed/2026-10-24-001-release-v1.4.3-plan.md) | fix | 2026-10-24 |

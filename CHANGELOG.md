@@ -5,6 +5,7 @@ All notable changes to the desktop application will be documented in this file.
 ## [v1.5.0](https://github.com/okafrancois/voiceflow/releases/tag/v1.5.0) (2026-10-24)
 
 Signed and notarized macOS universal release for Apple Silicon and Intel.
+Automatic updates retain the existing production signing key.
 
 ### Features
 

@@ -13,6 +13,9 @@ A plan belongs in this directory only when all of the following are true:
 
 ## Completed Plans
 
+- [Local MLX Audio and visual model selectors v1.5.0](./2026-10-24-004-release-v1.5.0-plan.md) - feat - 2026-10-24
+- [Visual model selectors](./2026-10-24-003-feat-model-catalog-plan.md) - feat - 2026-10-24
+- [Local MLX Audio dictation](./2026-10-24-002-feat-mlx-audio-stt-plan.md) - feat - 2026-10-24
 - [Fullscreen status menu release v1.4.3](./2026-10-24-001-release-v1.4.3-plan.md) - fix - 2026-10-24
 - [Invisible fullscreen status menu](./2026-10-23-005-fix-fullscreen-status-menu-plan.md) - fix - 2026-10-23
 - [macOS tray fixes release v1.4.2](./2026-10-23-004-release-v1.4.2-plan.md) - fix - 2026-10-23

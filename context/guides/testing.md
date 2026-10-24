@@ -319,7 +319,7 @@ async fn test_cloud_stt_schema() {
 
 Desktop tests run on push and pull requests to `master`, and the workflow can be
 started manually. It covers the Rust backend, the desktop frontend, shared
-types, i18n, and an unsigned Windows installer build.
+types, i18n, and the Windows text-delivery contracts.
 
 ```yaml
 # .github/workflows/test.yml
@@ -329,6 +329,31 @@ cargo fmt -- --check
 ```
 
 The macOS job stores the Rust LCOV report as a GitHub Actions artifact.
+
+---
+
+## Release Verification
+
+Use `--repo okafrancois/voiceflow` explicitly on GitHub CLI release and Actions
+commands. This checkout also has an upstream remote, so the CLI's inferred
+repository can refer to the parent project instead of the release target.
+
+Require successful Desktop CI on the exact source commit before pushing its
+annotated release tag. Keep the verified tag immutable. A successful build job
+alone does not prove that the published files or automatic updater work.
+
+After the release workflow publishes, download every asset and verify its size
+and GitHub SHA-256 digest. Check the production bundle identifier, version,
+universal application and CLI architectures, strict Apple signature, signing
+team, notarization ticket and DMG checksum. Verify the updater signature with
+the public key from an existing production application, confirm that the new
+app embeds the same key, and read the live latest updater endpoint.
+
+Artifact verification does not require installing or launching the production
+app, or changing local privacy permissions. Ad-hoc Dev rebuilds can invalidate
+local privacy grants; keep that limitation separate from signed production
+release verification. MLX Audio's server and cached models remain separate
+local installations rather than release assets.
 
 ---
 
