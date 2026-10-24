@@ -18,7 +18,7 @@ async fn fake_worker(handshake: &str, body: &str) -> (tempfile::TempDir, Result<
         Path::new("/usr/bin/python3"),
         &script,
         &models,
-        Duration::from_secs(2),
+        WORKER_START_TIMEOUT,
     )
     .await;
     (root, result)

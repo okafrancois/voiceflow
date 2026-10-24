@@ -16,7 +16,7 @@ Automatic updates retain the existing production signing key.
   dashboard. Stopping still transcribes the complete original recording;
   only the final result enters polish, history and delivery.
 - Polish text locally with managed Qwen3 0.6B or 1.7B MLX models, including
-  offline model loading, integrity checks and cancellable inference.
+  offline model loading, integrity checks and bounded, cancellable inference.
 - Offer only MLX and Apple Speech for local transcription on Apple Silicon,
   and MLX and Apple Intelligence for local polish. Preserve compatible native
   engines on Intel Macs and existing Windows/Linux behavior.
