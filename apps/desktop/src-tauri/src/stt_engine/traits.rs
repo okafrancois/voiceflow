@@ -25,6 +25,7 @@ pub enum EngineType {
     SenseVoice,
     #[serde(rename = "qwen3-asr")]
     Qwen3Asr,
+    Mlx,
     /// Apple SpeechAnalyzer (macOS 26+), streamed while recording.
     Apple,
     Cloud,
@@ -36,6 +37,7 @@ impl EngineType {
             EngineType::Whisper => "whisper",
             EngineType::SenseVoice => "sensevoice",
             EngineType::Qwen3Asr => "qwen3-asr",
+            EngineType::Mlx => "mlx",
             EngineType::Apple => "apple",
             EngineType::Cloud => "cloud",
         }
@@ -46,6 +48,7 @@ impl EngineType {
             EngineType::Whisper,
             EngineType::SenseVoice,
             EngineType::Qwen3Asr,
+            EngineType::Mlx,
             EngineType::Apple,
             EngineType::Cloud,
         ]
@@ -60,6 +63,7 @@ impl std::str::FromStr for EngineType {
             "whisper" => Ok(EngineType::Whisper),
             "sensevoice" => Ok(EngineType::SenseVoice),
             "qwen3-asr" | "qwen3_asr" | "qwen3asr" => Ok(EngineType::Qwen3Asr),
+            "mlx" => Ok(EngineType::Mlx),
             "apple" => Ok(EngineType::Apple),
             "cloud" => Ok(EngineType::Cloud),
             _ => Err(format!("Unknown engine type: {}", s)),
@@ -275,7 +279,8 @@ mod tests {
         assert_eq!("apple".parse::<EngineType>(), Ok(EngineType::Apple));
 
         let all = EngineType::all();
-        assert_eq!(all.len(), 5);
+        assert_eq!(all.len(), 6);
+        assert!(all.contains(&EngineType::Mlx));
         assert!(all.contains(&EngineType::Apple));
         assert!(all.contains(&EngineType::Whisper));
         assert!(all.contains(&EngineType::SenseVoice));

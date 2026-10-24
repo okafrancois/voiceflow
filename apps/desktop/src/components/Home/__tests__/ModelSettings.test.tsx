@@ -6,6 +6,7 @@ import type { AppSettings, ModelInfo, PolishModelInfo, PolishModelStatus } from 
 const {
   downloadPolishModelByIdMock,
   downloadModelMock,
+  cancelDownloadMock,
   getModelsMock,
   getPolishModelsMock,
   getPolishModelStatusMock,
@@ -24,6 +25,7 @@ const {
 } = vi.hoisted(() => ({
   downloadPolishModelByIdMock: vi.fn(),
   downloadModelMock: vi.fn(),
+  cancelDownloadMock: vi.fn(),
   getModelsMock: vi.fn(),
   getPolishModelsMock: vi.fn(),
   getPolishModelStatusMock: vi.fn(),
@@ -53,6 +55,7 @@ vi.mock("@/contexts/SettingsContext", () => ({
 vi.mock("@/lib/tauri", () => ({
   modelCommands: {
     downloadModel: downloadModelMock,
+    cancelDownload: cancelDownloadMock,
     downloadPolishModelById: downloadPolishModelByIdMock,
     getModels: getModelsMock,
     getPolishModels: getPolishModelsMock,
@@ -223,6 +226,19 @@ const appleModel: ModelInfo = {
   built_in: true,
 };
 
+const mlxModels = [
+  { name: "mlx-whisper-turbo", display_name: "MLX Whisper Turbo", language_codes: [] },
+  { name: "mlx-parakeet-v3", display_name: "MLX Parakeet v3", language_codes: ["en", "fr", "de"] },
+  { name: "mlx-qwen3-asr-0.6b", display_name: "MLX Qwen3-ASR 0.6B", language_codes: ["en", "zh", "fr"] },
+].map(model => ({
+  ...voiceModel,
+  ...model,
+  engine: "mlx",
+  runtime_ready: false,
+  speed_score: 0,
+  accuracy_score: 0,
+}));
+
 const polishStatus: PolishModelStatus = {
   is_loaded: false,
   is_downloaded: false,
@@ -243,6 +259,12 @@ function registerEventMocks() {
   onPolishModelDownloadProgressMock.mockImplementation(async () => cleanup);
 }
 
+function pendingModelResponse() {
+  let complete: (models: ModelInfo[]) => void = () => { throw new Error("Model response is not initialized"); };
+  const promise = new Promise<ModelInfo[]>((resolve) => { complete = resolve; });
+  return { promise, complete };
+}
+
 describe("ModelSettings polish model activation", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -253,6 +275,8 @@ describe("ModelSettings polish model activation", () => {
     downloadPolishModelByIdMock.mockResolvedValue(undefined);
     preloadPolishModelMock.mockResolvedValue(undefined);
     updateSettingContextMock.mockResolvedValue(undefined);
+    downloadModelMock.mockResolvedValue(undefined);
+    cancelDownloadMock.mockResolvedValue(undefined);
     updateSettingsCommandMock.mockResolvedValue(undefined);
   });
 
@@ -290,6 +314,57 @@ describe("ModelSettings voice model downloads", () => {
     getPolishModelsMock.mockResolvedValue([]);
     getPolishModelStatusMock.mockResolvedValue(polishStatus);
     updateSettingContextMock.mockResolvedValue(undefined);
+  });
+
+  it("offers backend-authorized Apple asset installation without changing model selection", async () => {
+    getModelsMock.mockResolvedValue([{ ...appleModel, downloaded: false, downloadable: true }]);
+    downloadModelMock.mockResolvedValue(undefined);
+    render(<ModelSettings />);
+    fireEvent.click(await screen.findByRole("button", { name: "model.available.download" }));
+    await waitFor(() => expect(downloadModelMock).toHaveBeenCalledWith("apple-speech"));
+    expect(updateSettingContextMock).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "model.available.delete" })).toBeNull();
+  });
+
+  it("ignores older model readiness responses after a language change", async () => {
+    const previousLanguage = testSettings.stt_engine_language;
+    const first = pendingModelResponse();
+    const latest = pendingModelResponse();
+    getModelsMock.mockReturnValueOnce(first.promise).mockReturnValueOnce(latest.promise);
+    const view = render(<ModelSettings />);
+    try {
+      await waitFor(() => expect(getModelsMock).toHaveBeenCalledTimes(1));
+      testSettings.stt_engine_language = previousLanguage === "fr" ? "en" : "fr";
+      view.rerender(<ModelSettings />);
+      await waitFor(() => expect(getModelsMock).toHaveBeenCalledTimes(2));
+      await act(async () => latest.complete([{ ...appleModel, downloaded: false }]));
+      expect(await screen.findByText("model.catalog.unavailable")).toBeTruthy();
+      await act(async () => first.complete([appleModel]));
+      expect(screen.queryByRole("button", { name: "model.catalog.use" })).toBeNull();
+      expect(screen.getByText("model.catalog.unavailable")).toBeTruthy();
+    } finally {
+      first.complete([]);
+      latest.complete([]);
+      testSettings.stt_engine_language = previousLanguage;
+      getModelsMock.mockReset().mockResolvedValue([voiceModel]);
+    }
+  });
+
+  it("refreshes backend model readiness after the dictation language changes", async () => {
+    const previousLanguage = testSettings.stt_engine_language;
+    getModelsMock.mockResolvedValueOnce([appleModel]).mockResolvedValueOnce([{ ...appleModel, downloaded: false }]);
+    const view = render(<ModelSettings />);
+    try {
+      await waitFor(() => expect(getModelsMock).toHaveBeenCalledTimes(1));
+      testSettings.stt_engine_language = previousLanguage === "fr" ? "en" : "fr";
+      view.rerender(<ModelSettings />);
+      await waitFor(() => expect(getModelsMock).toHaveBeenCalledTimes(2));
+      expect(await screen.findByText("model.catalog.unavailable")).toBeTruthy();
+      expect(screen.queryByRole("button", { name: "model.catalog.use" })).toBeNull();
+    } finally {
+      testSettings.stt_engine_language = previousLanguage;
+      getModelsMock.mockReset().mockResolvedValue([voiceModel]);
+    }
   });
 
   it("shows the backend error when a model download fails", async () => {
@@ -344,7 +419,7 @@ describe("ModelSettings voice model downloads", () => {
     expect(within(catalogue).getByRole("article", { name: "French Model" })).toBeInTheDocument();
   });
 
-  it("shows the active MLX service and switches to native only after an explicit selection", async () => {
+  it("shows the active MLX service and forwards only an explicit model selection", async () => {
     const previous = { enabled: testSettings.cloud_stt_enabled, provider: testSettings.active_cloud_stt_provider };
     testSettings.cloud_stt_enabled = true;
     testSettings.active_cloud_stt_provider = "mlx-audio";
@@ -355,14 +430,159 @@ describe("ModelSettings voice model downloads", () => {
       expect(screen.getByText(/MLX Audio/)).toBeInTheDocument();
       expect(screen.queryByRole("button", { name: "model.catalog.selected" })).toBeNull();
       expect(updateSettingContextMock).not.toHaveBeenCalled();
-      fireEvent.click(screen.getByRole("button", { name: "model.catalog.use" }));
+      await act(async () => fireEvent.click(screen.getByRole("button", { name: "model.catalog.use" })));
       await waitFor(() => {
         expect(updateSettingContextMock).toHaveBeenNthCalledWith(1, "model", voiceModel.name);
-        expect(updateSettingContextMock).toHaveBeenNthCalledWith(2, "cloud_stt_enabled", false);
+        expect(updateSettingContextMock).toHaveBeenCalledTimes(1);
       });
     } finally {
       testSettings.cloud_stt_enabled = previous.enabled;
       testSettings.active_cloud_stt_provider = previous.provider;
     }
+  });
+});
+
+describe("ModelSettings managed MLX models", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    registerEventMocks();
+    getModelsMock.mockResolvedValue(mlxModels);
+    getPolishModelsMock.mockResolvedValue([]);
+    getPolishModelStatusMock.mockResolvedValue(polishStatus);
+    downloadModelMock.mockResolvedValue(undefined);
+    cancelDownloadMock.mockResolvedValue(undefined);
+    updateSettingContextMock.mockResolvedValue(undefined);
+  });
+
+  it("renders MLX choices without infrastructure copy, empty subtitles, or invented rankings", async () => {
+    render(<ModelSettings />);
+
+    const parakeet = await screen.findByRole("article", { name: "MLX Parakeet v3" });
+    expect(screen.getAllByRole("article")).toHaveLength(3);
+    expect(screen.queryByText("model.mlx.managedDescription")).toBeNull();
+    expect(screen.queryByText("model.mlx.modelDescription")).toBeNull();
+    expect(screen.queryByText("model.catalog.sttNote")).toBeNull();
+    for (const row of screen.getAllByRole("article")) {
+      expect(row.querySelector(".model-catalog-description")).toBeNull();
+      expect(within(row).queryByRole("img")).toBeNull();
+      expect(within(row).queryByText("0/10")).toBeNull();
+      expect(within(row).getAllByText("model.catalog.unmeasured")).toHaveLength(2);
+    }
+    expect(within(parakeet).queryByText("model.hint.cjkBest")).toBeNull();
+    fireEvent.click(within(parakeet).getByRole("button", { name: "model.available.download" }));
+    await waitFor(() => expect(downloadModelMock).toHaveBeenCalledWith("mlx-parakeet-v3"));
+  });
+
+  it("keeps useful native descriptions and catalogue ratings unchanged", async () => {
+    getModelsMock.mockResolvedValue([voiceModel, appleModel]);
+    render(<ModelSettings />);
+
+    const native = await screen.findByRole("article", { name: voiceModel.display_name });
+    expect(within(native).getByRole("img", { name: "model.available.speed: 5/10" })).toBeInTheDocument();
+    expect(within(native).getByRole("img", { name: "model.available.accuracy: 10/10" })).toBeInTheDocument();
+    expect(within(native).getByText("model.hint.multiLang")).toBeInTheDocument();
+    expect(screen.getByText("model.catalog.sttNote")).toBeInTheDocument();
+    expect(screen.queryByText("model.mlx.managedDescription")).toBeNull();
+  });
+
+  it("preserves numeric download progress for native models without a stage field", async () => {
+    getModelsMock.mockResolvedValue([voiceModel]);
+    render(<ModelSettings />);
+    const row = await screen.findByRole("article", { name: voiceModel.display_name });
+    fireEvent.click(within(row).getByRole("button", { name: "model.available.download" }));
+    await waitFor(() => expect(onModelDownloadProgressMock).toHaveBeenCalledTimes(1));
+
+    await act(async () => onModelDownloadProgressMock.mock.calls[0][0]({ model: voiceModel.name, downloaded: 45, total: 100, progress: 45 }));
+    expect(within(row).getByText("45%")).toBeInTheDocument();
+    expect(within(row).getByRole("progressbar")).toHaveAttribute("aria-valuenow", "45");
+    expect(within(row).queryByText("model.mlx.installingRuntime")).toBeNull();
+  });
+
+  it("switches between installed MLX choices with a single backend model update", async () => {
+    getModelsMock.mockResolvedValue(mlxModels.map(model => ({ ...model, downloaded: true, runtime_ready: true })));
+    render(<ModelSettings />);
+
+    const parakeet = await screen.findByRole("article", { name: "MLX Parakeet v3" });
+    fireEvent.click(within(parakeet).getByRole("button", { name: "model.catalog.use" }));
+    await waitFor(() => expect(updateSettingContextMock).toHaveBeenCalledExactlyOnceWith("model", "mlx-parakeet-v3"));
+  });
+
+  it("shows backend runtime installation as indeterminate before model byte progress", async () => {
+    render(<ModelSettings />);
+    const row = await screen.findByRole("article", { name: "MLX Whisper Turbo" });
+    fireEvent.click(within(row).getByRole("button", { name: "model.available.download" }));
+    await waitFor(() => expect(onModelDownloadProgressMock).toHaveBeenCalledTimes(1));
+    const progress = onModelDownloadProgressMock.mock.calls[0][0];
+
+    await act(async () => progress({ model: "mlx-whisper-turbo", downloaded: 0, total: 0, progress: 0, stage: "runtime" }));
+    expect(within(row).getByText("model.mlx.installingRuntime")).toBeInTheDocument();
+    expect(within(row).getByRole("progressbar")).not.toHaveAttribute("aria-valuenow");
+    expect(within(row).queryByText("0%")).toBeNull();
+
+    await act(async () => progress({ model: "mlx-whisper-turbo", downloaded: 25, total: 100, progress: 25, stage: "model" }));
+    expect(within(row).queryByText("model.mlx.installingRuntime")).toBeNull();
+    expect(within(row).getByText("25%")).toBeInTheDocument();
+    expect(within(row).getByRole("progressbar")).toHaveAttribute("aria-valuenow", "25");
+  });
+
+  it("clears runtime stage after cancellation and preserves legacy numeric events", async () => {
+    render(<ModelSettings />);
+    const row = await screen.findByRole("article", { name: "MLX Whisper Turbo" });
+    fireEvent.click(within(row).getByRole("button", { name: "model.available.download" }));
+    await waitFor(() => expect(onModelDownloadProgressMock).toHaveBeenCalledTimes(1));
+    const progress = onModelDownloadProgressMock.mock.calls[0][0];
+
+    await act(async () => progress({ model: "mlx-whisper-turbo", downloaded: 0, total: 0, progress: 0, stage: "runtime" }));
+    expect(within(row).getByText("model.mlx.installingRuntime")).toBeInTheDocument();
+    fireEvent.click(within(row).getByRole("button", { name: "model.available.cancel" }));
+    await waitFor(() => expect(cancelDownloadMock).toHaveBeenCalledWith("mlx-whisper-turbo"));
+    await act(async () => onModelDownloadCancelledMock.mock.calls[0][0]("mlx-whisper-turbo"));
+    fireEvent.click(within(row).getByRole("button", { name: "model.available.download" }));
+    expect(within(row).queryByText("model.mlx.installingRuntime")).toBeNull();
+
+    await act(async () => progress({ model: "mlx-whisper-turbo", downloaded: 40, total: 100, progress: 40 }));
+    expect(within(row).getByText("40%")).toBeInTheDocument();
+  });
+
+  it("clears runtime installation after failure so retry does not show a stale stage", async () => {
+    let rejectDownload: ((error: Error) => void) | undefined;
+    downloadModelMock.mockImplementationOnce(() => new Promise<void>((_resolve, reject) => {
+      rejectDownload = reject;
+    }));
+    render(<ModelSettings />);
+    const row = await screen.findByRole("article", { name: "MLX Whisper Turbo" });
+    fireEvent.click(within(row).getByRole("button", { name: "model.available.download" }));
+    await waitFor(() => expect(onModelDownloadProgressMock).toHaveBeenCalledTimes(1));
+
+    await act(async () => onModelDownloadProgressMock.mock.calls[0][0]({ model: "mlx-whisper-turbo", downloaded: 0, total: 0, progress: 0, stage: "runtime" }));
+    expect(within(row).getByText("model.mlx.installingRuntime")).toBeInTheDocument();
+    await act(async () => rejectDownload?.(new Error("MLX runtime installation failed")));
+    expect(showErrorToastMock).toHaveBeenCalledWith("MLX runtime installation failed");
+    fireEvent.click(within(row).getByRole("button", { name: "model.available.download" }));
+    expect(within(row).queryByText("model.mlx.installingRuntime")).toBeNull();
+  });
+
+  it("refreshes backend completeness after download and clears installation presentation", async () => {
+    render(<ModelSettings />);
+    const row = await screen.findByRole("article", { name: "MLX Whisper Turbo" });
+    fireEvent.click(within(row).getByRole("button", { name: "model.available.download" }));
+    await waitFor(() => expect(onModelDownloadProgressMock).toHaveBeenCalledTimes(1));
+    await act(async () => onModelDownloadProgressMock.mock.calls[0][0]({ model: "mlx-whisper-turbo", downloaded: 0, total: 0, progress: 0, stage: "runtime" }));
+    getModelsMock.mockResolvedValue(mlxModels.map(model => ({ ...model, runtime_ready: true, downloaded: true })));
+
+    await act(async () => onModelDownloadCompleteMock.mock.calls[0][0]("mlx-whisper-turbo"));
+    expect(within(row).queryByText("model.mlx.installingRuntime")).toBeNull();
+    expect(within(row).queryByRole("progressbar")).toBeNull();
+    expect(within(row).getByRole("button", { name: "model.catalog.use" })).toBeInTheDocument();
+    expect(updateSettingContextMock).not.toHaveBeenCalled();
+  });
+
+  it("waits for backend completeness instead of treating runtime presence as a usable model", async () => {
+    getModelsMock.mockResolvedValue([{ ...mlxModels[0], runtime_ready: true, downloaded: false }]);
+    render(<ModelSettings />);
+
+    const row = await screen.findByRole("article", { name: "MLX Whisper Turbo" });
+    expect(within(row).getByRole("button", { name: "model.available.download" })).toBeInTheDocument();
+    expect(within(row).queryByRole("button", { name: "model.catalog.use" })).toBeNull();
   });
 });

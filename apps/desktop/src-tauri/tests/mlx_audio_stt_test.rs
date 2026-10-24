@@ -113,6 +113,28 @@ async fn mlx_audio_empty_session_does_not_submit_audio() {
 }
 
 #[tokio::test]
+async fn mlx_audio_rejects_the_apps_text_only_llama_server_before_recording() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "object": "list", "data": [{"id":"qwen3-4b", "owned_by":"llamacpp"}]
+        })))
+        .mount(&server)
+        .await;
+    let mut client = StreamingSttClient::new(
+        config(format!("{}/v1", server.uri())),
+        None,
+        SttContext::default(),
+    )
+    .unwrap();
+    let error = client.connect().await.unwrap_err();
+    assert!(error.contains("llama-server"), "{error}");
+    assert!(client.get_audio_sender().await.is_none());
+    assert_eq!(server.received_requests().await.unwrap().len(), 1);
+}
+
+#[tokio::test]
 async fn mlx_audio_close_discards_audio_and_closes_the_sender() {
     let server = server().await;
     let mut client = StreamingSttClient::new(

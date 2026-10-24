@@ -10,6 +10,149 @@ use crate::history::RetentionPolicy;
 use serde_json::json;
 
 #[test]
+fn apple_selection_rejects_unready_provider_without_mutating_settings() {
+    use crate::stt_engine::apple::AppleSpeechStatus;
+    for status in [
+        None,
+        Some(AppleSpeechStatus::OsUnsupported),
+        Some(AppleSpeechStatus::AssetsMissing),
+        Some(AppleSpeechStatus::LocaleUnsupported),
+    ] {
+        let mut settings = AppSettings::default();
+        settings.cloud_stt_enabled = true;
+        let before = serde_json::to_value(&settings).unwrap();
+        let result = super::set_local_stt_model(&mut settings, "apple-speech", status);
+        assert!(result.is_err(), "status {status:?} must reject selection");
+        assert_eq!(serde_json::to_value(settings).unwrap(), before);
+    }
+}
+
+#[test]
+fn apple_selection_derives_engine_and_disables_cloud_only_when_ready() {
+    use crate::stt_engine::apple::AppleSpeechStatus;
+    let mut settings = AppSettings::default();
+    settings.cloud_stt_enabled = true;
+    settings.cloud_polish_enabled = true;
+    let mut expected = serde_json::to_value(&settings).unwrap();
+    expected["model"] = json!("apple-speech");
+    expected["stt_engine"] = json!("apple");
+    expected["cloud_stt_enabled"] = json!(false);
+    super::set_local_stt_model(
+        &mut settings,
+        "apple-speech",
+        Some(AppleSpeechStatus::Ready),
+    )
+    .unwrap();
+    assert_eq!(serde_json::to_value(settings).unwrap(), expected);
+}
+
+#[test]
+fn platform_policy_migrates_legacy_polish_idempotently_without_changing_other_settings() {
+    for model_id in [
+        "qwen3.5-0.8b",
+        "qwen3.5-2b",
+        "qwen3-4b",
+        "lfm2.5-1.2b",
+        "lfm2-2.6b",
+        "gemma-2b-it",
+        "gemma-4-e2b",
+        "glm-4.7-flash-reap-23b-a3b",
+    ] {
+        let mut settings = json!({
+            "polish_model": model_id,
+            "cloud_polish_enabled": true,
+            "active_cloud_polish_provider": "openai",
+            "cloud_polish_configs": {"openai": {"api_key": "test-only", "model": "vendor-model"}},
+            "polish_system_prompt": "Keep the custom template",
+            "language": "fr",
+            "model": "apple-speech",
+            "local_polish_runtime": {"provider_type": "llama_cpp", "base_url": "http://127.0.0.1:8080"}
+        });
+        let mut expected = settings.clone();
+        expected["polish_model"] = json!("mlx-qwen3-1.7b");
+        assert!(
+            super::migrate_local_polish_for_platform(&mut settings, true),
+            "{model_id}"
+        );
+        assert_eq!(settings, expected);
+        assert!(!super::migrate_local_polish_for_platform(
+            &mut settings,
+            true
+        ));
+        assert_eq!(settings, expected);
+    }
+}
+
+#[test]
+fn platform_policy_preserves_valid_polish_and_non_arm_settings() {
+    for (model_id, apple_silicon) in [
+        ("apple-intelligence", true),
+        ("mlx-qwen3-0.6b", true),
+        ("mlx-qwen3-1.7b", true),
+        ("", true),
+        ("unknown-model", true),
+        ("qwen3.5-0.8b", false),
+        ("gemma-4-e2b", false),
+    ] {
+        let mut settings = json!({"polish_model": model_id, "cloud_polish_enabled": false});
+        let original = settings.clone();
+        assert!(!super::migrate_local_polish_for_platform(
+            &mut settings,
+            apple_silicon
+        ));
+        assert_eq!(settings, original);
+    }
+    let mut settings = json!({"cloud_polish_enabled": true});
+    let original = settings.clone();
+    assert!(!super::migrate_local_polish_for_platform(
+        &mut settings,
+        true
+    ));
+    assert_eq!(settings, original);
+}
+
+#[test]
+fn platform_policy_rejects_excluded_polish_selection_before_mutation() {
+    let mut settings = AppSettings::default();
+    settings.polish_model = "apple-intelligence".to_string();
+    settings.cloud_polish_enabled = true;
+    let original = serde_json::to_value(&settings).unwrap();
+    for model_id in [
+        "qwen3.5-0.8b",
+        "lfm2.5-1.2b",
+        "gemma-4-e2b",
+        "glm-4.7-flash-reap-23b-a3b",
+    ] {
+        let result = super::set_local_polish_model(&mut settings, model_id);
+        if crate::polish_engine::mlx::runtime::supported() {
+            assert!(result
+                .unwrap_err()
+                .contains("not available on this computer"));
+            assert_eq!(serde_json::to_value(&settings).unwrap(), original);
+        } else {
+            result.unwrap();
+            assert_eq!(settings.polish_model, model_id);
+            assert!(settings.cloud_polish_enabled);
+        }
+    }
+}
+
+#[test]
+fn platform_policy_accepts_apple_and_mlx_without_changing_cloud_routing() {
+    let mut settings = AppSettings::default();
+    settings.cloud_polish_enabled = true;
+    for model_id in ["apple-intelligence", "mlx-qwen3-0.6b", "mlx-qwen3-1.7b", ""] {
+        if model_id.starts_with("mlx-") && !crate::polish_engine::mlx::runtime::supported() {
+            continue;
+        }
+        let mut expected = serde_json::to_value(&settings).unwrap();
+        expected["polish_model"] = json!(model_id);
+        super::set_local_polish_model(&mut settings, model_id).unwrap();
+        assert_eq!(serde_json::to_value(&settings).unwrap(), expected);
+    }
+}
+
+#[test]
 fn test_is_streaming_stt_active_accepts_aliyun_stream_provider_id() {
     let mut settings = AppSettings::default();
     settings.cloud_stt_enabled = true;
@@ -24,7 +167,10 @@ fn mlx_audio_is_an_active_recording_provider_with_local_defaults() {
     settings.cloud_stt_enabled = true;
     settings.active_cloud_stt_provider = "mlx-audio".to_string();
 
-    assert!(settings.is_streaming_stt_active());
+    assert_eq!(
+        settings.is_streaming_stt_active(),
+        !crate::stt_engine::mlx::runtime::supported()
+    );
     let config = settings.get_active_cloud_stt_config();
     assert_eq!(config.base_url, "http://127.0.0.1:8000/v1");
     assert_eq!(

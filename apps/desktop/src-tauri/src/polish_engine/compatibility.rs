@@ -29,6 +29,7 @@ pub struct PolishModelCompatibility {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PolishModelLatencyClass {
+    Unmeasured,
     Fast,
     Balanced,
     Slow,
@@ -66,21 +67,42 @@ pub fn assess_polish_model_compatibility(
     model_id: &str,
     device: &DeviceProfile,
 ) -> PolishModelCompatibility {
+    assess_polish_model_compatibility_for_os(model_id, device, super::mlx::runtime::macos_version())
+}
+
+fn assess_polish_model_compatibility_for_os(
+    model_id: &str,
+    device: &DeviceProfile,
+    version: Option<&str>,
+) -> PolishModelCompatibility {
     let requirement = requirement_for_model(model_id);
-    let (level, code) = match device.total_memory_mb {
-        None => (PolishModelCompatibilityLevel::Limited, "memory_unknown"),
-        Some(memory_mb) if memory_mb < requirement.minimum_memory_mb => (
-            PolishModelCompatibilityLevel::Unsupported,
-            "memory_below_minimum",
-        ),
-        Some(memory_mb) if memory_mb < requirement.recommended_memory_mb => (
-            PolishModelCompatibilityLevel::Limited,
-            "memory_below_recommended",
-        ),
-        Some(_) if device.logical_cpu_count < 4 => {
-            (PolishModelCompatibilityLevel::Limited, "cpu_threads_low")
+    let apple_silicon = device.platform == "macos" && device.arch == "aarch64";
+    let ineligible = super::UnifiedPolishManager::get_engine_by_model_id(model_id)
+        .filter(|engine| !engine.is_available_for_platform(apple_silicon))
+        .map(|_| "platform_unsupported")
+        .or_else(|| {
+            super::mlx::models::find(model_id).and_then(|_| {
+                super::mlx::runtime::eligibility(device.platform, device.arch, version).err()
+            })
+        });
+    let (level, code) = if let Some(code) = ineligible {
+        (PolishModelCompatibilityLevel::Unsupported, code)
+    } else {
+        match device.total_memory_mb {
+            None => (PolishModelCompatibilityLevel::Limited, "memory_unknown"),
+            Some(memory_mb) if memory_mb < requirement.minimum_memory_mb => (
+                PolishModelCompatibilityLevel::Unsupported,
+                "memory_below_minimum",
+            ),
+            Some(memory_mb) if memory_mb < requirement.recommended_memory_mb => (
+                PolishModelCompatibilityLevel::Limited,
+                "memory_below_recommended",
+            ),
+            Some(_) if device.logical_cpu_count < 4 => {
+                (PolishModelCompatibilityLevel::Limited, "cpu_threads_low")
+            }
+            Some(_) => (PolishModelCompatibilityLevel::Smooth, "smooth"),
         }
-        Some(_) => (PolishModelCompatibilityLevel::Smooth, "smooth"),
     };
 
     PolishModelCompatibility {
@@ -94,6 +116,14 @@ pub fn assess_polish_model_compatibility(
 }
 
 pub fn polish_model_latency_profile(model_id: &str) -> PolishModelLatencyProfile {
+    if super::mlx::models::find(model_id).is_some() {
+        return PolishModelLatencyProfile {
+            class: PolishModelLatencyClass::Unmeasured,
+            code: "unmeasured",
+            recommended_templates: Vec::new(),
+            caution_templates: Vec::new(),
+        };
+    }
     match model_id {
         "qwen3.5-0.8b" | "lfm2.5-1.2b" | "apple-intelligence" => PolishModelLatencyProfile {
             class: PolishModelLatencyClass::Fast,
@@ -130,11 +160,11 @@ pub fn polish_model_latency_profile(model_id: &str) -> PolishModelLatencyProfile
 
 fn requirement_for_model(model_id: &str) -> PolishModelRequirement {
     match model_id {
-        "qwen3.5-0.8b" => PolishModelRequirement {
+        "qwen3.5-0.8b" | "mlx-qwen3-0.6b" => PolishModelRequirement {
             minimum_memory_mb: 4 * 1024,
             recommended_memory_mb: 8 * 1024,
         },
-        "lfm2.5-1.2b" => PolishModelRequirement {
+        "lfm2.5-1.2b" | "mlx-qwen3-1.7b" => PolishModelRequirement {
             minimum_memory_mb: 6 * 1024,
             recommended_memory_mb: 8 * 1024,
         },
@@ -231,6 +261,28 @@ fn current_platform() -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mlx_os_floor_never_reenables_native_engines_on_apple_silicon() {
+        let device = DeviceProfile {
+            platform: "macos",
+            arch: "aarch64",
+            logical_cpu_count: 10,
+            total_memory_mb: Some(64 * 1024),
+        };
+        for version in [None, Some("12.7"), Some("13.6"), Some("malformed")] {
+            let mlx = assess_polish_model_compatibility_for_os("mlx-qwen3-0.6b", &device, version);
+            assert_eq!(mlx.level, PolishModelCompatibilityLevel::Unsupported);
+            assert_eq!(mlx.code, "os_unsupported");
+            let native = assess_polish_model_compatibility_for_os("qwen3.5-0.8b", &device, version);
+            assert_eq!(native.level, PolishModelCompatibilityLevel::Unsupported);
+            assert_eq!(native.code, "platform_unsupported");
+        }
+        assert_eq!(
+            assess_polish_model_compatibility_for_os("mlx-qwen3-1.7b", &device, Some("14.0")).level,
+            PolishModelCompatibilityLevel::Smooth
+        );
+    }
 
     fn profile(memory_mb: Option<u64>, logical_cpu_count: usize) -> DeviceProfile {
         DeviceProfile {

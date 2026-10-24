@@ -1,6 +1,8 @@
 pub mod apple;
 pub mod buffering_engine;
 pub mod cloud;
+mod live_preview;
+pub mod mlx;
 pub mod models;
 pub mod sherpa_onnx;
 pub mod traits;

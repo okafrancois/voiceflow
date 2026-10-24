@@ -8,6 +8,7 @@ use std::time::Duration;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum PolishEngineType {
+    Mlx,
     Qwen,
     Lfm,
     Gemma,
@@ -18,8 +19,31 @@ pub enum PolishEngineType {
 }
 
 impl PolishEngineType {
+    pub fn is_available_for_platform(self, apple_silicon: bool) -> bool {
+        match self {
+            Self::Apple | Self::Cloud => true,
+            Self::Mlx => apple_silicon,
+            Self::Qwen | Self::Lfm | Self::Gemma | Self::Glm => !apple_silicon,
+        }
+    }
+
+    pub(crate) fn is_available(self) -> bool {
+        self.is_available_for_platform(cfg!(all(target_os = "macos", target_arch = "aarch64")))
+    }
+
+    pub(crate) fn ensure_available(self) -> Result<(), String> {
+        if self.is_available() {
+            Ok(())
+        } else {
+            Err(format!(
+                "Polish engine '{self}' is not available on this computer"
+            ))
+        }
+    }
+
     pub fn as_str(&self) -> &'static str {
         match self {
+            PolishEngineType::Mlx => "mlx",
             PolishEngineType::Qwen => "qwen",
             PolishEngineType::Lfm => "lfm",
             PolishEngineType::Gemma => "gemma",
@@ -31,6 +55,7 @@ impl PolishEngineType {
 
     pub fn all() -> Vec<PolishEngineType> {
         vec![
+            PolishEngineType::Mlx,
             PolishEngineType::Qwen,
             PolishEngineType::Lfm,
             PolishEngineType::Gemma,
@@ -46,6 +71,7 @@ impl std::str::FromStr for PolishEngineType {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
+            "mlx" => Ok(PolishEngineType::Mlx),
             "qwen" => Ok(PolishEngineType::Qwen),
             "lfm" => Ok(PolishEngineType::Lfm),
             "gemma" => Ok(PolishEngineType::Gemma),
@@ -319,7 +345,8 @@ mod tests {
     #[test]
     fn test_polish_engine_type_all() {
         let all = PolishEngineType::all();
-        assert_eq!(all.len(), 6);
+        assert_eq!(all.len(), 7);
+        assert!(all.contains(&PolishEngineType::Mlx));
         assert!(all.contains(&PolishEngineType::Apple));
         assert!(all.contains(&PolishEngineType::Qwen));
         assert!(all.contains(&PolishEngineType::Lfm));

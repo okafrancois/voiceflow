@@ -14,8 +14,9 @@ use crate::services::transcription_finalize::{
 };
 use crate::state::app_state::AppState;
 use crate::state::unified_state::StreamingSttState;
+use crate::stt_engine::buffering_engine::await_user_cancellable_transcription;
 use crate::stt_engine::cloud::StreamingSttClient;
-use crate::stt_engine::traits::{EngineType, RecordingConsumer};
+use crate::stt_engine::traits::{EngineType, PartialResult, RecordingConsumer};
 use crate::utils::AppPaths;
 
 use super::polish::{maybe_polish_transcription_text_for_profile, PolishProcessingResult};
@@ -28,6 +29,124 @@ use super::shared::{
 
 const WINDOW_CONTEXT_CAPTURE_TIMEOUT_MS: u64 = 8_000;
 const WINDOW_CONTEXT_RECORDING_POLL_MS: u64 = 20;
+
+fn live_recording_partial(
+    result: PartialResult,
+    task_id: u64,
+    current_task_id: u64,
+    is_recording: bool,
+    is_canceled: bool,
+) -> Option<TranscriptionPartialEvent> {
+    (task_id == current_task_id
+        && is_recording
+        && !is_canceled
+        && !result.is_final
+        && !result.text.trim().is_empty())
+    .then_some(TranscriptionPartialEvent {
+        text: result.text,
+        is_definite: false,
+        task_id,
+    })
+}
+
+async fn forward_recording_audio<Context>(
+    receiver: &mut tokio::sync::mpsc::Receiver<Vec<i16>>,
+    consumer: &dyn RecordingConsumer,
+    context_capture: Option<impl std::future::Future<Output = Option<Context>>>,
+    task_id: u64,
+) -> (usize, Option<Context>) {
+    let mut context_pending = context_capture.is_some();
+    let capture = async {
+        match context_capture {
+            Some(capture) => capture.await,
+            None => None,
+        }
+    };
+    tokio::pin!(capture);
+    let mut context = None;
+    let mut chunks_sent = 0;
+    loop {
+        let chunk = tokio::select! {
+            biased;
+            captured = &mut capture, if context_pending => {
+                context = captured;
+                context_pending = false;
+                continue;
+            }
+            chunk = receiver.recv() => chunk,
+        };
+        let Some(chunk) = chunk else {
+            break;
+        };
+        if let Err(error) = consumer.send_chunk(chunk).await {
+            error!(task_id, %error, "audio_chunk_send_failed");
+            break;
+        }
+        chunks_sent += 1;
+    }
+    (chunks_sent, context)
+}
+
+struct ContextCaptureTask(
+    tauri::async_runtime::JoinHandle<crate::services::product_workflows::CapturedContext>,
+);
+
+impl Drop for ContextCaptureTask {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
+fn apply_recording_context(
+    app: &AppHandle,
+    task_id: u64,
+    context: Option<&crate::services::product_workflows::CapturedContext>,
+) {
+    let Some(context) = context else {
+        return;
+    };
+    let state = app.state::<AppState>();
+    if state.task_counter.load(Ordering::SeqCst) != task_id
+        || state.is_cancellation_requested(task_id)
+    {
+        return;
+    }
+    if let Some(runtime) = app.try_state::<crate::services::product_workflows::WorkflowRuntime>() {
+        runtime.set_context(context.clone());
+    }
+    let window_context =
+        context
+            .to_polish_reference()
+            .and_then(|reference| match context.ocr_text.as_ref() {
+                Some(ocr_text) => {
+                    crate::runtime_context::window::WindowContextBundle::from_ocr_result(
+                        ocr_text,
+                        crate::runtime_context::window::WindowContextSource::FocusedWindow,
+                        context.window_title.clone(),
+                        0,
+                        0,
+                        None,
+                    )
+                    .map(|bundle| bundle.with_structured_reference(reference))
+                }
+                None => {
+                    crate::runtime_context::window::WindowContextBundle::from_structured_reference(
+                        reference,
+                        context.window_title.clone(),
+                    )
+                }
+            });
+    if let Some(window_context) = window_context {
+        if let Some(session) = state
+            .session_state
+            .lock()
+            .as_mut()
+            .filter(|session| session.task_id == task_id)
+        {
+            session.window_context = Some(window_context);
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum WorkflowDeliveryPlan {
@@ -153,13 +272,13 @@ async fn capture_structured_context_while_recording(
         "structured_context_capture_started"
     );
 
-    let mut context_task = tauri::async_runtime::spawn(async move {
+    let mut context_task = ContextCaptureTask(tauri::async_runtime::spawn(async move {
         crate::sensors::focused_context::capture_focused_context(&context_settings, clipboard_text)
             .await
-    });
+    }));
 
     tokio::select! {
-        result = &mut context_task => {
+        result = &mut context_task.0 => {
             match result {
                 Ok(ctx) => {
                     let state = app.state::<AppState>();
@@ -193,7 +312,7 @@ async fn capture_structured_context_while_recording(
             }
         }
         () = tokio::time::sleep(tokio::time::Duration::from_millis(WINDOW_CONTEXT_CAPTURE_TIMEOUT_MS)) => {
-            context_task.abort();
+            context_task.0.abort();
             warn!(
                 task_id,
                 timeout_ms = WINDOW_CONTEXT_CAPTURE_TIMEOUT_MS,
@@ -202,7 +321,7 @@ async fn capture_structured_context_while_recording(
             None
         }
         () = wait_for_recording_to_end(app.clone(), task_id) => {
-            context_task.abort();
+            context_task.0.abort();
             info!(task_id, "window_context_capture_canceled-recording_ended");
             None
         }
@@ -375,9 +494,20 @@ pub(super) fn start_unified_recording(
             app: app_clone.clone(),
             task_id,
         };
-        let structured_context =
-            capture_structured_context_while_recording(app_clone.clone(), task_id).await;
-        let quality_application_id = structured_context
+        let defer_context_capture = !cloud_stt_enabled && {
+            let state = app_clone.state::<AppState>();
+            let settings = state.settings.lock();
+            crate::stt_engine::UnifiedEngineManager::get_engine_by_model_name(&settings.model)
+                == Some(EngineType::Mlx)
+        };
+        let deferred_context = defer_context_capture
+            .then(|| capture_structured_context_while_recording(app_clone.clone(), task_id));
+        let mut structured_context = if defer_context_capture {
+            None
+        } else {
+            capture_structured_context_while_recording(app_clone.clone(), task_id).await
+        };
+        let mut quality_application_id = structured_context
             .as_ref()
             .and_then(|context| context.application_id.clone());
         let vibe_context = {
@@ -394,43 +524,7 @@ pub(super) fn start_unified_recording(
             )
         };
 
-        if let (Some(runtime), Some(context)) = (
-            app_clone.try_state::<crate::services::product_workflows::WorkflowRuntime>(),
-            structured_context.as_ref(),
-        ) {
-            runtime.set_context(context.clone());
-        }
-
-        let window_context = structured_context.as_ref().and_then(|context| {
-            let reference = context.to_polish_reference()?;
-            match context.ocr_text.as_ref() {
-                Some(ocr_text) => {
-                    crate::runtime_context::window::WindowContextBundle::from_ocr_result(
-                        ocr_text,
-                        crate::runtime_context::window::WindowContextSource::FocusedWindow,
-                        context.window_title.clone(),
-                        0,
-                        0,
-                        None,
-                    )
-                    .map(|bundle| bundle.with_structured_reference(reference))
-                }
-                None => {
-                    crate::runtime_context::window::WindowContextBundle::from_structured_reference(
-                        reference,
-                        context.window_title.clone(),
-                    )
-                }
-            }
-        });
-
-        if let Some(ref ctx) = window_context {
-            let state_for_session = app_clone.state::<AppState>();
-            let mut session = state_for_session.session_state.lock();
-            if let Some(s) = session.as_mut() {
-                s.window_context = Some(ctx.clone());
-            }
-        }
+        apply_recording_context(&app_clone, task_id, structured_context.as_ref());
 
         let stt_initial_prompt = {
             let mut hints = Vec::new();
@@ -454,6 +548,7 @@ pub(super) fn start_unified_recording(
             initial_prompt: stt_initial_prompt,
         };
 
+        let mut local_engine_type = None;
         let consumer: Box<dyn RecordingConsumer> = if cloud_stt_enabled {
             let stt_initial_prompt_chars = stt_context
                 .initial_prompt
@@ -600,25 +695,46 @@ pub(super) fn start_unified_recording(
             match apple_consumer {
                 Some(consumer) => Box::new(consumer) as Box<dyn RecordingConsumer>,
                 None => {
-                    let engine = crate::stt_engine::buffering_engine::BufferingConsumer::new(
+                    local_engine_type =
+                        crate::stt_engine::UnifiedEngineManager::get_engine_by_model_name(
+                            &resolved_model_name,
+                        );
+                    let mut engine = crate::stt_engine::buffering_engine::BufferingConsumer::new(
                         state_inner.engine_manager.clone(),
                         resolved_model_name,
                         lang,
                         Some(initial_prompt),
                         stt_context,
                     );
+                    if local_engine_type == Some(EngineType::Mlx) {
+                        let preview_app = app_clone.clone();
+                        engine.set_partial_callback(Arc::new(move |result| {
+                            let state = preview_app.state::<AppState>();
+                            if let Some(event) = live_recording_partial(
+                                result,
+                                task_id,
+                                state.task_counter.load(Ordering::SeqCst),
+                                state.is_recording.load(Ordering::SeqCst),
+                                state.is_cancellation_requested(task_id),
+                            ) {
+                                let _ = preview_app.emit(EventName::TRANSCRIPTION_PARTIAL, event);
+                            }
+                        }));
+                    }
                     Box::new(engine) as Box<dyn RecordingConsumer>
                 }
             }
         };
 
-        let mut chunks_sent = 0;
-        while let Some(chunk) = app_rx.recv().await {
-            if let Err(e) = consumer.send_chunk(chunk).await {
-                error!(task_id, error = %e, "audio_chunk_send_failed");
-                break;
-            }
-            chunks_sent += 1;
+        let (chunks_sent, captured_context) =
+            forward_recording_audio(&mut app_rx, consumer.as_ref(), deferred_context, task_id)
+                .await;
+        if defer_context_capture {
+            structured_context = captured_context;
+            quality_application_id = structured_context
+                .as_ref()
+                .and_then(|context| context.application_id.clone());
+            apply_recording_context(&app_clone, task_id, structured_context.as_ref());
         }
         info!(task_id, total_chunks = chunks_sent, "audio_chunks_all_sent");
 
@@ -647,7 +763,16 @@ pub(super) fn start_unified_recording(
 
             debug!(task_id, "consumer_finish_invoked");
             let stt_started = Instant::now();
-            let text_result: Result<String, String> = consumer.finish().await;
+            let Some(text_result) = await_user_cancellable_transcription(
+                local_engine_type,
+                || state_inner.is_cancellation_requested(task_id),
+                consumer.finish(),
+            )
+            .await
+            else {
+                discard_canceled_result(&state_inner, task_id, None);
+                return;
+            };
             let stt_wall_ms = u64::try_from(stt_started.elapsed().as_millis()).unwrap_or(u64::MAX);
 
             let state_inner = app_clone.state::<AppState>();
@@ -959,8 +1084,212 @@ pub(super) fn start_unified_recording(
 
 #[cfg(test)]
 mod tests {
-    use super::transcription_quality_event;
+    use super::{live_recording_partial, transcription_quality_event};
     use crate::services::platform_quality::QualityEventKind;
+    use crate::stt_engine::buffering_engine::{
+        await_user_cancellable_transcription, cancellation_test_support::ControlledDecoder,
+        BufferingConsumer,
+    };
+    use crate::stt_engine::traits::{EngineType, PartialResult, RecordingConsumer};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    #[derive(Default)]
+    struct ObservingConsumer {
+        chunks: parking_lot::Mutex<Vec<Vec<i16>>>,
+        received: tokio::sync::Notify,
+    }
+
+    #[async_trait::async_trait]
+    impl RecordingConsumer for ObservingConsumer {
+        async fn send_chunk(&self, samples: Vec<i16>) -> Result<(), String> {
+            self.chunks.lock().push(samples);
+            self.received.notify_one();
+            Ok(())
+        }
+
+        async fn finish(&self) -> Result<String, String> {
+            panic!("Audio forwarding must not finalize transcription")
+        }
+    }
+
+    #[tokio::test]
+    async fn pending_context_capture_does_not_delay_live_audio_forwarding() {
+        let consumer = Arc::new(ObservingConsumer::default());
+        let (sender, mut receiver) = tokio::sync::mpsc::channel(4);
+        let consumer_in_task = consumer.clone();
+        let forwarding = tokio::spawn(async move {
+            super::forward_recording_audio(
+                &mut receiver,
+                consumer_in_task.as_ref(),
+                Some(std::future::pending::<Option<()>>()),
+                7,
+            )
+            .await
+        });
+        sender.send(vec![1, 2, 3]).await.unwrap();
+        let forwarded =
+            tokio::time::timeout(Duration::from_millis(200), consumer.received.notified()).await;
+        if forwarded.is_err() {
+            forwarding.abort();
+        }
+        assert!(forwarded.is_ok(), "Optional context blocked live audio");
+        sender.send(vec![4]).await.unwrap();
+        drop(sender);
+        let (chunks, context) = tokio::time::timeout(Duration::from_secs(1), forwarding)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(chunks, 2);
+        assert_eq!(context, None);
+        assert_eq!(*consumer.chunks.lock(), [vec![1, 2, 3], vec![4]]);
+    }
+
+    #[tokio::test]
+    async fn completed_context_is_retained_without_losing_the_final_audio_chunk() {
+        let consumer = ObservingConsumer::default();
+        let (sender, mut receiver) = tokio::sync::mpsc::channel(4);
+        sender.send(vec![1, 2]).await.unwrap();
+        sender.send(vec![3]).await.unwrap();
+        drop(sender);
+        let (chunks, context) = super::forward_recording_audio(
+            &mut receiver,
+            &consumer,
+            Some(std::future::ready(Some("captured context"))),
+            7,
+        )
+        .await;
+        assert_eq!(chunks, 2);
+        assert_eq!(context, Some("captured context"));
+        assert_eq!(*consumer.chunks.lock(), [vec![1, 2], vec![3]]);
+    }
+
+    #[tokio::test]
+    async fn ending_audio_forwarding_drops_unfinished_context_capture() {
+        struct CaptureLease(Arc<AtomicBool>);
+
+        impl Drop for CaptureLease {
+            fn drop(&mut self) {
+                self.0.store(true, Ordering::SeqCst);
+            }
+        }
+
+        let dropped = Arc::new(AtomicBool::new(false));
+        let lease = CaptureLease(dropped.clone());
+        let context = async move {
+            let _lease = lease;
+            std::future::pending::<Option<()>>().await
+        };
+        let consumer = ObservingConsumer::default();
+        let (sender, mut receiver) = tokio::sync::mpsc::channel(4);
+        drop(sender);
+        let result =
+            super::forward_recording_audio(&mut receiver, &consumer, Some(context), 7).await;
+        assert_eq!(result, (0, None));
+        assert!(dropped.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn managed_live_partial_is_only_published_for_the_active_recording() {
+        for (current_task_id, is_recording, is_canceled, expected) in [
+            (7, true, false, true),
+            (8, true, false, false),
+            (7, false, false, false),
+            (7, true, true, false),
+        ] {
+            let event = live_recording_partial(
+                PartialResult {
+                    text: "Bonjour".to_string(),
+                    is_definite: true,
+                    is_final: false,
+                },
+                7,
+                current_task_id,
+                is_recording,
+                is_canceled,
+            );
+            assert_eq!(event.is_some(), expected);
+            if let Some(event) = event {
+                assert_eq!(event.task_id, 7);
+                assert_eq!(event.text, "Bonjour");
+                assert!(!event.is_definite);
+            }
+        }
+    }
+
+    #[test]
+    fn managed_live_partial_never_publishes_final_or_empty_results() {
+        for (text, is_final) in [("Bonjour", true), ("", false), ("  \n", false)] {
+            assert!(live_recording_partial(
+                PartialResult {
+                    text: text.to_string(),
+                    is_definite: false,
+                    is_final,
+                },
+                7,
+                7,
+                true,
+                false,
+            )
+            .is_none());
+        }
+    }
+
+    #[tokio::test]
+    async fn user_cancellation_of_recording_drops_mlx_finish_before_delivery() {
+        let decoder = ControlledDecoder::new();
+        let consumer = BufferingConsumer::with_decoder(decoder.clone(), EngineType::Mlx);
+        consumer.send_chunk(vec![100; 16_000]).await.unwrap();
+        let canceled = Arc::new(AtomicBool::new(false));
+        let canceled_in_task = canceled.clone();
+        let delivered = Arc::new(AtomicBool::new(false));
+        let delivered_in_task = delivered.clone();
+        let active = tokio::spawn(async move {
+            let result = await_user_cancellable_transcription(
+                Some(EngineType::Mlx),
+                || canceled_in_task.load(Ordering::SeqCst),
+                consumer.finish(),
+            )
+            .await;
+            if result.is_some() {
+                delivered_in_task.store(true, Ordering::SeqCst);
+            }
+            result
+        });
+        tokio::time::timeout(Duration::from_secs(1), decoder.started.notified())
+            .await
+            .unwrap();
+        canceled.store(true, Ordering::SeqCst);
+
+        assert!(tokio::time::timeout(Duration::from_secs(1), active)
+            .await
+            .expect("user cancellation must interrupt MLX finish")
+            .unwrap()
+            .is_none());
+        tokio::time::timeout(Duration::from_secs(1), decoder.stopped.notified())
+            .await
+            .unwrap();
+        assert!(!delivered.load(Ordering::SeqCst));
+        assert_eq!(decoder.slot.available_permits(), 1);
+    }
+
+    #[tokio::test]
+    async fn user_cancellation_preserves_native_and_cloud_finishing() {
+        for engine_type in [
+            None,
+            Some(EngineType::Whisper),
+            Some(EngineType::SenseVoice),
+            Some(EngineType::Qwen3Asr),
+            Some(EngineType::Apple),
+        ] {
+            assert_eq!(
+                await_user_cancellable_transcription(engine_type, || true, async { "finished" })
+                    .await,
+                Some("finished")
+            );
+        }
+    }
 
     #[test]
     fn recording_pipeline_builds_content_free_local_and_cloud_quality_events() {

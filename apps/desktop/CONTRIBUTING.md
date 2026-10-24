@@ -17,7 +17,7 @@
 - Node.js 18+
 - Rust 1.70+ (for backend compilation)
 - pnpm 8+
-- macOS: Apple Silicon (M1/M2/M3/M4) recommended
+- macOS: Apple Silicon local transcription uses managed MLX and requires macOS 14 or newer; Intel Macs retain native engines
 - Windows: Development support in progress
 
 ---
@@ -60,6 +60,14 @@ pnpm --filter @voiceflow/desktop tauri:build:win
 - Dev bundle icons are wired through `src-tauri/tauri.dev.conf.json`.
 - macOS tray icon selection is runtime-driven in `src-tauri/src/tray.rs`: app identifiers ending with `.inhouse` load `assets/tray-icon-inhouse.png`.
 
+### Managed MLX transcription
+
+- Apple Silicon offers Whisper Turbo, Parakeet v3, and Qwen3-ASR through the same local model selector. No external MLX server or system Python is needed.
+- Model download installs a private Python 3.12.15 / MLX Audio 0.6.1 runtime, then verifies the pinned checkpoint files. Installation requires network access and several GB of free disk space; inference runs offline over private process pipes.
+- `node scripts/ensure-mlx-runtime.mjs --platform macos` from the repository root prepares the checksum-verified ARM `uv` bootstrap. Normal macOS resource preparation also runs this step; the app installs Python and dependencies on demand, not at build time.
+- The backend rejects macOS versions older than 14 with upgrade guidance. It never silently selects a native engine on Apple Silicon. Intel Mac, Windows, and Linux keep their native-engine policy.
+- See [the managed MLX contract](../../context/feat/mlx-audio-stt/0.2.0/prd/erd.md) and [STT reference](../../context/reference/providers/stt.md) for migration and isolated real-inference verification. MLX text polish is a separate, unimplemented follow-up.
+
 ---
 
 ## Architecture
@@ -85,7 +93,7 @@ pnpm --filter @voiceflow/desktop tauri:build:win
 | Module | Purpose |
 |--------|---------|
 | `audio/` | Recording, resampling, beep generation, VAD, level meter |
-| `stt_engine/` | Whisper, SenseVoice, cloud STT engines |
+| `stt_engine/` | Managed MLX on Apple Silicon, compatible native engines elsewhere, cloud STT |
 | `polish_engine/` | Local and cloud text polishing |
 | `commands/` | Tauri IPC command handlers |
 | `state/` | Unified runtime state management |

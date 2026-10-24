@@ -6,6 +6,7 @@ import {
   modelCommands,
   events,
   type ModelInfo,
+  type ModelDownloadStage,
   type PolishModelInfo,
 } from "@/lib/tauri";
 import { logger } from "@/lib/logger";
@@ -34,8 +35,10 @@ export function ModelSettings({
   const [activeTab, setActiveTab] = useState<ModelSettingsTab>(initialTab);
 
   const [models, setModels] = useState<ModelInfo[]>([]);
+  const modelLoadSequenceRef = useRef(0);
   const [downloading, setDownloading] = useState<Set<string>>(new Set());
   const [downloadProgress, setDownloadProgress] = useState<Record<string, number>>({});
+  const [downloadStages, setDownloadStages] = useState<Record<string, ModelDownloadStage | undefined>>({});
   
   const [polishModels, setPolishModels] = useState<PolishModelInfo[]>([]);
   const [selectedPolishModel, setSelectedPolishModel] = useState<string>("");
@@ -52,11 +55,14 @@ export function ModelSettings({
   }, [initialTab]);
 
   const loadModels = useCallback(async () => {
+    const sequence = ++modelLoadSequenceRef.current;
     try {
       const list = await modelCommands.getModels();
-      setModels(list);
+      if (sequence === modelLoadSequenceRef.current) setModels(list);
     } catch (err) {
-      logger.error("failed_to_load_models", { error: String(err) });
+      if (sequence === modelLoadSequenceRef.current) {
+        logger.error("failed_to_load_models", { error: String(err) });
+      }
     }
   }, []);
 
@@ -93,7 +99,8 @@ export function ModelSettings({
     loadPolishModels().then(() => {
       if (settings.polish_model) setSelectedPolishModel(settings.polish_model);
     });
-  }, [settings === null, loadModels, loadPolishModels]);
+    return () => { modelLoadSequenceRef.current += 1; };
+  }, [settings === null, settings?.stt_engine_language, loadModels, loadPolishModels]);
 
   useEventListeners(async () => {
     return [
@@ -104,6 +111,11 @@ export function ModelSettings({
           return next;
         });
         setDownloadProgress((prev) => {
+          const next = { ...prev };
+          delete next[model];
+          return next;
+        });
+        setDownloadStages((prev) => {
           const next = { ...prev };
           delete next[model];
           return next;
@@ -121,12 +133,18 @@ export function ModelSettings({
           delete next[model];
           return next;
         });
+        setDownloadStages((prev) => {
+          const next = { ...prev };
+          delete next[model];
+          return next;
+        });
       }),
       await events.onModelDownloadProgress((data) => {
         setDownloadProgress((prev) => ({
           ...prev,
           [data.model]: data.progress,
         }));
+        setDownloadStages((prev) => ({ ...prev, [data.model]: data.stage }));
       }),
       await events.onModelDeleted(() => loadModels()),
       await events.onPolishModelDownloadProgress((data) => {
@@ -169,6 +187,11 @@ export function ModelSettings({
         return next;
       });
       setDownloadProgress((prev) => {
+        const next = { ...prev };
+        delete next[modelName];
+        return next;
+      });
+      setDownloadStages((prev) => {
         const next = { ...prev };
         delete next[modelName];
         return next;
@@ -272,6 +295,7 @@ export function ModelSettings({
             models={models}
             downloading={downloading}
             downloadProgress={downloadProgress}
+            downloadStages={downloadStages}
             onDownload={handleDownload}
             onCancel={handleCancel}
             onDelete={handleDelete}

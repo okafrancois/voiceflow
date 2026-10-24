@@ -276,7 +276,30 @@ pub const ALL: &[&ModelDefinition] = &[
     &WHISPER_TURBO,
     &WHISPER_LARGE_V3,
     &APPLE_SPEECH,
+    &super::mlx::models::WHISPER_TURBO,
+    &super::mlx::models::PARAKEET_V3,
+    &super::mlx::models::QWEN3_ASR,
 ];
+
+pub fn for_platform(apple_silicon: bool) -> Vec<&'static ModelDefinition> {
+    ALL.iter()
+        .copied()
+        .filter(|model| is_available_for_platform(model, apple_silicon))
+        .collect()
+}
+
+fn is_available_for_platform(model: &ModelDefinition, apple_silicon: bool) -> bool {
+    model.engine_type == EngineType::Apple
+        || (model.engine_type == EngineType::Mlx) == apple_silicon
+}
+
+pub fn available() -> Vec<&'static ModelDefinition> {
+    for_platform(super::mlx::runtime::supported())
+}
+
+pub fn is_available(model: &ModelDefinition) -> bool {
+    is_available_for_platform(model, super::mlx::runtime::supported())
+}
 
 // ============================================================================
 // Helper Functions
@@ -298,10 +321,29 @@ pub fn is_sensevoice_preferred(lang: &str) -> bool {
 /// For SenseVoice-preferred languages: returns SenseVoice Small only
 /// For other languages: returns Whisper Base only
 pub fn recommend_by_language(lang: &str) -> Vec<&'static ModelDefinition> {
+    recommend_for_platform(lang, super::mlx::runtime::supported())
+}
+
+pub fn recommend_for_platform(lang: &str, apple_silicon: bool) -> Vec<&'static ModelDefinition> {
+    if apple_silicon {
+        let base_lang = lang.split(['-', '_']).next().unwrap_or(lang);
+        return for_platform(true)
+            .into_iter()
+            .filter(|model| !model.built_in)
+            .filter(|model| {
+                lang == "auto"
+                    || model.prefer_lang.is_empty()
+                    || model.prefer_lang.contains(&base_lang)
+            })
+            .collect();
+    }
     if lang == "auto" {
         // Return all downloadable models for auto-detect, sorted by accuracy.
         // Built-in engines are opt-in and never recommended automatically.
-        let mut models: Vec<_> = ALL.iter().copied().filter(|m| !m.built_in).collect();
+        let mut models: Vec<_> = for_platform(false)
+            .into_iter()
+            .filter(|m| !m.built_in)
+            .collect();
         models.sort_by_key(|model| std::cmp::Reverse(model.accuracy_score));
         return models;
     }
@@ -323,6 +365,13 @@ pub fn recommend_by_language(lang: &str) -> Vec<&'static ModelDefinition> {
 /// For SenseVoice-preferred languages: returns SenseVoice Small
 /// For other languages: returns Whisper Base
 pub fn default_for_language(lang: &str) -> &'static ModelDefinition {
+    default_for_platform(lang, super::mlx::runtime::supported())
+}
+
+pub fn default_for_platform(lang: &str, apple_silicon: bool) -> &'static ModelDefinition {
+    if apple_silicon {
+        return &super::mlx::models::WHISPER_TURBO;
+    }
     if lang == "auto" {
         return DEFAULT;
     }
@@ -364,7 +413,7 @@ mod tests {
         assert_eq!(QWEN3_ASR_0_6B_INT8.engine_type, EngineType::Qwen3Asr);
         assert_eq!(QWEN3_ASR_0_6B_INT8.files.len(), 6);
 
-        assert_eq!(ALL.len(), 9);
+        assert_eq!(ALL.len(), 12);
         assert_eq!(APPLE_SPEECH.engine_type, EngineType::Apple);
         assert!(APPLE_SPEECH.built_in && APPLE_SPEECH.files.is_empty());
         assert!(find_by_name("whisper-tiny").is_some());
@@ -421,26 +470,26 @@ mod tests {
     #[test]
     fn test_recommend_by_language_cjk() {
         // Chinese variants
-        let zh_models = recommend_by_language("zh");
+        let zh_models = recommend_for_platform("zh", false);
         assert_eq!(zh_models.len(), 1);
         assert_eq!(zh_models[0].name, "sense-voice-small");
 
-        let zh_cn_models = recommend_by_language("zh-CN");
+        let zh_cn_models = recommend_for_platform("zh-CN", false);
         assert_eq!(zh_cn_models.len(), 1);
         assert_eq!(zh_cn_models[0].name, "sense-voice-small");
 
         // Japanese
-        let ja_models = recommend_by_language("ja");
+        let ja_models = recommend_for_platform("ja", false);
         assert_eq!(ja_models.len(), 1);
         assert_eq!(ja_models[0].name, "sense-voice-small");
 
         // Korean
-        let ko_models = recommend_by_language("ko");
+        let ko_models = recommend_for_platform("ko", false);
         assert_eq!(ko_models.len(), 1);
         assert_eq!(ko_models[0].name, "sense-voice-small");
 
         // Cantonese
-        let yue_models = recommend_by_language("yue");
+        let yue_models = recommend_for_platform("yue", false);
         assert_eq!(yue_models.len(), 1);
         assert_eq!(yue_models[0].name, "sense-voice-small");
     }
@@ -448,24 +497,24 @@ mod tests {
     #[test]
     fn test_recommend_by_language_non_preferred() {
         // English is now SenseVoice-preferred
-        let en_models = recommend_by_language("en");
+        let en_models = recommend_for_platform("en", false);
         assert_eq!(en_models.len(), 1);
         assert_eq!(en_models[0].name, "sense-voice-small");
 
         // Spanish
-        let es_models = recommend_by_language("es");
+        let es_models = recommend_for_platform("es", false);
         assert_eq!(es_models.len(), 1);
         assert_eq!(es_models[0].name, "whisper-base");
 
         // French
-        let fr_models = recommend_by_language("fr");
+        let fr_models = recommend_for_platform("fr", false);
         assert_eq!(fr_models.len(), 1);
         assert_eq!(fr_models[0].name, "whisper-base");
     }
 
     #[test]
     fn test_recommend_by_language_auto() {
-        let auto_models = recommend_by_language("auto");
+        let auto_models = recommend_for_platform("auto", false);
         assert_eq!(auto_models.len(), 8);
         assert!(auto_models.iter().all(|model| !model.built_in));
         // Should be sorted by accuracy descending
@@ -477,19 +526,25 @@ mod tests {
     #[test]
     fn test_default_for_language() {
         // SenseVoice-preferred languages should default to SenseVoice
-        assert_eq!(default_for_language("zh").name, "sense-voice-small");
-        assert_eq!(default_for_language("zh-CN").name, "sense-voice-small");
-        assert_eq!(default_for_language("ja").name, "sense-voice-small");
-        assert_eq!(default_for_language("ko").name, "sense-voice-small");
-        assert_eq!(default_for_language("yue").name, "sense-voice-small");
-        assert_eq!(default_for_language("en").name, "sense-voice-small");
-        assert_eq!(default_for_language("en-US").name, "sense-voice-small");
+        assert_eq!(default_for_platform("zh", false).name, "sense-voice-small");
+        assert_eq!(
+            default_for_platform("zh-CN", false).name,
+            "sense-voice-small"
+        );
+        assert_eq!(default_for_platform("ja", false).name, "sense-voice-small");
+        assert_eq!(default_for_platform("ko", false).name, "sense-voice-small");
+        assert_eq!(default_for_platform("yue", false).name, "sense-voice-small");
+        assert_eq!(default_for_platform("en", false).name, "sense-voice-small");
+        assert_eq!(
+            default_for_platform("en-US", false).name,
+            "sense-voice-small"
+        );
 
         // Other languages should default to Whisper Base
-        assert_eq!(default_for_language("es").name, "whisper-base");
-        assert_eq!(default_for_language("fr").name, "whisper-base");
+        assert_eq!(default_for_platform("es", false).name, "whisper-base");
+        assert_eq!(default_for_platform("fr", false).name, "whisper-base");
 
         // Auto should use global default
-        assert_eq!(default_for_language("auto").name, DEFAULT.name);
+        assert_eq!(default_for_platform("auto", false).name, DEFAULT.name);
     }
 }

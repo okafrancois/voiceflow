@@ -470,8 +470,18 @@ impl Default for AppSettings {
             voice_snippets: Vec::new(),
             context_capture: ContextCaptureSettings::default(),
             recording_mode: "hold".to_string(),
-            model: "whisper-base".to_string(),
-            stt_engine: "whisper".to_string(),
+            model: crate::stt_engine::models::default_for_platform(
+                "fr",
+                crate::stt_engine::mlx::runtime::supported(),
+            )
+            .name
+            .to_string(),
+            stt_engine: crate::stt_engine::models::default_for_platform(
+                "fr",
+                crate::stt_engine::mlx::runtime::supported(),
+            )
+            .engine_type
+            .to_string(),
             pill_position: "bottom-center".to_string(),
             pill_indicator_mode: "when_recording".to_string(),
             auto_start: false,
@@ -549,6 +559,8 @@ impl AppSettings {
     /// Check whether an external recording consumer is active, including local MLX HTTP.
     pub fn is_streaming_stt_active(&self) -> bool {
         self.cloud_stt_enabled
+            && !(crate::stt_engine::mlx::runtime::supported()
+                && self.active_cloud_stt_provider == "mlx-audio")
             && matches!(
                 self.active_cloud_stt_provider.as_str(),
                 "volcengine-streaming" | "aliyun-stream" | "elevenlabs" | "mlx-audio"
@@ -733,11 +745,117 @@ fn validate_model_name(json: &mut serde_json::Value) -> bool {
         return false;
     }
 
-    tracing::info!(old = %model_value, new = "whisper-base", "model_name_reset_to_default");
-    json["model"] = serde_json::Value::String("whisper-base".to_string());
-    json["stt_engine"] = serde_json::Value::String("whisper".to_string());
+    let default = crate::stt_engine::models::default_for_platform(
+        "fr",
+        crate::stt_engine::mlx::runtime::supported(),
+    );
+    tracing::info!(old = %model_value, new = default.name, "model_name_reset_to_default");
+    json["model"] = serde_json::Value::String(default.name.to_string());
+    json["stt_engine"] = serde_json::Value::String(default.engine_type.to_string());
 
     true
+}
+
+pub fn migrate_local_stt_for_platform_for_test(
+    json: &mut serde_json::Value,
+    apple_silicon: bool,
+) -> bool {
+    migrate_local_stt_for_platform(json, apple_silicon)
+}
+
+fn migrate_local_polish_for_platform(json: &mut serde_json::Value, apple_silicon: bool) -> bool {
+    if !apple_silicon
+        || !json["polish_model"]
+            .as_str()
+            .is_some_and(|model| crate::polish_engine::PolishModel::from_id(model).is_some())
+    {
+        return false;
+    }
+    json["polish_model"] = serde_json::json!("mlx-qwen3-1.7b");
+    true
+}
+
+fn set_local_polish_model(settings: &mut AppSettings, model_id: &str) -> Result<(), String> {
+    if !model_id.is_empty() {
+        if let Some(engine) =
+            crate::polish_engine::UnifiedPolishManager::get_engine_by_model_id(model_id)
+        {
+            engine.ensure_available()?;
+        } else if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+            return Err(format!(
+                "Model '{model_id}' is not available on this computer"
+            ));
+        }
+    }
+    settings.polish_model = model_id.to_string();
+    Ok(())
+}
+
+fn set_local_stt_model(
+    settings: &mut AppSettings,
+    model_id: &str,
+    apple_status: Option<crate::stt_engine::apple::AppleSpeechStatus>,
+) -> Result<bool, String> {
+    let model = crate::stt_engine::models::find_by_name(model_id)
+        .filter(|model| crate::stt_engine::models::is_available(model))
+        .ok_or_else(|| format!("Model '{model_id}' is not available on this computer"))?;
+    if model.engine_type == crate::stt_engine::EngineType::Apple {
+        use crate::stt_engine::apple::AppleSpeechStatus;
+        match apple_status {
+            Some(AppleSpeechStatus::Ready) => {}
+            Some(AppleSpeechStatus::AssetsMissing) => return Err("Download Apple Speech assets for the selected language before selecting it".to_string()),
+            Some(AppleSpeechStatus::LocaleUnsupported) => return Err("Apple Speech does not support the selected language".to_string()),
+            _ => return Err("Apple Speech is not available on this computer or its availability check is still pending".to_string()),
+        }
+    }
+    let changed = settings.model != model_id;
+    settings.model = model_id.to_string();
+    settings.stt_engine = model.engine_type.to_string();
+    settings.cloud_stt_enabled = false;
+    Ok(changed)
+}
+
+fn migrate_local_stt_for_platform(json: &mut serde_json::Value, apple_silicon: bool) -> bool {
+    if !apple_silicon {
+        return false;
+    }
+    let external_mlx =
+        json["cloud_stt_enabled"] == true && json["active_cloud_stt_provider"] == "mlx-audio";
+    let current = json
+        .get("model")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default();
+    let current_is_allowed = crate::stt_engine::models::for_platform(true)
+        .iter()
+        .any(|model| model.name == current);
+    let selected = if external_mlx {
+        let repository = json["cloud_stt_configs"]["mlx-audio"]["model"]
+            .as_str()
+            .unwrap_or_default();
+        crate::stt_engine::models::for_platform(true)
+            .into_iter()
+            .find(|model| model.repository == Some(repository))
+            .map(|model| model.name)
+            .unwrap_or("mlx-whisper-turbo")
+    } else if current_is_allowed {
+        current
+    } else {
+        "mlx-whisper-turbo"
+    }
+    .to_string();
+    let engine = crate::stt_engine::models::find_by_name(&selected)
+        .map(|model| model.engine_type.as_str())
+        .unwrap_or("mlx");
+    let changed = json["model"] != selected || json["stt_engine"] != engine || external_mlx;
+    if changed {
+        json["model"] = serde_json::json!(selected);
+        json["stt_engine"] = serde_json::json!(engine);
+        if external_mlx {
+            json["cloud_stt_enabled"] = serde_json::json!(false);
+        }
+        tracing::info!(model = %selected, external_connector = external_mlx, "local_stt_migrated-managed_mlx");
+    }
+    changed
 }
 
 pub fn migrate_to_profiles_map_for_test(json: &mut serde_json::Value) {
@@ -1108,11 +1226,21 @@ pub fn load_settings_from_disk() -> AppSettings {
 
             let migrated_cloud = migrate_cloud_settings(&mut json_value);
             let migrated_model = validate_model_name(&mut json_value);
+            let migrated_local_stt = migrate_local_stt_for_platform(
+                &mut json_value,
+                crate::stt_engine::mlx::runtime::supported(),
+            );
+            let migrated_local_polish = migrate_local_polish_for_platform(
+                &mut json_value,
+                cfg!(all(target_os = "macos", target_arch = "aarch64")),
+            );
             let migrated_profiles = migrate_to_profiles_map(&mut json_value);
             let migrated_platform_shortcuts = migrate_platform_shortcut_defaults(&mut json_value);
             let migrated_context_workflows = migrate_context_workflows(&mut json_value);
             let migrated = migrated_cloud
                 || migrated_model
+                || migrated_local_stt
+                || migrated_local_polish
                 || migrated_profiles
                 || migrated_platform_shortcuts
                 || migrated_context_workflows;
@@ -1243,20 +1371,26 @@ pub fn update_settings(
             }
             "model" => {
                 if let Some(v) = value.as_str() {
-                    if settings.model != v {
+                    let apple_status = (v == crate::stt_engine::models::APPLE_SPEECH.name)
+                        .then(|| state.engine_manager.apple_status());
+                    if set_local_stt_model(&mut settings, v, apple_status)? {
                         should_clear_cache = true;
                         model_to_preload = Some(v.to_string());
-                        if let Some(engine_type) =
-                            crate::stt_engine::UnifiedEngineManager::get_engine_by_model_name(v)
-                        {
-                            settings.stt_engine = engine_type.to_string();
-                        }
                     }
-                    settings.model = v.to_string();
                 }
             }
             "stt_engine" => {
                 if let Some(v) = value.as_str() {
+                    let expected = crate::stt_engine::models::find_by_name(&settings.model)
+                        .filter(|model| crate::stt_engine::models::is_available(model))
+                        .map(|model| model.engine_type.to_string())
+                        .ok_or("Select a valid transcription model first")?;
+                    if v != expected {
+                        return Err(
+                            "The transcription engine is determined by the selected model"
+                                .to_string(),
+                        );
+                    }
                     settings.stt_engine = v.to_string();
                 }
             }
@@ -1292,7 +1426,7 @@ pub fn update_settings(
             "stt_engine_language" => {
                 if let Some(v) = value.as_str() {
                     if settings.stt_engine_language != v {
-                        state.engine_manager.clear_cache();
+                        state.engine_manager.clear_language_dependent_cache();
                     }
                     state.engine_manager.set_dictation_language(v);
                     settings.stt_engine_language = v.to_string();
@@ -1322,7 +1456,7 @@ pub fn update_settings(
             }
             "polish_model" => {
                 if let Some(v) = value.as_str() {
-                    settings.polish_model = v.to_string();
+                    set_local_polish_model(&mut settings, v)?;
                 }
             }
             "theme_mode" => {
@@ -1411,11 +1545,19 @@ pub fn update_settings(
             }
             "cloud_stt_enabled" => {
                 if let Some(v) = value.as_bool() {
+                    if v && crate::stt_engine::mlx::runtime::supported()
+                        && settings.active_cloud_stt_provider == "mlx-audio"
+                    {
+                        return Err("MLX is managed as a local transcription engine. Select an MLX model instead.".to_string());
+                    }
                     settings.cloud_stt_enabled = v;
                 }
             }
             "active_cloud_stt_provider" => {
                 if let Some(v) = value.as_str() {
+                    if v == "mlx-audio" && crate::stt_engine::mlx::runtime::supported() {
+                        return Err("MLX is managed as a local transcription engine. Select an MLX model instead.".to_string());
+                    }
                     settings.active_cloud_stt_provider = v.to_string();
                 }
             }
@@ -1637,7 +1779,9 @@ pub fn update_settings(
         let engine_manager = state.engine_manager.clone();
         let app_clone = app.clone();
         tauri::async_runtime::spawn_blocking(move || {
-            if let Err(e) = engine_manager.load_model(engine_type, &model_name) {
+            if let Err(e) = tauri::async_runtime::block_on(
+                engine_manager.preload_model(engine_type, &model_name),
+            ) {
                 tracing::warn!(model = %model_name, error = %e, "model_preload_failed");
             } else {
                 tracing::info!(model = %model_name, mem_mb = get_process_rss_mb(), "model_preloaded");

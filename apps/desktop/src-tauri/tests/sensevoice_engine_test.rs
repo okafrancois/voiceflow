@@ -5,6 +5,7 @@
 
 use hound::{WavSpec, WavWriter};
 use std::io::Cursor;
+use voiceflow_lib::stt_engine::mlx::runtime::supported;
 use voiceflow_lib::stt_engine::{traits::TranscriptionRequest, EngineType, UnifiedEngineManager};
 
 fn create_speech_like_wav(sample_rate: u32, channels: u16, duration_secs: f32) -> Vec<u8> {
@@ -76,7 +77,10 @@ fn test_sensevoice_engine_creation() {
     let manager = UnifiedEngineManager::new(models_dir);
 
     let models = manager.get_models(EngineType::SenseVoice);
-    assert!(!models.is_empty());
+    assert_eq!(models.is_empty(), supported());
+    if supported() {
+        assert_eq!(manager.get_models(EngineType::Mlx).len(), 3);
+    }
 
     for model in models {
         assert!(!model.downloaded);
@@ -121,11 +125,19 @@ fn test_sensevoice_engine_model_not_found() {
 
     assert!(result.is_err());
     let error_msg = result.unwrap_err();
-    assert!(
-        error_msg.contains("not found") || error_msg.contains("Unknown"),
-        "Expected error about model, got: {}",
-        error_msg
-    );
+    if supported() {
+        assert!(
+            error_msg.contains("not available on this computer"),
+            "Expected unsupported native model error, got: {}",
+            error_msg
+        );
+    } else {
+        assert!(
+            error_msg.contains("not found") || error_msg.contains("Unknown"),
+            "Expected error about model, got: {}",
+            error_msg
+        );
+    }
 
     let _ = std::fs::remove_dir_all(&models_dir);
 }

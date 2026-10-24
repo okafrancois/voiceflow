@@ -6,6 +6,7 @@ pub mod glm;
 pub mod lfm;
 mod local_http;
 mod local_runtime;
+pub mod mlx;
 pub mod qwen;
 pub(crate) mod streaming;
 mod templates;
@@ -158,6 +159,9 @@ pub fn get_polish_model_path_for(model: PolishModel) -> std::path::PathBuf {
 }
 
 pub fn is_polish_model_downloaded_for(model: PolishModel) -> bool {
+    if !PolishEngineType::Qwen.is_available() {
+        return false;
+    }
     let path = get_polish_model_path_for(model);
     crate::utils::downloaded_file_is_complete(&path, Some(model.minimum_file_bytes()))
 }

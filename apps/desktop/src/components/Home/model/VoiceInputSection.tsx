@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next";
-import type { ModelInfo } from "@/lib/tauri";
+import type { ModelDownloadStage, ModelInfo } from "@/lib/tauri";
 import { logger } from "@/lib/logger";
 import { showErrorToast } from "@/lib/toast";
 import { analytics } from "@/lib/analytics";
@@ -11,12 +11,13 @@ interface VoiceInputSectionProps {
   models: ModelInfo[];
   downloading: Set<string>;
   downloadProgress: Record<string, number>;
+  downloadStages?: Record<string, ModelDownloadStage | undefined>;
   onDownload: (modelName: string) => void;
   onCancel: (modelName: string) => void;
   onDelete: (modelName: string) => void;
 }
 
-export function VoiceInputSection({ models, downloading, downloadProgress, onDownload, onCancel, onDelete }: VoiceInputSectionProps) {
+export function VoiceInputSection({ models, downloading, downloadProgress, downloadStages = {}, onDownload, onCancel, onDelete }: VoiceInputSectionProps) {
   const { t, i18n } = useTranslation();
   const { settings, updateSetting } = useSettingsContext();
   if (!settings) return null;
@@ -32,7 +33,6 @@ export function VoiceInputSection({ models, downloading, downloadProgress, onDow
   const handleModelChange = async (value: string) => {
     try {
       await updateSetting("model", value);
-      if (serviceEnabled) await updateSetting("cloud_stt_enabled", false);
       analytics.track(AnalyticsEvents.SETTING_CHANGED, { setting: "model", value });
     } catch (error) {
       logger.error("failed_to_select_transcription_model", { error: String(error) });
@@ -49,17 +49,19 @@ export function VoiceInputSection({ models, downloading, downloadProgress, onDow
         models={models.map(model => ({
           id: model.name,
           name: model.display_name,
-          description: model.built_in ? t("model.hint.appleStreaming") : model.language_codes?.length ? t("model.hint.cjkBest") : t("model.hint.multiLang"),
+          description: model.engine === "mlx" ? undefined : model.built_in ? t("model.hint.appleStreaming") : model.language_codes?.length ? t("model.hint.cjkBest") : t("model.hint.multiLang"),
           sizeMb: model.built_in ? 0 : model.size_mb,
           sizeLabel: model.built_in ? t("model.available.builtIn") : displaySize(model.size_mb, i18n.language),
           available: model.downloaded,
           builtIn: model.built_in,
+          downloadable: model.downloadable,
           selected: !serviceEnabled && model.name === settings.model,
-          speed: { value: model.speed_score, maximum: 10 },
-          accuracy: { value: model.accuracy_score, maximum: 10 },
+          speed: model.engine === "mlx" && model.speed_score === 0 ? undefined : { value: model.speed_score, maximum: 10 },
+          accuracy: model.engine === "mlx" && model.accuracy_score === 0 ? undefined : { value: model.accuracy_score, maximum: 10 },
           languageCodes: model.language_codes,
           downloading: downloading.has(model.name),
           progress: downloadProgress[model.name],
+          progressLabel: downloadStages[model.name] === "runtime" ? t("model.mlx.installingRuntime") : undefined,
         }))}
         onSelect={id => { void handleModelChange(id); }}
         onDownload={onDownload}

@@ -55,6 +55,10 @@ Then:  observable UI state, events, persisted settings, output
 - Use test doubles ONLY for external dependencies in automated tests
 - Report ONLY coverage from executed tooling, never estimates
 
+## Owned-Process Fixture Readiness
+
+Use bounded, content-aware waits for fixture payloads such as worker process IDs. A marker file's existence does not prove its contents were written: a missing, empty, or unterminated PID record is not ready. Wait for a complete valid record before testing cancellation or process ownership, and report malformed complete records and unexpected filesystem errors explicitly.
+
 ## E2E UI Verification
 
 Must inspect what user sees, not just backend events:

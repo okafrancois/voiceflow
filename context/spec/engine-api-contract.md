@@ -32,6 +32,10 @@ Local `BufferingConsumer` instances collect PCM and call the local engine at `fi
 
 Long Whisper input is split into contiguous sample ranges. The ranges cover every sample exactly once and move internal boundaries toward nearby low-energy points. A failed range fails the whole transcription instead of returning a partial success.
 
+On Apple Silicon, the batch API accepts only the curated managed MLX models; Intel Mac, Windows, and Linux retain their native policy. MLX receives the complete recording through a private PCM16 WAV and uses a persistent Python worker over versioned JSON-lines pipes, never the legacy HTTP connector. Runtime and all pinned checkpoint files must be complete before model availability is true.
+
+MLX language and vocabulary are request parameters, not worker-cache identity. Preload and concurrent requests for the same model must reuse and serialize through one worker even when their language differs. Changing the dictation language preserves the MLX worker while native language-dependent caches still invalidate. Deleting another checkpoint, or rejecting a deletion before filesystem changes, must not unload the cached model. Explicit unload/model replacement or deleting the cached checkpoint stops the owned worker. User cancellation must drop the active MLX inference, including separately spawned recording decode tasks; it must not merely cancel an outer waiter while GPU work continues. Native cancellation behavior remains unchanged.
+
 ## Shipped cloud providers
 
 Cloud STT dispatch accepts exactly:
@@ -45,7 +49,7 @@ Cloud Polish dispatch accepts exactly:
 - `anthropic`
 - `openai`
 
-`provider_schema.rs` is the UI-facing list. Backend dispatch must reject any ID missing from that schema. Schema endpoint and model defaults must use the same constants as the runtime clients.
+`provider_schema.rs` is the UI-facing list. Backend selection must reject unavailable provider IDs even when a legacy compatibility client remains compiled. Schema endpoint and model defaults must use the same constants as the runtime clients. The local `mlx-audio` HTTP compatibility connector is excluded from Apple Silicon selection and must not reactivate its recording route after migration.
 
 Volcengine has an extra invariant. Production connections use only `wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_nostream`. The backend rejects official `bigmodel` and `bigmodel_async` paths before network I/O.
 
@@ -63,6 +67,7 @@ The default suite must not need internet access, vendor credentials, billing, or
 | Anthropic Polish | Messages path, auth and version headers, request JSON, response parsing, connection check | `tests/cloud_polish_mock_test.rs` |
 | OpenAI Polish | Chat Completions path, bearer header, request JSON, response parsing, SSE preview, connection check | `tests/cloud_polish_mock_test.rs` |
 | Provider membership | Exact IDs, endpoint defaults, model defaults, unsupported dispatch | `src/provider_schema.rs`, cloud integration tests |
+| Managed MLX | Platform catalogue/defaults/migration, JSON-lines framing, complete private WAV, cancellation/unload, runtime repair/readiness | `tests/managed_mlx_test.rs`, `tests/mlx_worker_test.py`, `src/stt_engine/mlx/` unit tests |
 
 Every mock-server lifecycle test must await its server task. A panic inside an unobserved task is not valid evidence.
 

@@ -2,9 +2,15 @@ import { act, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import i18n from "@/i18n";
 import { PillWindow } from "../PillWindow";
-import type { AppSettings, PillTooltipEvent, RecordingStateEvent } from "@/lib/tauri";
+import type { AppSettings, PillTooltipEvent, RecordingStateEvent, TranscriptionPartialEvent } from "@/lib/tauri";
 
 type Listener<T> = (event: T) => void;
+
+const liveEvents = vi.hoisted(() => ({
+  recording: vi.fn(async (_callback: Listener<RecordingStateEvent>) => () => undefined),
+  partial: vi.fn(async (_callback: Listener<TranscriptionPartialEvent>) => () => undefined),
+  complete: vi.fn(async () => () => undefined),
+}));
 
 const {
   getSettingsMock,
@@ -51,6 +57,9 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/lib/tauri", () => ({
   events: {
+    onRecordingStateChanged: liveEvents.recording,
+    onTranscriptionPartial: liveEvents.partial,
+    onTranscriptionComplete: liveEvents.complete,
     onPillTooltip: onPillTooltipMock,
     onSettingsChanged: onSettingsChangedMock,
   },
@@ -111,6 +120,7 @@ describe("PillWindow backend tooltip", () => {
     onSettingsChangedMock.mockClear();
     showPillMock.mockReset();
     listenMock.mockClear();
+    Object.values(liveEvents).forEach((subscribe) => subscribe.mockClear());
     hidePillMock.mockResolvedValue(undefined);
     showPillMock.mockResolvedValue(undefined);
     getSettingsMock.mockResolvedValue(settings());
@@ -119,6 +129,7 @@ describe("PillWindow backend tooltip", () => {
       calls.forEach(([callback]) => callback(event));
     };
     mocks.emitRecordingState = (event: RecordingStateEvent) => {
+      liveEvents.recording.mock.calls.forEach(([callback]) => callback(event));
       const calls = listenMock.mock.calls as Array<[string, Listener<{ payload: RecordingStateEvent }>]>;
       calls
         .filter(([eventName]) => eventName === "recording-state-changed")
@@ -128,6 +139,71 @@ describe("PillWindow backend tooltip", () => {
 
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  it("renders compact live replacement text alongside existing tooltips", async () => {
+    render(<PillWindow />);
+    await act(async () => { await Promise.resolve(); });
+    act(() => {
+      mocks.emitRecordingState?.({ task_id: 10, status: "recording" });
+      liveEvents.partial.mock.lastCall?.[0]({ task_id: 10, text: "Bonjour", is_definite: false });
+    });
+    expect(screen.getByText("Bonjour")).toHaveClass("overflow-hidden", "max-w-[calc(100vw-1rem)]");
+    act(() => {
+      liveEvents.partial.mock.lastCall?.[0]({ task_id: 10, text: "le monde", is_definite: false });
+      mocks.emitPillTooltip?.({ task_id: 10, message: "Escape to cancel", duration_ms: 500 });
+    });
+    expect(screen.queryByText("Bonjour")).not.toBeInTheDocument();
+    expect(screen.getByText("le monde")).toBeInTheDocument();
+    expect(screen.getByText("Escape to cancel")).toBeInTheDocument();
+    expect(showPillMock).not.toHaveBeenCalled();
+    act(() => mocks.emitRecordingState?.({ task_id: 10, status: "polishing" }));
+    expect(screen.queryByText("le monde")).not.toBeInTheDocument();
+  });
+
+  it("keeps the newest lines visible when live text exceeds the compact preview", async () => {
+    render(<PillWindow />);
+    await act(async () => { await Promise.resolve(); });
+    act(() => {
+      mocks.emitRecordingState?.({ task_id: 14, status: "recording" });
+      liveEvents.partial.mock.lastCall?.[0]({ task_id: 14, text: "Initial words", is_definite: false });
+    });
+    const preview = screen.getByText("Initial words");
+    Object.defineProperty(preview, "scrollHeight", { configurable: true, value: 160 });
+    act(() => {
+      liveEvents.partial.mock.lastCall?.[0]({
+        task_id: 14,
+        text: "Initial words followed by several lines of live transcription and the newest words",
+        is_definite: false,
+      });
+    });
+    expect(preview.scrollTop).toBe(160);
+    expect(preview).not.toHaveClass("line-clamp-2");
+  });
+
+  it("does not show the indicator or live text in never mode", async () => {
+    getSettingsMock.mockResolvedValue(settings({ pill_indicator_mode: "never", pill_size: 5 }));
+    render(<PillWindow />);
+    await act(async () => { await Promise.resolve(); });
+    act(() => {
+      mocks.emitRecordingState?.({ task_id: 11, status: "recording" });
+      liveEvents.partial.mock.lastCall?.[0]({ task_id: 11, text: "Hidden live text", is_definite: false });
+    });
+    expect(screen.queryByText("Hidden live text")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("audio-dots")).not.toBeInTheDocument();
+    expect(showPillMock).not.toHaveBeenCalled();
+  });
+
+  it("renders a live partial after mounting during recording without reopening the native window", async () => {
+    render(<PillWindow />);
+    await act(async () => { await Promise.resolve(); });
+    act(() => liveEvents.partial.mock.lastCall?.[0]({ task_id: 12, text: "Already recording", is_definite: false }));
+    expect(screen.getByText("Already recording")).toBeInTheDocument();
+    expect(showPillMock).not.toHaveBeenCalled();
+    act(() => mocks.emitRecordingState?.({ task_id: 12, status: "idle" }));
+    act(() => liveEvents.partial.mock.lastCall?.[0]({ task_id: 12, text: "Late preview", is_definite: false }));
+    expect(screen.getByText("Already recording")).not.toBeVisible();
+    expect(screen.queryByText("Late preview")).not.toBeInTheDocument();
   });
 
   it("renders task-scoped tooltip messages without requesting a native window show", async () => {

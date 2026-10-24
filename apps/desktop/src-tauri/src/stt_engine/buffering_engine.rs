@@ -1,3 +1,4 @@
+use crate::stt_engine::live_preview::LivePreview;
 use crate::stt_engine::sherpa_onnx::engine::incremental_whisper_boundary;
 use crate::stt_engine::traits::{
     EngineType, PartialResultCallback, RecordingConsumer, SttContext, TranscriptionRequest,
@@ -5,12 +6,57 @@ use crate::stt_engine::traits::{
 use crate::stt_engine::unified_manager::UnifiedEngineManager;
 use async_trait::async_trait;
 use parking_lot::Mutex;
+use std::future::Future;
 use std::sync::Arc;
 use tokio::task::JoinHandle;
 use tracing::{info, instrument, warn};
 
 const SAMPLE_RATE: f64 = 16_000.0;
 const MIN_RECORDING_SECS: f64 = 0.35;
+
+fn recording_initial_prompt(
+    engine_type: EngineType,
+    initial_prompt: Option<&str>,
+    context: &SttContext,
+) -> Option<String> {
+    let parts: Vec<&str> = [
+        initial_prompt,
+        context
+            .domain
+            .as_deref()
+            .filter(|_| engine_type != EngineType::Mlx),
+        context
+            .subdomain
+            .as_deref()
+            .filter(|_| engine_type != EngineType::Mlx),
+        context.glossary.as_deref(),
+    ]
+    .into_iter()
+    .flatten()
+    .filter(|part| !part.is_empty())
+    .collect();
+    (!parts.is_empty()).then(|| parts.join(" "))
+}
+
+pub(crate) async fn await_user_cancellable_transcription<Output>(
+    engine_type: Option<EngineType>,
+    is_canceled: impl Fn() -> bool,
+    transcription: impl Future<Output = Output>,
+) -> Option<Output> {
+    if engine_type != Some(EngineType::Mlx) {
+        return Some(transcription.await);
+    }
+
+    tokio::select! {
+        biased;
+        _ = async {
+            while !is_canceled() {
+                tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+            }
+        } => None,
+        result = transcription => Some(result),
+    }
+}
 
 /// Decodes one window of 16 kHz mono samples into text.
 #[async_trait]
@@ -48,8 +94,21 @@ impl WindowDecoder for EngineWindowDecoder {
 #[derive(Default)]
 struct BufferState {
     pending: Vec<f32>,
-    windows: Vec<JoinHandle<Result<String, String>>>,
+    windows: Vec<DecodeTask>,
     total_samples: usize,
+}
+
+struct DecodeTask {
+    handle: JoinHandle<Result<String, String>>,
+    abort_on_drop: bool,
+}
+
+impl Drop for DecodeTask {
+    fn drop(&mut self) {
+        if self.abort_on_drop {
+            self.handle.abort();
+        }
+    }
 }
 
 /// Buffering consumer for local STT models (Whisper, SenseVoice, Qwen3-ASR via
@@ -59,11 +118,14 @@ struct BufferState {
 /// can close a window (see `incremental_whisper_boundary`), that window starts
 /// decoding while the recording continues, and `finish()` only decodes the
 /// remaining audio. Other engines accumulate the whole recording and decode it
-/// once in `finish()`. No partial results are produced.
+/// once in `finish()`. Managed MLX can additionally decode bounded recent-audio
+/// previews when a partial callback is registered; its final decode retains all audio.
 pub struct BufferingConsumer {
     state: Mutex<BufferState>,
     decoder: Arc<dyn WindowDecoder>,
     incremental: bool,
+    abort_decode_on_drop: bool,
+    preview: Option<LivePreview>,
 }
 
 impl BufferingConsumer {
@@ -77,16 +139,7 @@ impl BufferingConsumer {
         let engine_type = UnifiedEngineManager::get_engine_by_model_name(&model_name)
             .unwrap_or(EngineType::Whisper);
 
-        let prompt_parts: Vec<&str> = [
-            initial_prompt.as_deref(),
-            stt_context.domain.as_deref(),
-            stt_context.subdomain.as_deref(),
-            stt_context.glossary.as_deref(),
-        ]
-        .iter()
-        .filter_map(|&s| s.filter(|v| !v.is_empty()))
-        .collect();
-        let prompt = (!prompt_parts.is_empty()).then(|| prompt_parts.join(" "));
+        let prompt = recording_initial_prompt(engine_type, initial_prompt.as_deref(), &stt_context);
 
         let decoder = EngineWindowDecoder {
             engine_manager,
@@ -104,12 +157,17 @@ impl BufferingConsumer {
             state: Mutex::new(BufferState::default()),
             decoder,
             incremental: engine_type == EngineType::Whisper,
+            abort_decode_on_drop: engine_type == EngineType::Mlx,
+            preview: None,
         }
     }
 
-    fn spawn_decode(&self, samples: Vec<f32>) -> JoinHandle<Result<String, String>> {
+    fn spawn_decode(&self, samples: Vec<f32>) -> DecodeTask {
         let decoder = Arc::clone(&self.decoder);
-        tokio::spawn(async move { decoder.decode(samples).await })
+        DecodeTask {
+            handle: tokio::spawn(async move { decoder.decode(samples).await }),
+            abort_on_drop: self.abort_decode_on_drop,
+        }
     }
 }
 
@@ -118,9 +176,13 @@ impl RecordingConsumer for BufferingConsumer {
     async fn send_chunk(&self, pcm_data: Vec<i16>) -> Result<(), String> {
         let mut state = self.state.lock();
         state.total_samples += pcm_data.len();
+        let previous_samples = state.pending.len();
         state
             .pending
             .extend(pcm_data.iter().map(|&s| s as f32 / 32768.0));
+        if let Some(preview) = &self.preview {
+            preview.push_samples(&state.pending[previous_samples..]);
+        }
 
         if !self.incremental {
             return Ok(());
@@ -143,6 +205,9 @@ impl RecordingConsumer for BufferingConsumer {
 
     #[instrument(skip(self), fields(incremental = self.incremental))]
     async fn finish(&self) -> Result<String, String> {
+        if let Some(preview) = &self.preview {
+            preview.finish().await;
+        }
         let (pending, mut windows, total_samples) = {
             let mut state = self.state.lock();
             (
@@ -175,8 +240,8 @@ impl RecordingConsumer for BufferingConsumer {
         }
 
         let mut texts = Vec::with_capacity(windows.len());
-        for window in windows {
-            let text = window
+        for mut window in windows {
+            let text = (&mut window.handle)
                 .await
                 .map_err(|e| format!("Transcription task failed: {e}"))??;
             let trimmed = text.trim();
@@ -188,13 +253,66 @@ impl RecordingConsumer for BufferingConsumer {
         Ok(texts.join(" "))
     }
 
-    fn set_partial_callback(&mut self, _callback: PartialResultCallback) {
-        // No-op: batch engines don't produce partial results
+    fn set_partial_callback(&mut self, callback: PartialResultCallback) {
+        if !self.abort_decode_on_drop {
+            return;
+        }
+        if let Some(preview) = &self.preview {
+            preview.replace_callback(callback);
+        } else {
+            let preview = LivePreview::start(Arc::clone(&self.decoder), callback);
+            preview.push_samples(&self.state.lock().pending);
+            self.preview = Some(preview);
+        }
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod cancellation_test_support {
+    use super::*;
+    use tokio::sync::{Notify, Semaphore};
+
+    pub struct ControlledDecoder {
+        pub started: Notify,
+        pub stopped: Notify,
+        pub release: Semaphore,
+        pub slot: Semaphore,
+    }
+
+    impl ControlledDecoder {
+        pub fn new() -> Arc<Self> {
+            Arc::new(Self {
+                started: Notify::new(),
+                stopped: Notify::new(),
+                release: Semaphore::new(0),
+                slot: Semaphore::new(1),
+            })
+        }
+    }
+
+    struct DecodeLease<'a>(&'a Notify);
+
+    impl Drop for DecodeLease<'_> {
+        fn drop(&mut self) {
+            self.0.notify_one();
+        }
+    }
+
+    #[async_trait]
+    impl WindowDecoder for ControlledDecoder {
+        async fn decode(&self, _samples: Vec<f32>) -> Result<String, String> {
+            let _slot = self.slot.acquire().await.unwrap();
+            let _lease = DecodeLease(&self.stopped);
+            self.started.notify_one();
+            self.release.acquire().await.unwrap().forget();
+            Ok("controlled transcript".to_string())
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use super::cancellation_test_support::ControlledDecoder;
     use super::*;
     use crate::stt_engine::traits::EngineType;
     use std::collections::VecDeque;
@@ -202,6 +320,89 @@ mod tests {
 
     const SAMPLE_RATE: usize = 16_000;
     const CHUNK_SAMPLES: usize = SAMPLE_RATE / 2;
+
+    #[test]
+    fn mlx_recording_prompt_excludes_internal_domain_codes() {
+        let context = SttContext {
+            domain: Some("it".to_string()),
+            subdomain: Some("general".to_string()),
+            ..SttContext::default()
+        };
+
+        assert_eq!(
+            recording_initial_prompt(EngineType::Mlx, None, &context),
+            None
+        );
+    }
+
+    #[test]
+    fn mlx_recording_prompt_preserves_user_vocabulary() {
+        let context = SttContext {
+            domain: Some("it".to_string()),
+            subdomain: Some("general".to_string()),
+            glossary: Some("MLX, Tauri".to_string()),
+            ..SttContext::default()
+        };
+
+        assert_eq!(
+            recording_initial_prompt(EngineType::Mlx, Some("Voice Flow"), &context),
+            Some("Voice Flow MLX, Tauri".to_string())
+        );
+    }
+
+    #[test]
+    fn native_recording_prompt_retains_existing_context() {
+        let context = SttContext {
+            domain: Some("it".to_string()),
+            subdomain: Some("general".to_string()),
+            glossary: Some("MLX, Tauri".to_string()),
+            ..SttContext::default()
+        };
+
+        assert_eq!(
+            recording_initial_prompt(EngineType::Whisper, Some("Voice Flow"), &context),
+            Some("Voice Flow it general MLX, Tauri".to_string())
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires managed MLX models and a French WAV containing français or française; set VF_MODELS_DIR and VF_MLX_FRENCH_WAV"]
+    async fn real_managed_mlx_recording_stays_french_with_domain_metadata() {
+        let models_dir = std::env::var("VF_MODELS_DIR").expect("set VF_MODELS_DIR");
+        let wav = std::env::var("VF_MLX_FRENCH_WAV").expect("set VF_MLX_FRENCH_WAV");
+        let decoded = crate::services::transcription_workbench::decode_media_to_mono_16k(
+            std::path::Path::new(&wav),
+        )
+        .unwrap();
+        let manager = Arc::new(UnifiedEngineManager::new(models_dir.into()));
+        let context = SttContext {
+            domain: Some("it".to_string()),
+            subdomain: Some("general".to_string()),
+            ..SttContext::default()
+        };
+        let consumer = BufferingConsumer::new(
+            manager.clone(),
+            "mlx-whisper-turbo".to_string(),
+            "fr".to_string(),
+            None,
+            context,
+        );
+        let pcm = decoded
+            .samples
+            .into_iter()
+            .map(|sample| (sample * 32768.0).round().clamp(-32768.0, 32767.0) as i16)
+            .collect();
+        consumer.send_chunk(pcm).await.unwrap();
+        let result = consumer.finish().await;
+        manager.unload_model();
+
+        let text = result.unwrap().to_lowercase();
+        assert!(
+            text.contains("franç"),
+            "French input changed language: {text}"
+        );
+        assert!(!text.contains("i don't know"));
+    }
 
     type Reply = (Duration, Result<String, String>);
 
@@ -442,5 +643,65 @@ mod tests {
         assert_eq!(consumer.finish().await, Ok(String::new()));
 
         assert_eq!(decoder.call_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn user_cancellation_dropping_mlx_finish_aborts_decode_and_releases_next_request() {
+        let decoder = ControlledDecoder::new();
+        let consumer = Arc::new(BufferingConsumer::with_decoder(
+            decoder.clone(),
+            EngineType::Mlx,
+        ));
+        feed(&consumer, &recording(1)).await;
+        let active = tokio::spawn(async move { consumer.finish().await });
+        tokio::time::timeout(Duration::from_secs(1), decoder.started.notified())
+            .await
+            .unwrap();
+
+        active.abort();
+        assert!(active.await.unwrap_err().is_cancelled());
+        tokio::time::timeout(Duration::from_secs(1), decoder.stopped.notified())
+            .await
+            .expect("dropping MLX finish must drop the separately spawned inference");
+        assert_eq!(decoder.slot.available_permits(), 1);
+
+        let next = BufferingConsumer::with_decoder(decoder.clone(), EngineType::Mlx);
+        feed(&next, &recording(1)).await;
+        decoder.release.add_permits(1);
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(1), next.finish())
+                .await
+                .unwrap()
+                .unwrap(),
+            "controlled transcript"
+        );
+    }
+
+    #[tokio::test]
+    async fn user_cancellation_dropping_native_finish_preserves_background_decode() {
+        for engine_type in [
+            EngineType::Whisper,
+            EngineType::SenseVoice,
+            EngineType::Qwen3Asr,
+        ] {
+            let decoder = ControlledDecoder::new();
+            let consumer = Arc::new(BufferingConsumer::with_decoder(
+                decoder.clone(),
+                engine_type,
+            ));
+            feed(&consumer, &recording(1)).await;
+            let active = tokio::spawn(async move { consumer.finish().await });
+            tokio::time::timeout(Duration::from_secs(1), decoder.started.notified())
+                .await
+                .unwrap();
+
+            active.abort();
+            assert!(active.await.unwrap_err().is_cancelled());
+            assert_eq!(decoder.slot.available_permits(), 0);
+            decoder.release.add_permits(1);
+            tokio::time::timeout(Duration::from_secs(1), decoder.stopped.notified())
+                .await
+                .unwrap();
+        }
     }
 }

@@ -352,8 +352,11 @@ app embeds the same key, and read the live latest updater endpoint.
 Artifact verification does not require installing or launching the production
 app, or changing local privacy permissions. Ad-hoc Dev rebuilds can invalidate
 local privacy grants; keep that limitation separate from signed production
-release verification. MLX Audio's server and cached models remain separate
-local installations rather than release assets.
+release verification. Managed MLX releases bundle a checksum-verified `uv`
+bootstrap, signed before packaging; the private Python runtimes and model
+checkpoints are downloaded on demand rather than embedded in release assets.
+Ignore downloaded bootstrap archives and executables in source control, and
+keep generated capability schemas out of unrelated release commits.
 
 ---
 

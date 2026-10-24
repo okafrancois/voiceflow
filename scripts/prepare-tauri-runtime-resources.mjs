@@ -12,6 +12,7 @@ import {
 import { createHash } from 'node:crypto';
 import { dirname, posix as pathPosix, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { ensureMlxBootstrap, MLX_BOOTSTRAP } from './ensure-mlx-runtime.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const defaultRoot = resolve(__dirname, '..');
@@ -397,6 +398,9 @@ export function runtimeResourceConfig(platformValue, rootDir = defaultRoot) {
   const resources = unique([
     ...baseResourcesForPlatform(platform, rootDir),
     ...existingRuntimeResources(platform, rootDir),
+    ...(platform === 'macos' && existsSync(resolve(tauriDir(rootDir), MLX_BOOTSTRAP.resource))
+      ? [MLX_BOOTSTRAP.resource]
+      : []),
   ]);
 
   return {
@@ -452,10 +456,11 @@ function parseRequiredRuntimeArg(args) {
   return args.includes('--require-runtime') || envFlagEnabled(process.env[REQUIRED_RUNTIME_ENV]);
 }
 
-function main() {
+async function main() {
   const args = process.argv.slice(2);
   const platform = parsePlatformArg(args);
   const requiredRuntime = parseRequiredRuntimeArg(args);
+  await ensureMlxBootstrap({ platform });
   const { config, outputPath, sidecars } = writeRuntimeResourceConfig({
     platform,
     requiredRuntime,
@@ -482,5 +487,8 @@ function main() {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  main();
+  main().catch((error) => {
+    console.error(error.message);
+    process.exitCode = 1;
+  });
 }

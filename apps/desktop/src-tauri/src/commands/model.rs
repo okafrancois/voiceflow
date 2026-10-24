@@ -40,20 +40,23 @@ fn mark_e2e_configured_model_downloaded(models: &mut [ModelInfo], state: &State<
 
 // Legacy command for backward compatibility - returns all engines
 #[tauri::command]
-pub fn get_models(state: State<'_, AppState>) -> Vec<ModelInfo> {
-    let mut models = state.engine_manager.get_all_models();
+pub async fn get_models(state: State<'_, AppState>) -> Result<Vec<ModelInfo>, String> {
+    let mut models = state.engine_manager.get_models_with_status(None).await?;
     mark_e2e_configured_model_downloaded(&mut models, &state);
-    models
+    Ok(models)
 }
 
 // New command supporting multiple engines
 #[tauri::command]
-pub fn get_models_for_engine(
+pub async fn get_models_for_engine(
     engine: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<ModelInfo>, String> {
     let engine_type: EngineType = engine.parse()?;
-    let mut models = state.engine_manager.get_models(engine_type);
+    let mut models = state
+        .engine_manager
+        .get_models_with_status(Some(engine_type))
+        .await?;
     mark_e2e_configured_model_downloaded(&mut models, &state);
     Ok(models)
 }
@@ -128,6 +131,13 @@ pub async fn download_model(
     let engine_type =
         crate::stt_engine::UnifiedEngineManager::get_engine_by_model_name(&model_name)
             .ok_or_else(|| format!("Unknown model: {}", model_name))?;
+    if !crate::stt_engine::models::find_by_name(&model_name)
+        .is_some_and(crate::stt_engine::models::is_available)
+    {
+        return Err(format!(
+            "Model '{model_name}' is not available on this computer"
+        ));
+    }
 
     if e2e_fast_model_download_enabled() {
         info!(
@@ -170,6 +180,18 @@ pub async fn download_model(
     let app_clone = app.clone();
     let model_name_clone = model_name.clone();
 
+    if engine_type == EngineType::Mlx {
+        if let Err(error) = app.emit(
+            EventName::MODEL_DOWNLOAD_PROGRESS,
+            serde_json::json!({
+                "model": model_name, "downloaded": 0, "total": 0, "progress": 0,
+                "stage": "runtime",
+            }),
+        ) {
+            warn!(%error, "mlx_runtime_progress_emit_failed");
+        }
+    }
+
     let result = state
         .engine_manager
         .download_model(
@@ -189,6 +211,7 @@ pub async fn download_model(
                         "downloaded": downloaded,
                         "total": total,
                         "progress": progress,
+                        "stage": "model",
                     }),
                 ) {
                     warn!(error = %e, model = %model_name_clone, "model_download_progress_emit_failed");
@@ -327,19 +350,21 @@ pub fn get_polish_models(_state: State<'_, AppState>) -> Vec<serde_json::Value> 
     let mut models: Vec<serde_json::Value> = polish::get_all_models()
         .into_iter()
         .map(|(id, name, size)| {
-            let downloaded = PolishModel::from_id(&id)
-                .map(polish::is_polish_model_downloaded_for)
-                .unwrap_or(false);
+            let engine = polish::UnifiedPolishManager::get_engine_by_model_id(&id);
+            let downloaded =
+                engine.is_some_and(|engine| _state.polish_manager.is_model_downloaded(engine, &id));
             let compatibility = polish::assess_polish_model_compatibility(&id, &device);
             let latency_profile = polish::polish_model_latency_profile(&id);
 
             serde_json::json!({
                 "id": id,
+                "engine_type": engine.map(|engine| engine.as_str()),
                 "name": name,
                 "size": size,
                 "downloaded": downloaded,
                 "compatibility": compatibility,
                 "latency_profile": latency_profile,
+                "speed": null,
                 "built_in": false
             })
         })
@@ -363,6 +388,7 @@ fn apple_polish_model_entry(
     let id = polish::apple::APPLE_POLISH_MODEL_ID;
     Some(serde_json::json!({
         "id": id,
+        "engine_type": "apple",
         "name": polish::apple::APPLE_POLISH_DISPLAY_NAME,
         "size": "",
         "downloaded": status == polish::apple::AppleLlmStatus::Available,
@@ -375,26 +401,34 @@ fn apple_polish_model_entry(
 const APPLE_POLISH_BUILT_IN_ERROR: &str =
     "Apple Intelligence is built into macOS: enable it in System Settings > Apple Intelligence & Siri";
 
+fn validate_polish_download(model_id: &str) -> Result<(), String> {
+    let engine = polish::UnifiedPolishManager::get_engine_by_model_id(model_id)
+        .ok_or_else(|| format!("Unknown model: {model_id}"))?;
+    engine.ensure_available()?;
+    if engine == polish::PolishEngineType::Apple {
+        return Err(APPLE_POLISH_BUILT_IN_ERROR.to_string());
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub fn get_current_polish_model(state: State<'_, AppState>) -> String {
     state.settings.lock().polish_model.clone()
 }
 
 #[tauri::command]
-pub fn is_polish_model_downloaded(_state: State<'_, AppState>) -> bool {
-    polish::is_polish_model_downloaded()
+pub fn is_polish_model_downloaded(state: State<'_, AppState>) -> bool {
+    let model_id = state.settings.lock().polish_model.clone();
+    if model_id.is_empty() {
+        return polish::is_polish_model_downloaded();
+    }
+    is_polish_model_downloaded_for_model(model_id, state)
 }
 
 #[tauri::command]
 pub fn is_polish_model_downloaded_for_model(model_id: String, state: State<'_, AppState>) -> bool {
-    if polish::apple::is_apple_model(&model_id) {
-        return state
-            .polish_manager
-            .is_model_downloaded(polish::PolishEngineType::Apple, &model_id);
-    }
-    PolishModel::from_id(&model_id)
-        .map(polish::is_polish_model_downloaded_for)
-        .unwrap_or(false)
+    polish::UnifiedPolishManager::get_engine_by_model_id(&model_id)
+        .is_some_and(|engine| state.polish_manager.is_model_downloaded(engine, &model_id))
 }
 
 #[tauri::command]
@@ -402,6 +436,10 @@ pub async fn download_polish_model(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    let model_id = state.settings.lock().polish_model.clone();
+    if !model_id.is_empty() {
+        return download_polish_model_by_id(app, model_id, state).await;
+    }
     download_polish_model_internal(app, polish::get_current_model(), state).await
 }
 
@@ -411,8 +449,9 @@ pub async fn download_polish_model_by_id(
     model_id: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    if polish::apple::is_apple_model(&model_id) {
-        return Err(APPLE_POLISH_BUILT_IN_ERROR.to_string());
+    validate_polish_download(&model_id)?;
+    if polish::mlx::models::find(&model_id).is_some() {
+        return download_mlx_polish_model(app, &model_id, state).await;
     }
     let model =
         PolishModel::from_id(&model_id).ok_or_else(|| format!("Unknown model: {}", model_id))?;
@@ -430,11 +469,72 @@ pub fn cancel_polish_download(model_id: String, state: State<'_, AppState>) -> R
     }
 }
 
+async fn download_mlx_polish_model(
+    app: AppHandle,
+    model_id: &str,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    polish::mlx::runtime::ensure_supported()?;
+    let cancel = {
+        let mut cancellations = state.polish_download_cancellations.lock();
+        if cancellations.contains_key(model_id) {
+            return Err(format!("Model {model_id} is already downloading"));
+        }
+        let cancel = Arc::new(AtomicBool::new(false));
+        cancellations.insert(model_id.to_string(), cancel.clone());
+        cancel
+    };
+    state
+        .polish_manager
+        .unload_model(polish::PolishEngineType::Mlx, model_id);
+    if let Err(error) = app.emit(
+        EventName::POLISH_MODEL_DOWNLOAD_PROGRESS,
+        serde_json::json!({
+            "model_id": model_id, "downloaded": 0, "total": 0, "progress": 0, "stage": "runtime",
+        }),
+    ) {
+        warn!(%error, "mlx_polish_runtime_progress_emit_failed");
+    }
+    let progress_app = app.clone();
+    let progress_id = model_id.to_string();
+    let result = polish::mlx::download_model(&crate::utils::AppPaths::models_dir(), model_id, cancel, Arc::new(move |downloaded, total| {
+        if let Err(error) = progress_app.emit(EventName::POLISH_MODEL_DOWNLOAD_PROGRESS, serde_json::json!({
+            "model_id": progress_id, "downloaded": downloaded, "total": total,
+            "progress": if total > 0 { (downloaded as f64 / total as f64 * 100.0) as u32 } else { 0 }, "stage": "model",
+        })) {
+            warn!(%error, "mlx_polish_model_progress_emit_failed");
+        }
+    })).await;
+    state.polish_download_cancellations.lock().remove(model_id);
+    match result {
+        Ok(()) => {
+            if let Err(error) = app.emit(
+                EventName::POLISH_MODEL_DOWNLOAD_COMPLETE,
+                serde_json::json!({"model_id": model_id}),
+            ) {
+                warn!(%error, "mlx_polish_download_complete_emit_failed");
+            }
+            Ok(())
+        }
+        Err(error) if error == "cancelled" => {
+            if let Err(error) = app.emit(
+                EventName::POLISH_MODEL_DOWNLOAD_CANCELLED,
+                serde_json::json!({"model_id": model_id}),
+            ) {
+                warn!(%error, "mlx_polish_download_cancelled_emit_failed");
+            }
+            Ok(())
+        }
+        Err(error) => Err(error),
+    }
+}
+
 async fn download_polish_model_internal(
     app: AppHandle,
     model: PolishModel,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    validate_polish_download(model.id())?;
     let start_time = Instant::now();
     let model_id = model.id().to_string();
 
@@ -530,6 +630,10 @@ async fn download_polish_model_internal(
 
 #[tauri::command]
 pub fn delete_polish_model(app: AppHandle, _state: State<'_, AppState>) -> Result<(), String> {
+    let model_id = _state.settings.lock().polish_model.clone();
+    if !model_id.is_empty() {
+        return delete_polish_model_by_id(app, model_id, _state);
+    }
     delete_polish_model_internal(app, polish::get_current_model())
 }
 
@@ -539,6 +643,35 @@ pub fn delete_polish_model_by_id(
     model_id: String,
     _state: State<'_, AppState>,
 ) -> Result<(), String> {
+    if let Some(model) = polish::mlx::models::find(&model_id) {
+        if _state
+            .polish_download_cancellations
+            .lock()
+            .contains_key(&model_id)
+        {
+            return Err("cancel the polish download before deleting the model".to_string());
+        }
+        _state
+            .polish_manager
+            .unload_model(polish::PolishEngineType::Mlx, &model_id);
+        let directory = crate::utils::AppPaths::models_dir().join(model.id);
+        match std::fs::symlink_metadata(&directory) {
+            Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {
+                std::fs::remove_dir_all(&directory)
+            }
+            Ok(_) => std::fs::remove_file(&directory),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(error),
+        }
+        .map_err(|error| format!("cannot delete managed polish model: {error}"))?;
+        if let Err(error) = app.emit(
+            EventName::POLISH_MODEL_DELETED,
+            serde_json::json!({"model_id": model_id}),
+        ) {
+            warn!(%error, "mlx_polish_model_deleted_emit_failed");
+        }
+        return Ok(());
+    }
     if polish::apple::is_apple_model(&model_id) {
         return Err(APPLE_POLISH_BUILT_IN_ERROR.to_string());
     }
@@ -699,6 +832,39 @@ pub fn get_polish_custom_templates(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn platform_policy_guards_polish_downloads_before_starting_work() {
+        for model_id in [
+            "qwen3.5-0.8b",
+            "lfm2.5-1.2b",
+            "gemma-4-e2b",
+            "glm-4.7-flash-reap-23b-a3b",
+        ] {
+            let result = validate_polish_download(model_id);
+            if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+                assert!(result
+                    .unwrap_err()
+                    .contains("not available on this computer"));
+            } else {
+                result.unwrap();
+            }
+        }
+        assert_eq!(
+            validate_polish_download("unknown-model"),
+            Err("Unknown model: unknown-model".to_string())
+        );
+        assert_eq!(
+            validate_polish_download("apple-intelligence"),
+            Err(APPLE_POLISH_BUILT_IN_ERROR.to_string())
+        );
+        for model in polish::mlx::models::MODELS {
+            assert_eq!(
+                validate_polish_download(model.id).is_ok(),
+                cfg!(all(target_os = "macos", target_arch = "aarch64"))
+            );
+        }
+    }
 
     fn device() -> polish::DeviceProfile {
         polish::DeviceProfile {

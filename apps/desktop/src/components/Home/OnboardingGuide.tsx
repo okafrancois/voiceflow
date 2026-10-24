@@ -26,6 +26,7 @@ import {
   audioCommands,
   platformQualityCommands,
   type RecommendedModel,
+  type ModelDownloadStage,
   type SetupPreset,
 } from "@/lib/tauri";
 import { useSettingsContext } from "@/contexts/SettingsContext";
@@ -37,10 +38,7 @@ import modelSvg from "@/assets/illustrations/onboarding/model.png";
 import hotkeySvg from "@/assets/illustrations/onboarding/hotkey.png";
 import practiceSvg from "@/assets/illustrations/onboarding/practice.png";
 import doneSvg from "@/assets/illustrations/onboarding/done.png";
-import {
-  resolveOnboardingModelProgress,
-  resolveOnboardingModelReady,
-} from "./onboarding-model";
+import { resolveOnboardingModelProgress } from "./onboarding-model";
 import {
   ModalCloseButton,
   ModalFrame,
@@ -49,46 +47,6 @@ import {
 
 const DEFAULT_HOTKEY = "Shift+Space";
 const ONBOARDING_RESET_EVENT = "voiceflow:onboarding-reset";
-
-const SENSEVOICE_PREFERRED_ONBOARDING = ["zh-CN", "zh-TW", "yue-CN", "ja-JP", "ko-KR", "en-US"];
-
-function isSenseVoicePreferred(lang: string | undefined): boolean {
-  if (!lang || lang === "auto") return false;
-  return SENSEVOICE_PREFERRED_ONBOARDING.some((l) => lang.startsWith(l.split("-")[0]));
-}
-
-function getRecommendedModelName(lang: string): string {
-  if (isSenseVoicePreferred(lang)) {
-    return "sense-voice-small";
-  }
-  return "whisper-base";
-}
-
-function getEngineTypeForModelName(modelName: string): string {
-  if (modelName.startsWith("sense-voice")) {
-    return "sensevoice";
-  }
-  if (modelName.startsWith("qwen3-asr")) {
-    return "qwen3-asr";
-  }
-  return "whisper";
-}
-
-function getModelDisplayName(modelName: string): string {
-  if (modelName === "sense-voice-small") {
-    return "SenseVoice Small";
-  }
-  if (modelName === "whisper-base") {
-    return "Whisper Base";
-  }
-  if (modelName === "whisper-small") {
-    return "Whisper Small";
-  }
-  if (modelName === "qwen3-asr-0.6b-int8") {
-    return "Qwen3-ASR 0.6B INT8";
-  }
-  return modelName;
-}
 
 const SUPPORTED_LANGUAGES = [
   "en-US", "zh-CN", "zh-TW", "yue-CN", "es-ES", "fr-FR", "de-DE",
@@ -451,23 +409,18 @@ function ModelStep({
   const [models, setModels] = useState<RecommendedModel[]>([]);
   const [progressMap, setProgressMap] = useState<Record<string, number>>({});
   const [downloadedMap, setDownloadedMap] = useState<Record<string, boolean>>({});
+  const [stageMap, setStageMap] = useState<Record<string, ModelDownloadStage | undefined>>({});
 
-  const recommendedModelName = getRecommendedModelName(language);
+  const recommendedModel = models[0];
+  const recommendedModelName = recommendedModel?.model_name ?? null;
   const recommendedModelProgress = resolveOnboardingModelProgress({
     selectedModel: recommendedModelName,
     models,
     progressMap,
     downloadedMap,
   });
-  const recommendedModelReady = recommendedModelProgress >= 100;
-
-  // Fetch recommendations when component mounts or language changes
-  useEffect(() => {
-    modelCommands
-      .recommendModelsByLanguage(language || "auto")
-      .then(setModels)
-      .catch((err: unknown) => logger.error("failed_to_recommend_models", { error: String(err) }));
-  }, [language]);
+  const recommendedModelReady = Boolean(recommendedModel?.downloaded || (recommendedModelName && downloadedMap[recommendedModelName]));
+  const installingRuntime = !recommendedModelReady && recommendedModelName !== null && stageMap[recommendedModelName] === "runtime";
 
   // Register download listeners before starting the model download. Starting
   // earlier can drop initial progress events while onboarding is still on prior
@@ -475,7 +428,7 @@ function ModelStep({
   useEffect(() => {
     let mounted = true;
     const cleanups: Array<() => void> = [];
-    const modelName = getRecommendedModelName(language || "auto");
+    let recommendations: RecommendedModel[] = [];
 
     const registerCleanup = (cleanup: () => void) => {
       if (mounted) {
@@ -489,22 +442,31 @@ function ModelStep({
       try {
         registerCleanup(
           await events.onModelDownloadProgress((data) => {
+            if (!mounted) return;
             setProgressMap((prev) => ({ ...prev, [data.model]: data.progress }));
+            setStageMap((prev) => ({ ...prev, [data.model]: data.stage }));
           }),
         );
         registerCleanup(
           await events.onModelDownloadComplete(async (completedModelName) => {
+            if (!mounted) return;
             setDownloadedMap((prev) => ({ ...prev, [completedModelName]: true }));
             setProgressMap((prev) => ({ ...prev, [completedModelName]: 100 }));
             modelCommands
               .recommendModelsByLanguage(language || "auto")
-              .then(setModels)
+              .then(list => { if (mounted) setModels(list); })
               .catch((err: unknown) => logger.error("failed_to_refresh_models_after_download", { error: String(err) }));
-            const displayName = getModelDisplayName(completedModelName);
-            showToast(`${displayName} download complete`);
+            const displayName = recommendations.find(model => model.model_name === completedModelName)?.display_name ?? completedModelName;
+            showToast(t("onboarding.model.downloadComplete", { model: displayName }));
           }),
         );
         if (!mounted) return;
+
+        recommendations = await modelCommands.recommendModelsByLanguage(language || "auto");
+        if (!mounted) return;
+        setModels(recommendations);
+        const modelName = recommendations[0]?.model_name;
+        if (!modelName) return;
 
         const isDownloaded = await modelCommands.isModelDownloaded(modelName);
         if (!mounted) return;
@@ -520,7 +482,7 @@ function ModelStep({
       } catch (err: unknown) {
         const errorMsg = String(err);
         if (!errorMsg.includes("already downloading") && mounted) {
-          logger.error("failed_to_start_model_download", { modelName, error: errorMsg });
+          logger.error("failed_to_start_model_download", { modelName: recommendations[0]?.model_name, error: errorMsg });
         }
       }
     };
@@ -534,20 +496,14 @@ function ModelStep({
   }, [language]);
 
   useEffect(() => {
-    onSelectModel(recommendedModelName);
+    if (recommendedModelName) onSelectModel(recommendedModelName);
   }, [recommendedModelName, onSelectModel]);
 
-  // Only allow next step when the currently selected model is downloaded
   useEffect(() => {
-    onModelReadyChange(
-      resolveOnboardingModelReady({
-        selectedModel,
-        models,
-        progressMap,
-        downloadedMap,
-      }),
-    );
-  }, [selectedModel, models, progressMap, downloadedMap, onModelReadyChange]);
+    onModelReadyChange(Boolean(selectedModel && (
+      downloadedMap[selectedModel] || models.find(model => model.model_name === selectedModel)?.downloaded
+    )));
+  }, [selectedModel, models, downloadedMap, onModelReadyChange]);
 
   return (
     <div className="flex flex-col items-center gap-4 w-full max-w-sm mx-auto">
@@ -557,16 +513,18 @@ function ModelStep({
           <div className="flex items-center gap-3">
             <div>
               <p className="text-sm font-medium">
-                {getModelDisplayName(recommendedModelName)}
+                {recommendedModel?.display_name ?? t("common.loading")}
               </p>
               <p className="text-xs text-muted-foreground">
-                {models.find((m) => m.model_name === recommendedModelName)?.size_mb ?? "..."}MB
+                {recommendedModel?.size_mb ?? "..."}MB
               </p>
             </div>
           </div>
           <div className="flex items-center justify-center w-[18px] h-[18px]">
             {recommendedModelReady ? (
               <Check className="w-[18px] h-[18px] text-green-500" />
+            ) : installingRuntime ? (
+              <CircleNotch className="w-[18px] h-[18px] animate-spin" aria-hidden="true" />
             ) : (
               <CircularProgress
                 progress={recommendedModelProgress}
@@ -576,8 +534,9 @@ function ModelStep({
             )}
           </div>
         </div>
-        {recommendedModelProgress > 0 && recommendedModelProgress < 100 && (
-          <p className="text-xs text-muted-foreground text-center">
+        {installingRuntime && <p className="text-xs text-muted-foreground text-center" role="status">{t("model.mlx.installingRuntime")}</p>}
+        {!installingRuntime && recommendedModelProgress > 0 && !recommendedModelReady && (
+          <p className="text-xs text-muted-foreground text-center" role="status">
             {t("onboarding.model.downloading")}
           </p>
         )}
@@ -979,9 +938,7 @@ export function OnboardingGuide({ isOpen, onClose }: OnboardingGuideProps) {
 
   const handleNext = async () => {
     if (current.id === "model" && selectedModel) {
-      const engineType = getEngineTypeForModelName(selectedModel);
       await updateSetting("model", selectedModel);
-      await updateSetting("stt_engine", engineType);
     }
     if (currentStep < steps.length - 1) {
       setCurrentStep(currentStep + 1);

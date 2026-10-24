@@ -108,6 +108,7 @@ pub(crate) async fn polish_via_local_http(
     request: PolishRequest,
     config: LocalHttpPolishConfig,
 ) -> Result<PolishResult, String> {
+    config.engine_type.ensure_available()?;
     let model_path = AppPaths::models_dir().join(&config.model_filename);
     validate_model_file(
         &model_path,
@@ -451,7 +452,7 @@ fn format_local_request_error(
     )
 }
 
-fn strip_think_block(result: &str) -> Option<String> {
+pub(crate) fn strip_think_block(result: &str) -> Option<String> {
     if let Some(end_idx) = result.find(THINK_END_TAG) {
         Some(result[end_idx + THINK_END_TAG.len()..].trim().to_string())
     } else if result.contains(THINK_START_TAG) {

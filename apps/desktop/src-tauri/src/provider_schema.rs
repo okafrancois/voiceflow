@@ -29,7 +29,7 @@ pub struct ProviderSchema {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct CloudProviderSchemas {
-    pub stt: &'static [ProviderSchema],
+    pub stt: Vec<ProviderSchema>,
     pub polish: &'static [ProviderSchema],
 }
 
@@ -221,7 +221,13 @@ pub static POLISH_SCHEMAS: &[ProviderSchema] = &[
 
 pub fn get_schemas() -> CloudProviderSchemas {
     CloudProviderSchemas {
-        stt: STT_SCHEMAS,
+        stt: STT_SCHEMAS
+            .iter()
+            .filter(|schema| {
+                schema.id != "mlx-audio" || !crate::stt_engine::mlx::runtime::supported()
+            })
+            .cloned()
+            .collect(),
         polish: POLISH_SCHEMAS,
     }
 }
@@ -244,15 +250,11 @@ mod tests {
             .map(|schema| schema.id)
             .collect::<Vec<_>>();
 
-        assert_eq!(
-            stt_ids,
-            [
-                "volcengine-streaming",
-                "aliyun-stream",
-                "elevenlabs",
-                "mlx-audio"
-            ]
-        );
+        let mut expected_stt = vec!["volcengine-streaming", "aliyun-stream", "elevenlabs"];
+        if !crate::stt_engine::mlx::runtime::supported() {
+            expected_stt.push("mlx-audio");
+        }
+        assert_eq!(stt_ids, expected_stt);
         assert_eq!(polish_ids, ["anthropic", "openai"]);
     }
 

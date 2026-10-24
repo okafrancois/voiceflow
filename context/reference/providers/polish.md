@@ -71,7 +71,19 @@ Connection checks time out after 10 seconds. Normal Polish requests start with a
 
 The backend classifies common failures as missing field, invalid URL, authentication failure, model failure, network failure, timeout, unsupported provider, or provider error.
 
-## Local Polish runtime
+## Managed MLX local Polish
+
+On Apple Silicon, model IDs `mlx-qwen3-0.6b` and `mlx-qwen3-1.7b` use the `mlx` engine through `UnifiedPolishManager`, without an HTTP endpoint. Display names end in `· MLX`. The app installs a dedicated private Python 3.12.15 / MLX-LM 0.32.2 / MLX 0.32.4 environment with a hashed binary lock; macOS 14 or newer is required. It does not modify the managed MLX Audio STT environment. The [Apple Silicon policy](../../feat/apple-silicon-model-policy/0.1.0/prd/erd.md) permits only these managed models and Apple Intelligence locally. Excluded native selections migrate idempotently to `mlx-qwen3-1.7b`, preserving valid Apple/MLX selections, cached legacy files and unrelated cloud configuration. Other hardware retains its native policy.
+
+The catalogue includes only complete immutable checkpoint manifests. Download verifies every file's size/hash before publishing model readiness; each file's HTTP future races cancellation and a 20-minute total deadline even with stalled headers/body. First use hashes every file again, caching only verified manifest/file identities and revalidating metadata changes. Confirmed corruption removes model readiness and the mismatching file for repair, without invalidating a healthy runtime. Cancelled/expired verification preserves healthy files. Selected availability is backend-owned and requires model readiness, the correct runtime, and verified Apple Silicon macOS 14+ eligibility. Native OS-version detection is cached; an older Apple Silicon OS does not reenable excluded GGUF engines.
+
+A persistent offline JSON-lines worker owns one model at a time; timeouts, cancellation, unload, idle expiry, and shutdown stop only its owned process. Lock acquisition/integrity preparation has a 60-second budget, worker preparation/startup a separate 30-second budget, and the worker request retains the caller's inference timeout (60 seconds by default), with an additive outer cap. Generation rejects incomplete/token-limited output. Common prompts, language/context rules, and output rejection remain shared with dictation.
+
+The shared text-transform service awaits MLX's staged operation directly; it must not spend the short-transcript 20-second inference allowance on first-use integrity/startup. Native local and cloud service timeouts are unchanged. Real verification must include this service deadline policy, not only a direct manager call.
+
+Both checkpoints loaded and corrected a French synthetic sample through production manager dispatch. The 1.7B model corrected the complete targeted sentence; 0.6B corrected only part of it. Neither has a general accuracy/latency benchmark or validated per-template recommendation. Exact inputs, outputs, revisions, and verification limits are in the [MLX polish specification](../../feat/mlx-polish/0.1.0/prd/erd.md). See the [provider integration guide](../../guides/adding-polish-provider.md#managed-mlx-local-providers) for extending manifests and running isolated inference checks.
+
+## Native HTTP local Polish runtime
 
 Local GGUF Polish is separate from the two cloud providers. It uses an OpenAI-compatible service, normally at `http://127.0.0.1:8000/v1`. The settings presets cover `llama-server`, LM Studio, Ollama, and a custom compatible endpoint.
 

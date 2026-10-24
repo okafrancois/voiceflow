@@ -7674,7 +7674,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "voiceflow"
-version = "1.5.0"
+version = "1.6.0"
 dependencies = [
  "arboard",
  "async-trait",
@@ -7690,6 +7690,7 @@ dependencies = [
  "futures-util",
  "hound",
  "image",
+ "libc",
  "log",
  "nnnoiseless",
  "objc",
@@ -7705,6 +7706,7 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
+ "sha2",
  "sherpa-onnx",
  "similar",
  "tauri",

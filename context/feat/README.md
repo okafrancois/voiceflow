@@ -36,6 +36,10 @@ Feature specs are versioned delivery contracts. Each spec at `context/feat/[name
 
 | Feature | Version | Status | Spec |
 |---------|---------|--------|------|
+| Live managed MLX transcription | 0.1.0 | Completed | [erd.md](./mlx-live-transcription/0.1.0/prd/erd.md) |
+| MLX and Apple engines on Apple Silicon | 0.1.0 | Completed | [erd.md](./apple-silicon-model-policy/0.1.0/prd/erd.md) |
+| Managed MLX local text polish | 0.1.0 | Completed | [erd.md](./mlx-polish/0.1.0/prd/erd.md) |
+| Managed MLX transcription on Apple Silicon | 0.2.0 | Completed | [erd.md](./mlx-audio-stt/0.2.0/prd/erd.md) |
 | Visual model selectors | 0.1.0 | Completed | [erd.md](./model-catalog/0.1.0/prd/erd.md) |
 | Local MLX Audio dictation | 0.1.0 | Completed | [erd.md](./mlx-audio-stt/0.1.0/prd/erd.md) |
 | Recording Audio Integrity | 0.1.0 | Completed | [erd.md](./recording-audio-integrity/0.1.0/prd/erd.md) |

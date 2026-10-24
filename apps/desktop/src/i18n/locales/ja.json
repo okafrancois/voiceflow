@@ -245,6 +245,8 @@
   "model.hint.cjkBest": "中日韓最適",
   "model.hint.multiLang": "20+言語",
   "model.hint.appleStreaming": "話しながら文字起こし · 音声入力の言語を設定",
+  "model.mlx.installingRuntime": "ローカルMLXエンジンをインストール中…",
+  "onboarding.model.downloadComplete": "{{model}}のダウンロードが完了しました",
   "model.available.builtIn": "macOS に内蔵",
   "model.polish.appleIntelligenceHint": "システム設定 › Apple Intelligence と Siri で Apple Intelligence をオンにしてください。",
   "model.performanceSection.title": "パフォーマンス",

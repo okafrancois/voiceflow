@@ -36,6 +36,8 @@ apps/desktop/tests/e2e/.runtime/
 apps/desktop/.build-diagnostics/
 
 # Release-time local polish runtime sidecars
+.tmp/mlx-runtime-assets/
+apps/desktop/src-tauri/bin/apple-silicon/uv
 apps/desktop/src-tauri/bin/apple-silicon/llama-server
 apps/desktop/src-tauri/bin/apple-silicon/*.dylib
 apps/desktop/src-tauri/bin/intel/llama-server

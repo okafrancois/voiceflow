@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use voiceflow_lib::stt_engine::mlx::runtime::supported;
 use voiceflow_lib::stt_engine::{EngineType, UnifiedEngineManager};
 
 fn temp_models_dir() -> PathBuf {
@@ -13,12 +14,13 @@ fn test_manager_new() {
     let manager = UnifiedEngineManager::new(models_dir.clone());
 
     let models = manager.get_models(EngineType::Whisper);
-    assert!(!models.is_empty(), "Should have Whisper models");
+    assert_eq!(models.is_empty(), supported());
 
     let sensevoice_models = manager.get_models(EngineType::SenseVoice);
-    assert!(
-        !sensevoice_models.is_empty(),
-        "Should have SenseVoice models"
+    assert_eq!(sensevoice_models.is_empty(), supported());
+    assert_eq!(
+        manager.get_models(EngineType::Mlx).len(),
+        if supported() { 3 } else { 0 }
     );
 }
 
@@ -27,15 +29,28 @@ fn test_manager_model_info() {
     let models_dir = temp_models_dir();
     let manager = UnifiedEngineManager::new(models_dir);
 
-    let models = manager.get_models(EngineType::Whisper);
+    let (engine, model_name, display_name) = if supported() {
+        (EngineType::Mlx, "mlx-whisper-turbo", "Whisper Turbo")
+    } else {
+        (EngineType::Whisper, "whisper-base", "Base")
+    };
+    let models = manager.get_models(engine);
 
-    let base = models.iter().find(|m| m.name == "whisper-base");
-    assert!(base.is_some(), "Should have whisper-base model");
+    let base = models.iter().find(|model| model.name == model_name);
+    assert!(base.is_some(), "Should have the platform's local model");
 
     let base = base.unwrap();
     assert!(base.size_mb > 0);
     assert!(!base.filename.is_empty());
-    assert!(base.display_name.contains("Base"));
+    assert!(base.display_name.contains(display_name));
+    assert_eq!(base.engine, engine.as_str());
+    if supported() {
+        assert_eq!(base.speed_score, 0);
+        assert_eq!(base.accuracy_score, 0);
+    } else {
+        assert!(base.speed_score > 0);
+        assert!(base.accuracy_score > 0);
+    }
 }
 
 #[test]
@@ -76,6 +91,7 @@ fn test_manager_models_sorted_by_size() {
     let manager = UnifiedEngineManager::new(models_dir);
 
     let models = manager.get_models(EngineType::Whisper);
+    assert_eq!(models.is_empty(), supported());
 
     for i in 1..models.len() {
         assert!(
@@ -93,8 +109,20 @@ fn test_manager_all_model_names() {
     let models = manager.get_models(EngineType::Whisper);
     let names: Vec<&str> = models.iter().map(|m| m.name.as_str()).collect();
 
-    assert!(names.contains(&"whisper-base"));
-    assert!(names.contains(&"whisper-small"));
+    if supported() {
+        assert!(names.is_empty());
+        let models = manager.get_models(EngineType::Mlx);
+        let mut names: Vec<_> = models.iter().map(|model| model.name.as_str()).collect();
+        names.sort_unstable();
+        assert_eq!(
+            names,
+            ["mlx-parakeet-v3", "mlx-qwen3-asr-0.6b", "mlx-whisper-turbo"]
+        );
+    } else {
+        assert!(names.contains(&"whisper-base"));
+        assert!(names.contains(&"whisper-small"));
+        assert!(manager.get_models(EngineType::Mlx).is_empty());
+    }
 }
 
 #[test]
@@ -111,7 +139,12 @@ fn test_load_model_not_downloaded() {
     let models_dir = temp_models_dir();
     let manager = UnifiedEngineManager::new(models_dir);
 
-    let result = manager.load_model(EngineType::Whisper, "whisper-base");
+    let (engine, model_name) = if supported() {
+        (EngineType::Mlx, "mlx-whisper-turbo")
+    } else {
+        (EngineType::Whisper, "whisper-base")
+    };
+    let result = manager.load_model(engine, model_name);
     assert!(result.is_err());
     assert!(result.unwrap_err().contains("not downloaded"));
 }

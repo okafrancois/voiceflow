@@ -387,7 +387,7 @@ impl SherpaOnnxEngine {
                     hotwords: None,
                 };
             }
-            EngineType::Apple | EngineType::Cloud => {
+            EngineType::Apple | EngineType::Cloud | EngineType::Mlx => {
                 return Err(format!(
                     "{} engine not supported by SherpaOnnxEngine",
                     model_def.engine_type

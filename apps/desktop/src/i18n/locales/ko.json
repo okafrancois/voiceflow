@@ -245,6 +245,8 @@
   "model.hint.cjkBest": "중일한 최적",
   "model.hint.multiLang": "20+ 언어",
   "model.hint.appleStreaming": "말하는 동안 받아쓰기 · 받아쓰기 언어 설정",
+  "model.mlx.installingRuntime": "로컬 MLX 엔진 설치 중…",
+  "onboarding.model.downloadComplete": "{{model}} 다운로드 완료",
   "model.available.builtIn": "macOS 내장",
   "model.polish.appleIntelligenceHint": "시스템 설정 › Apple Intelligence 및 Siri에서 Apple Intelligence를 켜세요.",
   "model.performanceSection.title": "성능",

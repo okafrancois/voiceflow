@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex};
 use tracing::{error, info, instrument};
 
 use super::apple::{self, AppleSpeechEngine, AppleSpeechStatus};
+use super::mlx::{self, MlxEngine};
 use super::models;
 use super::sherpa_onnx::SherpaOnnxEngine;
 use super::traits::{EngineType, TranscriptionRequest, TranscriptionResult};
@@ -63,6 +64,8 @@ pub struct ModelInfo {
     pub size_mb: u64,
     pub filename: String,
     pub downloaded: bool,
+    #[serde(default)]
+    pub downloadable: bool,
     pub speed_score: u8,
     pub accuracy_score: u8,
     pub engine: String,
@@ -71,6 +74,8 @@ pub struct ModelInfo {
     pub language_codes: Vec<String>,
     /// Ships with the operating system: no download size, cannot be deleted.
     pub built_in: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub runtime_ready: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -107,6 +112,7 @@ pub struct UnifiedEngineManager {
     /// blocking query freezes the app, so they only run on background threads.
     apple_status_cache: Arc<Mutex<Option<(String, AppleSpeechStatus)>>>,
     apple_status_refreshing: Arc<AtomicBool>,
+    apple_status_changed: Arc<tokio::sync::Notify>,
 }
 
 impl UnifiedEngineManager {
@@ -119,6 +125,7 @@ impl UnifiedEngineManager {
             dictation_language: Arc::new(Mutex::new("auto".to_string())),
             apple_status_cache: Arc::new(Mutex::new(None)),
             apple_status_refreshing: Arc::new(AtomicBool::new(false)),
+            apple_status_changed: Arc::new(tokio::sync::Notify::new()),
         }
     }
 
@@ -134,7 +141,7 @@ impl UnifiedEngineManager {
     /// Apple engine availability for the current dictation language, read
     /// from the cache. Until a background query answers, the engine is treated
     /// as unsupported, which hides it instead of blocking the caller.
-    fn apple_status(&self) -> AppleSpeechStatus {
+    pub(crate) fn apple_status(&self) -> AppleSpeechStatus {
         let language = self.dictation_language();
         if let Some((cached_language, status)) = self.apple_status_cache.lock().unwrap().as_ref() {
             if *cached_language == language {
@@ -156,12 +163,39 @@ impl UnifiedEngineManager {
         let language = self.dictation_language();
         let cache = Arc::clone(&self.apple_status_cache);
         let refreshing = Arc::clone(&self.apple_status_refreshing);
+        let changed = Arc::clone(&self.apple_status_changed);
         std::thread::spawn(move || {
             let status = apple::bridge::status(&language);
             info!(language = %language, status = ?status, "apple_speech_status_refreshed");
             *cache.lock().unwrap() = Some((language, status));
             refreshing.store(false, std::sync::atomic::Ordering::Release);
+            changed.notify_waiters();
         });
+    }
+
+    async fn resolve_apple_status(
+        &self,
+        deadline: std::time::Duration,
+    ) -> Result<AppleSpeechStatus, String> {
+        tokio::time::timeout(deadline, async {
+            loop {
+                let changed = self.apple_status_changed.notified();
+                tokio::pin!(changed);
+                changed.as_mut().enable();
+                let language = self.dictation_language();
+                if let Some((cached_language, status)) =
+                    self.apple_status_cache.lock().unwrap().as_ref()
+                {
+                    if *cached_language == language {
+                        return *status;
+                    }
+                }
+                self.refresh_apple_status();
+                changed.await;
+            }
+        })
+        .await
+        .map_err(|_| "Apple Speech availability check timed out; retry model loading".to_string())
     }
 
     pub fn set_provider(&self, gpu_acceleration: bool) {
@@ -177,12 +211,36 @@ impl UnifiedEngineManager {
         AppPaths::models_dir()
     }
 
+    fn validate_model_policy(engine_type: EngineType, model_name: &str) -> Result<(), String> {
+        if engine_type == EngineType::Cloud {
+            return Ok(());
+        }
+        let definition = models::find_by_name(model_name);
+        if (mlx::runtime::supported() || definition.is_some())
+            && !definition.is_some_and(models::is_available)
+        {
+            return Err(format!(
+                "Model '{model_name}' is not available on this computer"
+            ));
+        }
+        if let Some(model) = definition {
+            if model.engine_type != engine_type {
+                return Err(format!(
+                    "Model '{}' is for {:?}, not {:?}",
+                    model_name, model.engine_type, engine_type
+                ));
+            }
+        }
+        Ok(())
+    }
+
     fn create_engine_instance(
         &self,
         engine_type: EngineType,
         version: &str,
         language: Option<&str>,
     ) -> Result<EngineInstance, String> {
+        Self::validate_model_policy(engine_type, version)?;
         match engine_type {
             EngineType::Whisper | EngineType::SenseVoice | EngineType::Qwen3Asr => {
                 let model_def = models::find_by_name(version)
@@ -199,6 +257,15 @@ impl UnifiedEngineManager {
                 Ok(EngineInstance::Local(engine))
             }
             EngineType::Apple => Ok(EngineInstance::Apple(AppleSpeechEngine::new(language))),
+            EngineType::Mlx => {
+                if !self.is_model_downloaded(engine_type, version) {
+                    return Err(format!("MLX model '{version}' is not ready. Download it in Voice Flow to install the model and its runtime."));
+                }
+                Ok(EngineInstance::Mlx(MlxEngine::new(
+                    &self.models_dir,
+                    version,
+                )?))
+            }
             EngineType::Cloud => {
                 Err("Cloud STT uses streaming lifecycle, not batch transcription.".to_string())
             }
@@ -211,11 +278,16 @@ impl UnifiedEngineManager {
         version: &str,
         language: Option<&str>,
     ) -> Result<EngineInstance, String> {
+        Self::validate_model_policy(engine_type, version)?;
         let provider = *self.provider.lock().unwrap();
         let cache_key = (
             engine_type,
             version.to_string(),
-            language.map(|s| s.to_string()),
+            if engine_type == EngineType::Mlx {
+                None
+            } else {
+                language.map(str::to_string)
+            },
             provider,
         );
         let mut cache = self.engine_cache.lock().unwrap();
@@ -227,13 +299,30 @@ impl UnifiedEngineManager {
         }
 
         let engine = self.create_engine_instance(engine_type, version, language)?;
+        if let Some((_, EngineInstance::Mlx(previous))) = cache.as_ref() {
+            previous.shutdown();
+        }
         *cache = Some((cache_key, engine.clone()));
         Ok(engine)
     }
 
     pub(crate) fn clear_cache(&self) {
         let mut cache = self.engine_cache.lock().unwrap();
+        if let Some((_, EngineInstance::Mlx(engine))) = cache.as_ref() {
+            engine.shutdown();
+        }
         *cache = None;
+    }
+
+    pub(crate) fn clear_language_dependent_cache(&self) {
+        let mut cache = self.engine_cache.lock().unwrap();
+        if !matches!(cache.as_ref(), Some((_, EngineInstance::Mlx(_)))) {
+            *cache = None;
+        }
+    }
+
+    pub fn unload_model(&self) {
+        self.clear_cache();
     }
 
     #[instrument(
@@ -264,7 +353,11 @@ impl UnifiedEngineManager {
 
         let version =
             if request.model_name.as_deref() == Some("default") || request.model_name.is_none() {
-                let default_model = models::default_for_language(&lang);
+                let default_model = if engine_type == EngineType::Apple {
+                    &models::APPLE_SPEECH
+                } else {
+                    models::default_for_language(&lang)
+                };
                 default_model.name.to_string()
             } else {
                 request
@@ -295,7 +388,14 @@ impl UnifiedEngineManager {
     }
 
     pub fn available_engines() -> Vec<EngineType> {
-        EngineType::all()
+        if mlx::runtime::supported() {
+            vec![EngineType::Mlx, EngineType::Apple, EngineType::Cloud]
+        } else {
+            EngineType::all()
+                .into_iter()
+                .filter(|engine| *engine != EngineType::Mlx)
+                .collect()
+        }
     }
 
     // ==================== Model Management Functions ====================
@@ -313,22 +413,40 @@ impl UnifiedEngineManager {
             .collect()
     }
 
+    pub async fn get_models_with_status(
+        &self,
+        engine_type: Option<EngineType>,
+    ) -> Result<Vec<ModelInfo>, String> {
+        if engine_type.is_none() || engine_type == Some(EngineType::Apple) {
+            self.resolve_apple_status(std::time::Duration::from_secs(10))
+                .await?;
+        }
+        Ok(match engine_type {
+            Some(engine) => self.get_models(engine),
+            None => self.get_all_models(),
+        })
+    }
+
     /// Models this system can run. The Apple engine is hidden before macOS 26.
     fn listed_models(&self) -> impl Iterator<Item = &'static models::ModelDefinition> + '_ {
         let apple_supported = self.apple_status() != AppleSpeechStatus::OsUnsupported;
-        models::ALL
-            .iter()
-            .copied()
+        models::available()
+            .into_iter()
             .filter(move |def| def.engine_type != EngineType::Apple || apple_supported)
     }
 
     fn model_info(&self, def: &models::ModelDefinition) -> ModelInfo {
+        let apple_status = (def.engine_type == EngineType::Apple).then(|| self.apple_status());
         ModelInfo {
             name: def.name.to_string(),
             display_name: def.display_name.to_string(),
             size_mb: def.size_mb as u64,
             filename: def.name.to_string(),
-            downloaded: self.is_model_downloaded(def.engine_type, def.name),
+            downloaded: apple_status.map_or_else(
+                || self.is_model_downloaded(def.engine_type, def.name),
+                |status| status == AppleSpeechStatus::Ready,
+            ),
+            downloadable: !def.built_in || apple_status == Some(AppleSpeechStatus::AssetsMissing),
             speed_score: def.speed_score,
             accuracy_score: def.accuracy_score,
             engine: def.engine_type.as_str().to_string(),
@@ -338,6 +456,8 @@ impl UnifiedEngineManager {
                 .map(|code| (*code).to_string())
                 .collect(),
             built_in: def.built_in,
+            runtime_ready: (def.engine_type == EngineType::Mlx)
+                .then(|| mlx::runtime::installed(&self.models_dir)),
         }
     }
 
@@ -355,7 +475,7 @@ impl UnifiedEngineManager {
             None => return false,
         };
 
-        if model_def.engine_type != engine_type {
+        if model_def.engine_type != engine_type || !models::is_available(model_def) {
             return false;
         }
 
@@ -363,8 +483,17 @@ impl UnifiedEngineManager {
             return self.apple_status() == AppleSpeechStatus::Ready;
         }
 
+        if engine_type == EngineType::Mlx && !mlx::runtime::installed(&self.models_dir) {
+            return false;
+        }
+
         let model_subdir = self.models_dir.join(model_def.name);
         model_def.files.iter().all(|file| {
+            if engine_type == EngineType::Mlx {
+                return std::fs::metadata(model_subdir.join(file.filename)).is_ok_and(|metadata| {
+                    metadata.is_file() && metadata.len() == file.estimated_size_bytes()
+                });
+            }
             downloaded_file_is_complete(
                 &model_subdir.join(file.filename),
                 Some(file.minimum_complete_bytes()),
@@ -377,6 +506,12 @@ impl UnifiedEngineManager {
         requested_model: &str,
         language: &str,
     ) -> (EngineType, String) {
+        if mlx::runtime::supported() {
+            let model = models::find_by_name(requested_model)
+                .filter(|model| models::is_available(model))
+                .unwrap_or_else(|| models::default_for_language(language));
+            return (model.engine_type, model.name.to_string());
+        }
         if let Some(model_def) = models::find_by_name(requested_model) {
             if self.is_model_downloaded(model_def.engine_type, model_def.name) {
                 return (model_def.engine_type, model_def.name.to_string());
@@ -396,7 +531,7 @@ impl UnifiedEngineManager {
         }
 
         // Built-in engines are opt-in: only an explicit selection uses them.
-        for model_def in models::ALL.iter().filter(|def| !def.built_in) {
+        for model_def in models::available().into_iter().filter(|def| !def.built_in) {
             if self.is_model_downloaded(model_def.engine_type, model_def.name) {
                 tracing::warn!(
                     requested = requested_model,
@@ -414,9 +549,12 @@ impl UnifiedEngineManager {
     /// First downloaded model for `language` whose engine is not `excluded`,
     /// used when the selected engine fails at runtime.
     pub fn fallback_model(&self, language: &str, excluded: EngineType) -> Option<String> {
+        if mlx::runtime::supported() {
+            return None;
+        }
         models::recommend_by_language(language)
             .into_iter()
-            .chain(models::ALL.iter().copied())
+            .chain(models::available())
             .filter(|def| def.engine_type != excluded && !def.built_in)
             .find(|def| self.is_model_downloaded(def.engine_type, def.name))
             .map(|def| def.name.to_string())
@@ -447,6 +585,16 @@ impl UnifiedEngineManager {
                 "Model '{}' is for {:?}, not {:?}",
                 model_name, model_def.engine_type, engine_type
             ));
+        }
+
+        if !models::is_available(model_def) {
+            return Err(format!(
+                "Model '{model_name}' is not available on this computer"
+            ));
+        }
+        if engine_type == EngineType::Mlx {
+            mlx::runtime::install(&self.models_dir, cancel_flag.clone()).await?;
+            self.reuse_cached_mlx_model(model_def, &cancel_flag).await?;
         }
 
         if engine_type == EngineType::Qwen3Asr {
@@ -491,8 +639,14 @@ impl UnifiedEngineManager {
         for model_file in model_def.files {
             let output_path = model_subdir.join(model_file.filename);
 
-            if downloaded_file_is_complete(&output_path, Some(model_file.minimum_complete_bytes()))
-            {
+            let complete = if engine_type == EngineType::Mlx {
+                output_path.metadata().is_ok_and(|metadata| {
+                    metadata.is_file() && metadata.len() == model_file.estimated_size_bytes()
+                })
+            } else {
+                downloaded_file_is_complete(&output_path, Some(model_file.minimum_complete_bytes()))
+            };
+            if complete {
                 let file_bytes = output_path
                     .metadata()
                     .map(|metadata| metadata.len())
@@ -518,7 +672,13 @@ impl UnifiedEngineManager {
                 "downloading_model_file"
             );
 
-            let source = HuggingFaceSource::new(repo, model_file.source_filename).into_source();
+            let source = HuggingFaceSource::new(repo, model_file.source_filename);
+            let source = if let Some(revision) = mlx::models::revision(model_name) {
+                source.with_revision(revision)
+            } else {
+                source
+            }
+            .into_source();
             let urls = source.urls();
 
             let cb = progress_cb.clone();
@@ -533,7 +693,11 @@ impl UnifiedEngineManager {
                     let base = completed_ref.load(std::sync::atomic::Ordering::Relaxed);
                     cb(base + file_done, total_size_bytes);
                 }))
-                .with_minimum_bytes(model_file.minimum_complete_bytes())
+                .with_minimum_bytes(if engine_type == EngineType::Mlx {
+                    model_file.estimated_size_bytes()
+                } else {
+                    model_file.minimum_complete_bytes()
+                })
                 .with_model_name(model_name);
 
             let result = download(options).await?;
@@ -552,6 +716,61 @@ impl UnifiedEngineManager {
         info!(engine = ?engine_type, model = %model_name, path = ?output_path, "model_download_completed");
 
         Ok(output_path)
+    }
+
+    async fn reuse_cached_mlx_model(
+        &self,
+        model: &models::ModelDefinition,
+        cancel: &AtomicBool,
+    ) -> Result<(), String> {
+        let cache = std::env::var_os("HF_HUB_CACHE")
+            .map(PathBuf::from)
+            .or_else(|| std::env::var_os("HF_HOME").map(|path| PathBuf::from(path).join("hub")))
+            .or_else(|| dirs::home_dir().map(|path| path.join(".cache/huggingface/hub")));
+        let Some(cache) = cache else {
+            return Ok(());
+        };
+        let repository = model.repository.ok_or("MLX model has no repository")?;
+        let revision =
+            mlx::models::revision(model.name).ok_or("MLX model has no pinned revision")?;
+        let source_dir = cache
+            .join(format!("models--{}", repository.replace('/', "--")))
+            .join("snapshots")
+            .join(revision);
+        let destination_dir = self.models_dir.join(model.name);
+        tokio::fs::create_dir_all(&destination_dir)
+            .await
+            .map_err(|error| error.to_string())?;
+        for file in model.files {
+            if cancel.load(std::sync::atomic::Ordering::Acquire) {
+                return Err("cancelled".to_string());
+            }
+            let source = source_dir.join(file.source_filename);
+            let destination = destination_dir.join(file.filename);
+            if destination
+                .metadata()
+                .is_ok_and(|metadata| metadata.len() == file.estimated_size_bytes())
+            {
+                continue;
+            }
+            if source.metadata().is_ok_and(|metadata| {
+                metadata.is_file() && metadata.len() == file.estimated_size_bytes()
+            }) {
+                let temporary = destination.with_extension("cache.tmp");
+                tokio::fs::copy(&source, &temporary)
+                    .await
+                    .map_err(|error| format!("Cannot reuse cached MLX checkpoint: {error}"))?;
+                tokio::fs::rename(&temporary, &destination)
+                    .await
+                    .map_err(|error| format!("Cannot install cached MLX checkpoint: {error}"))?;
+                info!(
+                    model = model.name,
+                    file = file.filename,
+                    "mlx_checkpoint_reused_from_cache"
+                );
+            }
+        }
+        Ok(())
     }
 
     async fn download_qwen3_asr_model<F>(
@@ -663,6 +882,7 @@ impl UnifiedEngineManager {
 
     #[instrument(skip(self), fields(engine = ?engine_type, model = %model_name), ret, err)]
     pub fn load_model(&self, engine_type: EngineType, model_name: &str) -> Result<(), String> {
+        Self::validate_model_policy(engine_type, model_name)?;
         if !self.is_model_downloaded(engine_type, model_name) {
             return Err(format!(
                 "Model '{}' not downloaded. Please download it first.",
@@ -687,8 +907,43 @@ impl UnifiedEngineManager {
         Ok(())
     }
 
+    pub async fn preload_model(
+        &self,
+        engine_type: EngineType,
+        model_name: &str,
+    ) -> Result<(), String> {
+        if engine_type == EngineType::Mlx {
+            match self.get_or_create_engine(engine_type, model_name, None)? {
+                EngineInstance::Mlx(engine) => engine.preload().await,
+                _ => Err("The selected model is not an MLX model".to_string()),
+            }
+        } else {
+            self.load_model(engine_type, model_name)
+        }
+    }
+
+    pub fn is_model_loaded(&self, model_name: &str) -> bool {
+        if !models::find_by_name(model_name).is_some_and(models::is_available) {
+            return false;
+        }
+        self.engine_cache
+            .lock()
+            .unwrap()
+            .as_ref()
+            .is_some_and(|(key, engine)| {
+                key.1 == model_name
+                    && match engine {
+                        EngineInstance::Mlx(engine) => engine.is_loaded(),
+                        _ => true,
+                    }
+            })
+    }
+
     pub fn delete_model(&self, engine_type: EngineType, model_name: &str) -> Result<(), String> {
-        if models::find_by_name(model_name).is_some_and(|def| def.built_in) {
+        let definition = models::find_by_name(model_name)
+            .filter(|model| model.engine_type == engine_type)
+            .ok_or_else(|| format!("Unknown {engine_type} model: {model_name}"))?;
+        if definition.built_in {
             return Err(format!(
                 "Model '{}' is built into the system and cannot be deleted",
                 model_name
@@ -703,6 +958,16 @@ impl UnifiedEngineManager {
                 model_name,
                 model_subdir.display()
             ));
+        }
+
+        if definition.engine_type == EngineType::Mlx {
+            let mut cache = self.engine_cache.lock().unwrap();
+            if let Some(((_, cached_model, _, _), EngineInstance::Mlx(engine))) = cache.as_ref() {
+                if cached_model == model_name {
+                    engine.shutdown();
+                    *cache = None;
+                }
+            }
         }
 
         std::fs::remove_dir_all(&model_subdir)
@@ -860,6 +1125,7 @@ fn extract_tar_bz2_archive(archive_path: &Path, output_dir: &Path) -> Result<(),
 pub(crate) enum EngineInstance {
     Local(SherpaOnnxEngine),
     Apple(AppleSpeechEngine),
+    Mlx(MlxEngine),
 }
 
 impl EngineInstance {
@@ -870,25 +1136,195 @@ impl EngineInstance {
         match self {
             EngineInstance::Local(engine) => engine.transcribe(request).await,
             EngineInstance::Apple(engine) => engine.transcribe(request).await,
+            EngineInstance::Mlx(engine) => engine.transcribe(request).await,
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    #[tokio::test]
+    async fn initial_apple_catalogue_waits_for_background_availability() {
+        let manager = UnifiedEngineManager::new(std::env::temp_dir());
+        manager
+            .apple_status_refreshing
+            .store(true, std::sync::atomic::Ordering::Release);
+        let query = manager.get_models_with_status(Some(EngineType::Apple));
+        tokio::pin!(query);
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(10), &mut query)
+                .await
+                .is_err()
+        );
+        *manager.apple_status_cache.lock().unwrap() =
+            Some(("auto".to_string(), AppleSpeechStatus::Ready));
+        manager.apple_status_changed.notify_waiters();
+        let models = tokio::time::timeout(std::time::Duration::from_secs(1), query)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(models.len(), 1);
+        assert!(models[0].downloaded);
+    }
+
+    #[tokio::test]
+    async fn resolved_catalogue_hides_confirmed_unsupported_apple_without_delaying_other_engines() {
+        let manager = UnifiedEngineManager::new(std::env::temp_dir());
+        *manager.apple_status_cache.lock().unwrap() =
+            Some(("auto".to_string(), AppleSpeechStatus::OsUnsupported));
+        assert!(manager
+            .get_models_with_status(Some(EngineType::Apple))
+            .await
+            .unwrap()
+            .is_empty());
+        manager.apple_status_cache.lock().unwrap().take();
+        manager
+            .apple_status_refreshing
+            .store(true, std::sync::atomic::Ordering::Release);
+        let models = tokio::time::timeout(
+            std::time::Duration::from_millis(50),
+            manager.get_models_with_status(Some(EngineType::Mlx)),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            models.len(),
+            models::available()
+                .iter()
+                .filter(|model| model.engine_type == EngineType::Mlx)
+                .count()
+        );
+    }
+
+    #[tokio::test]
+    async fn apple_availability_wait_is_bounded_and_can_be_retried() {
+        let manager = UnifiedEngineManager::new(std::env::temp_dir());
+        manager
+            .apple_status_refreshing
+            .store(true, std::sync::atomic::Ordering::Release);
+        let error = manager
+            .resolve_apple_status(std::time::Duration::from_millis(10))
+            .await
+            .unwrap_err();
+        assert!(error.contains("timed out"));
+        *manager.apple_status_cache.lock().unwrap() =
+            Some(("auto".to_string(), AppleSpeechStatus::Ready));
+        assert_eq!(
+            manager
+                .resolve_apple_status(std::time::Duration::from_millis(10))
+                .await
+                .unwrap(),
+            AppleSpeechStatus::Ready
+        );
+    }
+
+    #[tokio::test]
+    async fn catalogue_wait_ignores_old_language_and_releases_all_waiters() {
+        let manager = UnifiedEngineManager::new(std::env::temp_dir());
+        *manager.dictation_language.lock().unwrap() = "fr".to_string();
+        *manager.apple_status_cache.lock().unwrap() =
+            Some(("en".to_string(), AppleSpeechStatus::OsUnsupported));
+        manager
+            .apple_status_refreshing
+            .store(true, std::sync::atomic::Ordering::Release);
+        let all_models = manager.get_models_with_status(None);
+        let apple_models = manager.get_models_with_status(Some(EngineType::Apple));
+        tokio::pin!(all_models, apple_models);
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(10), &mut all_models)
+                .await
+                .is_err()
+        );
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(10), &mut apple_models)
+                .await
+                .is_err()
+        );
+        *manager.apple_status_cache.lock().unwrap() =
+            Some(("fr".to_string(), AppleSpeechStatus::Ready));
+        manager.apple_status_changed.notify_waiters();
+        let (all_models, apple_models) =
+            tokio::time::timeout(std::time::Duration::from_secs(1), async {
+                tokio::join!(all_models, apple_models)
+            })
+            .await
+            .unwrap();
+        assert!(all_models
+            .unwrap()
+            .iter()
+            .any(|model| model.name == models::APPLE_SPEECH.name && model.downloaded));
+        assert_eq!(apple_models.unwrap().len(), 1);
+    }
+
+    #[test]
+    fn platform_policy_apple_catalogue_preserves_real_readiness_states() {
+        let directory = tempfile::tempdir().unwrap();
+        let manager = UnifiedEngineManager::new(directory.path().join("models"));
+        for status in [
+            AppleSpeechStatus::OsUnsupported,
+            AppleSpeechStatus::AssetsMissing,
+            AppleSpeechStatus::LocaleUnsupported,
+            AppleSpeechStatus::Ready,
+        ] {
+            *manager.apple_status_cache.lock().unwrap() = Some(("auto".to_string(), status));
+            let models = manager.get_models(EngineType::Apple);
+            assert_eq!(
+                models.len(),
+                usize::from(status != AppleSpeechStatus::OsUnsupported)
+            );
+            assert_eq!(
+                manager.is_model_downloaded(EngineType::Apple, models::APPLE_SPEECH.name),
+                status == AppleSpeechStatus::Ready
+            );
+            if let Some(model) = models.first() {
+                assert!(model.built_in);
+                assert_eq!(model.downloaded, status == AppleSpeechStatus::Ready);
+                assert_eq!(
+                    model.downloadable,
+                    status == AppleSpeechStatus::AssetsMissing
+                );
+            }
+        }
+        assert!(matches!(
+            manager.get_or_create_engine(EngineType::Apple, models::APPLE_SPEECH.name, Some("fr")),
+            Ok(EngineInstance::Apple(_))
+        ));
+    }
+
+    #[test]
+    fn platform_policy_rejects_excluded_stt_even_when_cached() {
+        let directory = tempfile::tempdir().unwrap();
+        let manager = UnifiedEngineManager::new(directory.path().join("models"));
+        *manager.engine_cache.lock().unwrap() = Some((
+            (
+                EngineType::Whisper,
+                models::WHISPER_BASE.name.to_string(),
+                None,
+                InferenceProvider::Cpu,
+            ),
+            EngineInstance::Apple(AppleSpeechEngine::new(None)),
+        ));
+        let result =
+            manager.get_or_create_engine(EngineType::Whisper, models::WHISPER_BASE.name, None);
+        if mlx::runtime::supported() {
+            assert!(result
+                .err()
+                .unwrap()
+                .contains("not available on this computer"));
+            assert!(!manager.is_model_loaded(models::WHISPER_BASE.name));
+        } else {
+            assert!(result.is_ok());
+            assert!(manager.is_model_loaded(models::WHISPER_BASE.name));
+        }
+    }
+
     #[test]
     fn model_catalog_exposes_language_restrictions() {
         let manager =
             super::UnifiedEngineManager::new(std::env::temp_dir().join("catalog_metadata"));
-        let models = manager.get_all_models();
-        let sensevoice = models
-            .iter()
-            .find(|model| model.name == "sense-voice-small")
-            .unwrap();
-        let whisper = models
-            .iter()
-            .find(|model| model.name == "whisper-base")
-            .unwrap();
+        let sensevoice = manager.model_info(&models::SENSE_VOICE_SMALL);
+        let whisper = manager.model_info(&models::WHISPER_BASE);
         assert_eq!(
             serde_json::to_value(sensevoice).unwrap()["language_codes"],
             serde_json::json!(["zh", "yue", "ja", "ko", "en"])
@@ -900,6 +1336,104 @@ mod tests {
     }
 
     use super::*;
+
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    fn manager_with_cached_mlx(root: &Path) -> UnifiedEngineManager {
+        let models_dir = root.join("models");
+        std::fs::create_dir_all(models_dir.join("mlx-whisper-turbo")).unwrap();
+        let python = mlx::runtime::python_path(&models_dir);
+        std::fs::create_dir_all(python.parent().unwrap()).unwrap();
+        std::fs::write(python, "unused fixture").unwrap();
+        std::fs::write(
+            mlx::runtime::runtime_dir(&models_dir).join(".runtime-ready"),
+            concat!("python=3.12.15\n", include_str!("mlx/requirements.lock")),
+        )
+        .unwrap();
+        let engine = MlxEngine::new(&models_dir, "mlx-whisper-turbo").unwrap();
+        let manager = UnifiedEngineManager::new(models_dir);
+        *manager.engine_cache.lock().unwrap() = Some((
+            (
+                EngineType::Mlx,
+                "mlx-whisper-turbo".to_string(),
+                None,
+                InferenceProvider::Cpu,
+            ),
+            EngineInstance::Mlx(engine),
+        ));
+        manager
+    }
+
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    #[test]
+    fn language_change_preserves_cached_mlx_engine() {
+        let directory = tempfile::tempdir().unwrap();
+        let manager = manager_with_cached_mlx(directory.path());
+
+        manager.clear_language_dependent_cache();
+
+        assert!(manager.engine_cache.lock().unwrap().is_some());
+    }
+
+    #[test]
+    fn language_change_invalidates_native_engine_cache() {
+        let directory = tempfile::tempdir().unwrap();
+        let manager = UnifiedEngineManager::new(directory.path().join("models"));
+        *manager.engine_cache.lock().unwrap() = Some((
+            (
+                EngineType::Apple,
+                models::APPLE_SPEECH.name.to_string(),
+                Some("fr".to_string()),
+                InferenceProvider::Cpu,
+            ),
+            EngineInstance::Apple(AppleSpeechEngine::new(Some("fr"))),
+        ));
+
+        manager.clear_language_dependent_cache();
+
+        assert!(manager.engine_cache.lock().unwrap().is_none());
+    }
+
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    #[test]
+    fn deleting_another_mlx_model_preserves_cached_engine() {
+        let directory = tempfile::tempdir().unwrap();
+        let manager = manager_with_cached_mlx(directory.path());
+        let unused = manager.models_dir.join("mlx-parakeet-v3");
+        std::fs::create_dir_all(&unused).unwrap();
+
+        manager
+            .delete_model(EngineType::Mlx, "mlx-parakeet-v3")
+            .unwrap();
+
+        assert!(!unused.exists());
+        assert!(manager.engine_cache.lock().unwrap().is_some());
+    }
+
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    #[test]
+    fn rejected_mlx_deletion_preserves_cached_engine() {
+        for model in ["mlx-parakeet-v3", "mlx-whisper-turbo"] {
+            let directory = tempfile::tempdir().unwrap();
+            let manager = manager_with_cached_mlx(directory.path());
+            std::fs::remove_dir_all(manager.models_dir.join("mlx-whisper-turbo")).unwrap();
+
+            assert!(manager.delete_model(EngineType::Mlx, model).is_err());
+            assert!(manager.engine_cache.lock().unwrap().is_some());
+        }
+    }
+
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    #[test]
+    fn deleting_cached_mlx_model_unloads_it() {
+        let directory = tempfile::tempdir().unwrap();
+        let manager = manager_with_cached_mlx(directory.path());
+
+        manager
+            .delete_model(EngineType::Mlx, "mlx-whisper-turbo")
+            .unwrap();
+
+        assert!(manager.engine_cache.lock().unwrap().is_none());
+    }
 
     #[test]
     fn test_engine_type_parsing() {
@@ -925,17 +1459,24 @@ mod tests {
     #[test]
     fn test_available_engines() {
         let engines = UnifiedEngineManager::available_engines();
-        assert_eq!(engines.len(), 5);
-        assert!(engines.contains(&EngineType::Apple));
-        assert!(engines.contains(&EngineType::Whisper));
-        assert!(engines.contains(&EngineType::SenseVoice));
-        assert!(engines.contains(&EngineType::Qwen3Asr));
+        let expected = if mlx::runtime::supported() {
+            vec![EngineType::Mlx, EngineType::Apple, EngineType::Cloud]
+        } else {
+            vec![
+                EngineType::Whisper,
+                EngineType::SenseVoice,
+                EngineType::Qwen3Asr,
+                EngineType::Apple,
+                EngineType::Cloud,
+            ]
+        };
+        assert_eq!(engines, expected);
         assert!(engines.contains(&EngineType::Cloud));
     }
 
     #[test]
     fn test_model_definitions() {
-        assert_eq!(models::ALL.len(), 9);
+        assert_eq!(models::ALL.len(), 12);
         assert_eq!(models::SENSE_VOICE_SMALL.name, "sense-voice-small");
         assert_eq!(models::WHISPER_TINY.name, "whisper-tiny");
         assert_eq!(models::WHISPER_BASE.name, "whisper-base");
@@ -986,7 +1527,13 @@ mod tests {
         let has_sensevoice = recommendations
             .iter()
             .any(|r| r.engine_type == EngineType::SenseVoice);
-        assert!(has_sensevoice, "Should recommend SenseVoice for Chinese");
+        assert_eq!(has_sensevoice, !mlx::runtime::supported());
+        assert_eq!(
+            recommendations
+                .iter()
+                .all(|model| model.engine_type == EngineType::Mlx),
+            mlx::runtime::supported()
+        );
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
@@ -1004,7 +1551,13 @@ mod tests {
         let has_sensevoice = recommendations
             .iter()
             .any(|r| r.engine_type == EngineType::SenseVoice);
-        assert!(has_sensevoice, "Should recommend SenseVoice for English");
+        assert_eq!(has_sensevoice, !mlx::runtime::supported());
+        assert_eq!(
+            recommendations
+                .iter()
+                .all(|model| model.engine_type == EngineType::Mlx),
+            mlx::runtime::supported()
+        );
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
@@ -1040,7 +1593,11 @@ mod tests {
 
         let result = manager.load_model(EngineType::Whisper, "whisper-base");
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("not downloaded"));
+        assert!(result.unwrap_err().contains(if mlx::runtime::supported() {
+            "not available on this computer"
+        } else {
+            "not downloaded"
+        }));
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
@@ -1068,18 +1625,20 @@ mod tests {
         let manager = UnifiedEngineManager::new(temp_dir.clone());
 
         let (engine_type, model_name) = manager.resolve_available_model("whisper-base", "zh");
-        assert_eq!(model_name, "sense-voice-small");
-        assert_eq!(engine_type, EngineType::SenseVoice);
+        let expected = if mlx::runtime::supported() {
+            (EngineType::Mlx, "mlx-whisper-turbo")
+        } else {
+            (EngineType::SenseVoice, "sense-voice-small")
+        };
+        assert_eq!((engine_type, model_name.as_str()), expected);
 
         let (engine_type2, model_name2) =
             manager.resolve_available_model("sense-voice-small", "zh");
-        assert_eq!(model_name2, "sense-voice-small");
-        assert_eq!(engine_type2, EngineType::SenseVoice);
+        assert_eq!((engine_type2, model_name2.as_str()), expected);
 
         let (engine_type3, model_name3) =
             manager.resolve_available_model("nonexistent-model", "auto");
-        assert_eq!(model_name3, "sense-voice-small");
-        assert_eq!(engine_type3, EngineType::SenseVoice);
+        assert_eq!((engine_type3, model_name3.as_str()), expected);
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
@@ -1097,7 +1656,10 @@ mod tests {
 
         write_sparse_model_files(&temp_dir, &models::QWEN3_ASR_0_6B_INT8);
 
-        assert!(manager.is_model_downloaded(EngineType::Qwen3Asr, models::QWEN3_ASR_0_6B_INT8.name));
+        assert_eq!(
+            manager.is_model_downloaded(EngineType::Qwen3Asr, models::QWEN3_ASR_0_6B_INT8.name),
+            !mlx::runtime::supported()
+        );
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
@@ -1109,7 +1671,7 @@ mod tests {
         let manager = UnifiedEngineManager::new(temp_dir.clone());
 
         let (_, model_name) = manager.resolve_available_model("whisper-base", "auto");
-        assert_eq!(model_name, models::DEFAULT.name);
+        assert_eq!(model_name, models::default_for_language("auto").name);
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
@@ -1154,7 +1716,11 @@ mod tests {
 
         assert_eq!(
             manager.fallback_model("fr", EngineType::Apple),
-            Some(models::WHISPER_BASE.name.to_string())
+            if mlx::runtime::supported() {
+                None
+            } else {
+                Some(models::WHISPER_BASE.name.to_string())
+            }
         );
         assert_eq!(manager.fallback_model("fr", EngineType::Whisper), None);
 

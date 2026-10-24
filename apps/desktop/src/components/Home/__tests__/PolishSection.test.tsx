@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PolishSection } from "../model/PolishSection";
 import type { AppSettings, PolishModelInfo, PolishModelStatus } from "@/lib/tauri";
@@ -175,6 +175,56 @@ describe("PolishSection local runtime readiness", () => {
     getPolishModelStatusMock.mockReset();
     checkLocalPolishRuntimeConfigMock.mockReset();
     updateSettingMock.mockReset();
+  });
+
+  it("renders MLX models without unrelated HTTP runtime controls or invented speed ratings", async () => {
+    const mlxModel: PolishModelInfo = {
+      ...polishModel,
+      id: "mlx-qwen3-1.7b",
+      name: "Qwen3 1.7B",
+      engine_type: "mlx",
+      size: "984 MB",
+      latency_profile: {
+        ...polishModel.latency_profile,
+        recommended_templates: [],
+        caution_templates: [],
+      },
+    };
+    renderPolishSection({
+      is_loaded: false,
+      is_downloaded: true,
+      runtime_ready: true,
+      current_model: mlxModel.id,
+      engine_type: "mlx",
+    }, [mlxModel], mlxModel.id);
+    const row = await screen.findByRole("article", { name: mlxModel.name });
+    expect(within(row).getByText("model.catalog.unmeasured")).toBeInTheDocument();
+    expect(screen.queryByText("model.polish.localRuntime.title")).not.toBeInTheDocument();
+    expect(screen.queryByText("model.polish.localRuntime.baseUrl")).not.toBeInTheDocument();
+    expect(screen.queryByText("model.polish.latency.fast")).not.toBeInTheDocument();
+    expect(screen.queryByText("model.polish.latency.bestFor")).not.toBeInTheDocument();
+  });
+
+  it("keeps a missing selected model unavailable even when a shared runtime is installed", async () => {
+    const mlxModel: PolishModelInfo = {
+      ...polishModel,
+      id: "mlx-qwen3-1.7b",
+      name: "Qwen3 1.7B",
+      engine_type: "mlx",
+      downloaded: false,
+    };
+    await act(async () => {
+      renderPolishSection({
+        available: false,
+        is_loaded: false,
+        is_downloaded: false,
+        runtime_ready: true,
+        current_model: mlxModel.id,
+        engine_type: "mlx",
+      }, [mlxModel], mlxModel.id);
+    });
+    expect(getPolishModelStatusMock).toHaveBeenCalled();
+    expect(document.querySelector(".model-active-dot-pending")).not.toBeNull();
   });
 
   it("warns when the selected polish model is downloaded but the runtime is not ready", async () => {

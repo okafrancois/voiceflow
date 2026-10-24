@@ -17,7 +17,11 @@ async fn test_qwen_engine_polish_basic() {
     let result = engine.polish(request).await;
     assert!(result.is_err());
     let error = result.unwrap_err();
-    assert!(error.contains("Model not found") || error.contains("Model name required"));
+    if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+        assert!(error.contains("not available on this computer"));
+    } else {
+        assert!(error.contains("Model not found") || error.contains("Model name required"));
+    }
 }
 
 #[tokio::test]
@@ -56,7 +60,13 @@ async fn test_qwen_engine_error_handling() {
     let result = engine.polish(request).await;
     assert!(result.is_err());
     let error = result.unwrap_err();
-    assert!(error.contains("Model not found"));
+    assert!(
+        error.contains(if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+            "not available on this computer"
+        } else {
+            "Model not found"
+        })
+    );
 }
 
 #[tokio::test]

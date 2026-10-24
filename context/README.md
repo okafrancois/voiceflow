@@ -114,6 +114,10 @@ Versioned feature specs with verification status. Each lives under `feat/<name>/
 
 | Feature | Version | Status |
 |---------|---------|--------|
+| [Live managed MLX transcription](./feat/mlx-live-transcription/0.1.0/prd/erd.md) | 0.1.0 | Completed |
+| [MLX and Apple engines on Apple Silicon](./feat/apple-silicon-model-policy/0.1.0/prd/erd.md) | 0.1.0 | Completed |
+| [Managed MLX local text polish](./feat/mlx-polish/0.1.0/prd/erd.md) | 0.1.0 | Completed |
+| [Managed MLX transcription on Apple Silicon](./feat/mlx-audio-stt/0.2.0/prd/erd.md) | 0.2.0 | Completed |
 | [Visual model selectors](./feat/model-catalog/0.1.0/prd/erd.md) | 0.1.0 | Completed |
 | [Local MLX Audio dictation](./feat/mlx-audio-stt/0.1.0/prd/erd.md) | 0.1.0 | Completed |
 | [Recording Audio Integrity](./feat/recording-audio-integrity/0.1.0/prd/erd.md) | 0.1.0 | Completed |

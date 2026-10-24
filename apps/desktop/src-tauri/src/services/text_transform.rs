@@ -1,6 +1,6 @@
 mod corrections;
 
-use crate::polish_engine::{PolishRequest, PolishResult, UnifiedPolishManager};
+use crate::polish_engine::{PolishEngineType, PolishRequest, PolishResult, UnifiedPolishManager};
 use crate::state::app_state::AppState;
 use std::time::Duration;
 
@@ -107,14 +107,14 @@ pub async fn transform_text(
             .polish_manager
             .get_model_filename(engine, &model_id)
             .ok_or_else(|| "Polish model file is missing".to_string())?;
-        tokio::time::timeout(
+        await_local_polish(
+            engine,
             timeout,
             state
                 .polish_manager
                 .polish(engine, request.with_model(filename)),
         )
-        .await
-        .map_err(|_| LOCAL_POLISH_TIMEOUT_REASON.to_string())??
+        .await?
     };
     let (text, rejection_reason) = accept_output(&original, &result.text, intent);
     result.text = text;
@@ -125,6 +125,19 @@ pub async fn transform_text(
         result,
         rejection_reason,
     })
+}
+
+pub(crate) async fn await_local_polish(
+    engine: PolishEngineType,
+    timeout: Duration,
+    operation: impl std::future::Future<Output = Result<PolishResult, String>>,
+) -> Result<PolishResult, String> {
+    if engine == PolishEngineType::Mlx {
+        return operation.await;
+    }
+    tokio::time::timeout(timeout, operation)
+        .await
+        .map_err(|_| LOCAL_POLISH_TIMEOUT_REASON.to_string())?
 }
 
 pub(crate) const LOCAL_POLISH_BASE_TIMEOUT: Duration = Duration::from_secs(20);
@@ -398,6 +411,61 @@ pub(crate) fn rejection_reason(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn mlx_service_preserves_inference_budget_after_preparation() {
+        let inference_timeout = Duration::from_millis(20);
+        let result = tokio::time::timeout(
+            Duration::from_secs(1),
+            await_local_polish(PolishEngineType::Mlx, inference_timeout, async {
+                tokio::time::sleep(Duration::from_millis(60)).await;
+                tokio::time::timeout(inference_timeout, async {
+                    Ok(PolishResult::new(
+                        "Bonjour.".to_string(),
+                        PolishEngineType::Mlx,
+                        0,
+                    ))
+                })
+                .await
+                .map_err(|_| "managed inference timed out".to_string())?
+            }),
+        )
+        .await
+        .expect("service must remain bounded");
+        assert_eq!(result.unwrap().text, "Bonjour.");
+    }
+
+    #[tokio::test]
+    async fn mlx_service_keeps_inference_deadline_after_preparation() {
+        let inference_timeout = Duration::from_millis(20);
+        let result = tokio::time::timeout(
+            Duration::from_secs(1),
+            await_local_polish(PolishEngineType::Mlx, inference_timeout, async {
+                tokio::time::sleep(Duration::from_millis(60)).await;
+                tokio::time::timeout(inference_timeout, std::future::pending())
+                    .await
+                    .map_err(|_| "managed inference timed out".to_string())?
+            }),
+        )
+        .await
+        .expect("service must remain bounded");
+        assert_eq!(result.unwrap_err(), "managed inference timed out");
+    }
+
+    #[tokio::test]
+    async fn native_service_retains_whole_operation_deadline() {
+        for engine in [
+            PolishEngineType::Qwen,
+            PolishEngineType::Lfm,
+            PolishEngineType::Gemma,
+            PolishEngineType::Glm,
+            PolishEngineType::Apple,
+        ] {
+            let result =
+                await_local_polish(engine, Duration::from_millis(5), std::future::pending()).await;
+            assert_eq!(result.unwrap_err(), LOCAL_POLISH_TIMEOUT_REASON);
+        }
+    }
 
     #[test]
     fn accepts_cleanup_of_consecutive_duplicate_sentences() {

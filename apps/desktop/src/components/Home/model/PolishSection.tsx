@@ -19,13 +19,6 @@ import { analytics } from "@/lib/analytics";
 import { AnalyticsEvents } from "@/lib/events";
 import { useSettingsContext } from "@/contexts/SettingsContext";
 
-const LATENCY_LABEL_KEYS: Record<PolishModelInfo["latency_profile"]["class"], string> = {
-  fast: "model.polish.latency.fast",
-  balanced: "model.polish.latency.balanced",
-  slow: "model.polish.latency.slow",
-  heavy: "model.polish.latency.heavy",
-};
-
 const DEFAULT_LOCAL_RUNTIME: LocalPolishRuntimeSettings = {
   provider_type: "llama-server",
   base_url: "http://127.0.0.1:8000/v1",
@@ -93,10 +86,6 @@ function getTemplateNames(templateIds: string[], t: TFunction): string {
   return templateIds
     .map((id) => t(TEMPLATE_LABEL_KEYS[id] ?? id))
     .join(" · ");
-}
-
-function getLatencyLabel(model: PolishModelInfo, t: TFunction): string {
-  return t(LATENCY_LABEL_KEYS[model.latency_profile.class]);
 }
 
 function getLatencySummary(model: PolishModelInfo, t: TFunction): string {
@@ -246,6 +235,9 @@ export function PolishSection({
   const selectedRuntimeReady = selectedModelStatusMatches
     ? polishModelStatus.runtime_ready
     : false;
+  const selectedModelAvailable = selectedModelStatusMatches
+    ? polishModelStatus.available === true
+    : false;
   const selectedModelDownloaded = selectedModelStatusMatches
     ? polishModelStatus.is_downloaded
     : Boolean(selectedPolishModelInfo?.downloaded);
@@ -268,12 +260,11 @@ export function PolishSection({
   const activeName = serviceEnabled
     ? `${serviceProvider} · ${serviceModel || t("model.catalog.configuredService")}`
     : selectedPolishModelInfo?.name ?? t("model.active.noModels");
-  const latencyValue = { fast: 4, balanced: 3, slow: 2, heavy: 1 };
 
   return (
     <div className="model-picker rounded-2xl border border-border bg-card p-5 md:p-6">
-      <ActiveModelSummary name={activeName} ready={serviceEnabled || selectedRuntimeReady} detail={serviceEnabled ? t("model.catalog.speechService") : selectedRuntimeReady ? t("model.info.ready") : t("model.catalog.runtimePending")}>
-        {!serviceEnabled && selectedPolishModelInfo && <p className="mt-1 text-xs leading-5 text-muted-foreground">{getLatencyLabel(selectedPolishModelInfo, t)} · {getLatencySummary(selectedPolishModelInfo, t)}</p>}
+      <ActiveModelSummary name={activeName} ready={serviceEnabled || selectedModelAvailable} detail={serviceEnabled ? t("model.catalog.speechService") : selectedModelAvailable ? t("model.info.ready") : t("model.catalog.runtimePending")}>
+        {!serviceEnabled && selectedPolishModelInfo && selectedPolishModelInfo.latency_profile.recommended_templates.length > 0 && <p className="mt-1 text-xs leading-5 text-muted-foreground">{getLatencySummary(selectedPolishModelInfo, t)}</p>}
       </ActiveModelSummary>
       {!serviceEnabled && selectedCompatibilityWarning && <p className="model-runtime-warning">{selectedCompatibilityWarning}</p>}
       {!serviceEnabled && selectedLatencyCaution && <p className="mb-4 text-xs leading-5 text-muted-foreground">{selectedLatencyCaution}</p>}
@@ -289,7 +280,6 @@ export function PolishSection({
           available: model.downloaded,
           builtIn: model.built_in,
           selected: !serviceEnabled && model.id === selectedPolishModel,
-          speed: { value: latencyValue[model.latency_profile.class], maximum: 4, label: getLatencyLabel(model, t) },
           usage: getTemplateNames(model.latency_profile.recommended_templates, t),
           templates: model.latency_profile.recommended_templates,
           warning: model.built_in && !model.downloaded ? t("model.polish.appleIntelligenceHint") : getCompatibilityWarning(model, t),
@@ -302,7 +292,7 @@ export function PolishSection({
         onCancel={onCancel}
         onDelete={onDelete}
       />
-      {!serviceEnabled && !selectedPolishModelInfo?.built_in && <details className="model-runtime-details">
+      {!serviceEnabled && !selectedPolishModelInfo?.built_in && selectedPolishModelInfo?.engine_type !== "mlx" && <details className="model-runtime-details">
         <summary>{t("model.polish.localRuntime.title")}</summary>
         <div className="space-y-4 p-1">
             <div className="flex items-start justify-between gap-4">

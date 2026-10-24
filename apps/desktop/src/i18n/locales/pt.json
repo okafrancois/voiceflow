@@ -245,6 +245,8 @@
   "model.hint.cjkBest": "CJK ótimo",
   "model.hint.multiLang": "20+ idiomas",
   "model.hint.appleStreaming": "transcreve enquanto você fala · defina o idioma do ditado",
+  "model.mlx.installingRuntime": "Instalando o mecanismo local MLX…",
+  "onboarding.model.downloadComplete": "Download de {{model}} concluído",
   "model.available.builtIn": "Integrado ao macOS",
   "model.polish.appleIntelligenceHint": "Ative o Apple Intelligence em Ajustes do Sistema › Apple Intelligence e Siri.",
   "model.performanceSection.title": "Desempenho",

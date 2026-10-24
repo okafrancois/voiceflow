@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, LazyLock};
@@ -15,7 +16,8 @@ use crate::services::transcription_workbench::{
     self, ExportFormat, FileTranscriptionRequest, FileTranscriptionResult, LanguageMode,
 };
 use crate::state::app_state::AppState;
-use crate::stt_engine::traits::TranscriptionRequest;
+use crate::stt_engine::buffering_engine::await_user_cancellable_transcription;
+use crate::stt_engine::traits::{EngineType, TranscriptionRequest};
 
 const MIN_FAILED_RECORDING_DURATION_MS: i64 = 500;
 const FILE_JOB_EVENT: &str = "file-transcription-job-changed";
@@ -136,6 +138,7 @@ pub struct FileTranscriptionJob {
 struct FileJobRecord {
     snapshot: parking_lot::Mutex<FileTranscriptionJob>,
     canceled: AtomicBool,
+    finalizing: AtomicBool,
     sequence: u64,
 }
 
@@ -151,12 +154,26 @@ impl FileJobRecord {
                 error: None,
             }),
             canceled: AtomicBool::new(false),
+            finalizing: AtomicBool::new(false),
             sequence: NEXT_FILE_JOB_SEQUENCE.fetch_add(1, Ordering::Relaxed),
         }
     }
 
     fn snapshot(&self) -> FileTranscriptionJob {
         self.snapshot.lock().clone()
+    }
+
+    async fn transcribe<Output>(
+        &self,
+        engine_type: EngineType,
+        transcription: impl Future<Output = Output>,
+    ) -> Option<Output> {
+        await_user_cancellable_transcription(
+            Some(engine_type),
+            || self.canceled.load(Ordering::SeqCst),
+            transcription,
+        )
+        .await
     }
 
     fn update(&self, state: FileJobState, progress_percent: u8) -> FileTranscriptionJob {
@@ -176,10 +193,45 @@ impl FileJobRecord {
                 snapshot.id
             ));
         }
+        if self.finalizing.load(Ordering::SeqCst) {
+            return Err(format!(
+                "File transcription job is already finishing: {}",
+                snapshot.id
+            ));
+        }
         self.canceled.store(true, Ordering::SeqCst);
         snapshot.state = FileJobState::Canceled;
         snapshot.error = None;
         Ok(snapshot.clone())
+    }
+
+    fn complete<Processed>(
+        &self,
+        outcome: Result<Processed, String>,
+        finalize: impl FnOnce(Processed) -> Result<FileTranscriptionResult, String>,
+    ) -> Option<FileTranscriptionJob> {
+        {
+            let snapshot = self.snapshot.lock();
+            if snapshot.state.is_terminal() || self.finalizing.load(Ordering::SeqCst) {
+                return None;
+            }
+            self.finalizing.store(true, Ordering::SeqCst);
+        }
+        let result = outcome.and_then(finalize);
+        let mut snapshot = self.snapshot.lock();
+        match result {
+            Ok(result) => {
+                snapshot.state = FileJobState::Completed;
+                snapshot.result = Some(result);
+                snapshot.error = None;
+            }
+            Err(error) => {
+                snapshot.state = FileJobState::Error;
+                snapshot.error = Some(error);
+            }
+        }
+        snapshot.progress_percent = 100;
+        Some(snapshot.clone())
     }
 }
 
@@ -217,7 +269,7 @@ pub async fn transcribe_media_file(
     state: State<'_, AppState>,
     request: FileTranscriptionRequest,
 ) -> Result<FileTranscriptionResult, String> {
-    let processed = process_media_file(&state, &request).await?;
+    let processed = process_media_file(&state, &request, None).await?;
     finalize_processed_media(&app, &state, processed)
 }
 
@@ -244,28 +296,11 @@ pub fn start_file_transcription_job(
         }
         let request = record.snapshot().request;
         let state = app.state::<AppState>();
-        let outcome = process_media_file(&state, &request).await;
-        if record.canceled.load(Ordering::SeqCst) {
+        let outcome = process_media_file(&state, &request, Some(&record)).await;
+        let Some(snapshot) = record.complete(outcome, |processed| {
+            finalize_processed_media(&app, &state, processed)
+        }) else {
             return;
-        }
-        let result =
-            outcome.and_then(|processed| finalize_processed_media(&app, &state, processed));
-        let snapshot = match result {
-            Ok(result) => {
-                let mut snapshot = record.snapshot.lock();
-                snapshot.state = FileJobState::Completed;
-                snapshot.progress_percent = 100;
-                snapshot.result = Some(result);
-                snapshot.error = None;
-                snapshot.clone()
-            }
-            Err(error) => {
-                let mut snapshot = record.snapshot.lock();
-                snapshot.state = FileJobState::Error;
-                snapshot.progress_percent = 100;
-                snapshot.error = Some(error);
-                snapshot.clone()
-            }
         };
         emit_file_job(&app, &snapshot);
         prune_terminal_file_jobs(&mut FILE_TRANSCRIPTION_JOBS.lock(), MAX_TERMINAL_FILE_JOBS);
@@ -404,7 +439,7 @@ pub async fn retranscribe_history_entry(
         profile_id: None,
         translation_target: entry.translation_target,
     };
-    let processed = process_media_file(&state, &request).await?;
+    let processed = process_media_file(&state, &request, None).await?;
 
     let store = state.history_store.lock();
     store.update_workbench_entry(
@@ -640,6 +675,7 @@ pub fn paste_last_transcription(state: State<'_, AppState>) -> Result<String, St
 async fn process_media_file(
     state: &AppState,
     request: &FileTranscriptionRequest,
+    job: Option<&FileJobRecord>,
 ) -> Result<ProcessedMedia, String> {
     let media = transcription_workbench::validate_media_path(&request.path)?;
     let (
@@ -699,11 +735,17 @@ async fn process_media_file(
     if let Some(language) = language.as_deref() {
         transcription_request = transcription_request.with_language(language);
     }
-    let transcription = state
+    let inference = state
         .engine_manager
-        .transcribe(engine_type, transcription_request)
-        .await
-        .map_err(|error| format!("File transcription failed: {error}"))?;
+        .transcribe(engine_type, transcription_request);
+    let transcription = match job {
+        Some(job) => job
+            .transcribe(engine_type, inference)
+            .await
+            .ok_or_else(|| "File transcription canceled".to_string())?,
+        None => inference.await,
+    }
+    .map_err(|error| format!("File transcription failed: {error}"))?;
     let raw_text = transcription.text.trim().to_string();
     if raw_text.is_empty() {
         return Err("File transcription returned empty text".to_string());
@@ -1177,6 +1219,101 @@ mod tests {
     use crate::text_injector::InjectionMethod;
     use std::cell::Cell;
     use std::path::PathBuf;
+
+    #[tokio::test]
+    async fn user_cancellation_of_file_job_drops_mlx_inference() {
+        use crate::stt_engine::buffering_engine::{
+            cancellation_test_support::ControlledDecoder, WindowDecoder,
+        };
+        use crate::stt_engine::traits::EngineType;
+        use std::sync::Arc;
+        use std::time::Duration;
+
+        let record = Arc::new(FileJobRecord::new(FileTranscriptionRequest {
+            path: PathBuf::from("/tmp/source.wav"),
+            profile_id: None,
+            translation_target: None,
+        }));
+        let decoder = ControlledDecoder::new();
+        let task_record = record.clone();
+        let task_decoder = decoder.clone();
+        let active = tokio::spawn(async move {
+            task_record
+                .transcribe(EngineType::Mlx, task_decoder.decode(vec![0.0; 16_000]))
+                .await
+        });
+        tokio::time::timeout(Duration::from_secs(1), decoder.started.notified())
+            .await
+            .unwrap();
+        record.cancel().unwrap();
+
+        assert!(tokio::time::timeout(Duration::from_secs(1), active)
+            .await
+            .expect("canceling a file job must interrupt MLX inference")
+            .unwrap()
+            .is_none());
+        tokio::time::timeout(Duration::from_secs(1), decoder.stopped.notified())
+            .await
+            .unwrap();
+        assert_eq!(decoder.slot.available_permits(), 1);
+        decoder.release.add_permits(1);
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(1), decoder.decode(vec![0.0; 16_000]))
+                .await
+                .unwrap()
+                .unwrap(),
+            "controlled transcript"
+        );
+    }
+
+    #[test]
+    fn user_cancellation_prevents_file_job_history_and_paste() {
+        let record = FileJobRecord::new(FileTranscriptionRequest {
+            path: PathBuf::from("/tmp/source.wav"),
+            profile_id: None,
+            translation_target: None,
+        });
+        let store = HistoryStore::new_in_memory().unwrap();
+        let pasted = Cell::new(false);
+        record.cancel().unwrap();
+
+        let completion = record.complete(Ok(()), |_| {
+            store
+                .insert(successful_history_entry("must not be retained"))
+                .unwrap();
+            pasted.set(true);
+            Err("canceled work must not be finalized".to_string())
+        });
+
+        assert!(completion.is_none());
+        assert!(!pasted.get());
+        assert!(store
+            .get_latest_successful_transcription()
+            .unwrap()
+            .is_none());
+        assert_eq!(record.snapshot().state, FileJobState::Canceled);
+    }
+
+    #[test]
+    fn user_cancellation_finalization_releases_job_lock_before_delivery() {
+        let record = FileJobRecord::new(FileTranscriptionRequest {
+            path: PathBuf::from("/tmp/source.wav"),
+            profile_id: None,
+            translation_target: None,
+        });
+
+        let completion = record
+            .complete(Ok(()), |_| {
+                assert!(
+                    record.snapshot.try_lock().is_some(),
+                    "delivery may synchronously dispatch to the UI thread"
+                );
+                assert!(record.cancel().unwrap_err().contains("finishing"));
+                Err("controlled delivery failure".to_string())
+            })
+            .unwrap();
+        assert_eq!(completion.state, FileJobState::Error);
+    }
 
     fn successful_history_entry(text: &str) -> NewTranscriptionEntry {
         NewTranscriptionEntry {

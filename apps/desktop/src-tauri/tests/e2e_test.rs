@@ -45,7 +45,13 @@ fn test_e2e_settings_default() {
         voiceflow_lib::shortcut::default_dictate_hotkey()
     );
     assert_eq!(settings.workflow_profiles.len(), 1);
-    assert_eq!(settings.model, "whisper-base");
+    if voiceflow_lib::stt_engine::mlx::runtime::supported() {
+        assert_eq!(settings.model, "mlx-whisper-turbo");
+        assert_eq!(settings.stt_engine, "mlx");
+    } else {
+        assert_eq!(settings.model, "whisper-base");
+        assert_eq!(settings.stt_engine, "whisper");
+    }
     assert_eq!(settings.language, "auto");
     assert!(!settings.cloud_polish_enabled);
 }

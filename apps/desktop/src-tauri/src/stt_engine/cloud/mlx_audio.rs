@@ -135,6 +135,12 @@ impl MlxAudioClient {
                     .to_string(),
             );
         }
+        if models["data"]
+            .as_array()
+            .is_some_and(|models| models.iter().any(|model| model["owned_by"] == "llamacpp"))
+        {
+            return Err("This address is the llama-server text-generation engine, not MLX Audio. Use a separate MLX Audio server address or select a managed MLX transcription model on Apple Silicon.".to_string());
+        }
         // The server lists loaded models, not every downloaded checkpoint.
         let (sender, mut receiver) = mpsc::channel::<Vec<i16>>(32);
         let collector = tokio::spawn(async move {

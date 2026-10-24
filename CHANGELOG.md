@@ -2,6 +2,47 @@
 
 All notable changes to the desktop application will be documented in this file.
 
+## [v1.6.0](https://github.com/okafrancois/voiceflow/releases/tag/v1.6.0) (2026-10-24)
+
+Signed and notarized macOS universal release for Apple Silicon and Intel.
+Automatic updates retain the existing production signing key.
+
+### Features
+
+- Run managed MLX transcription on Apple Silicon without an external server.
+  Download Whisper Turbo, Parakeet v3 or Qwen3-ASR from the model catalogue;
+  Voice Flow installs their private runtime and switches the owned worker.
+- Show replaceable transcription previews while speaking in the pill and
+  dashboard. Stopping still transcribes the complete original recording;
+  only the final result enters polish, history and delivery.
+- Polish text locally with managed Qwen3 0.6B or 1.7B MLX models, including
+  offline model loading, integrity checks and cancellable inference.
+- Offer only MLX and Apple Speech for local transcription on Apple Silicon,
+  and MLX and Apple Intelligence for local polish. Preserve compatible native
+  engines on Intel Macs and existing Windows/Linux behavior.
+
+### Bug Fixes
+
+- Preserve French transcription instead of allowing internal context metadata
+  to steer MLX output into English.
+- Stop cancelled MLX inference promptly, preserve workers on language-only
+  changes and avoid unloading the active model when deleting another one.
+- Repair broken managed runtimes and corrupted polish checkpoints, bound
+  stalled downloads, and preserve inference time during model preparation.
+- Refresh Apple Speech readiness by language, expose missing-asset
+  installation and ignore superseded catalogue responses.
+- Remove repetitive model-selection explanations and invented MLX ratings.
+
+### Notes
+
+- Managed MLX runtimes require Apple Silicon and macOS 14 or later.
+- Existing valid MLX/Apple selections and vendor-cloud configuration remain
+  intact. Excluded native selections migrate on Apple Silicon without
+  deleting cached files or silently downloading models.
+- Live previews are revisable recent-window snapshots, not final transcript
+  segments. Model quality and speed remain unmeasured; the small 0.6B polish
+  model is not claimed to match the 1.7B model's correction quality.
+
 ## [v1.5.0](https://github.com/okafrancois/voiceflow/releases/tag/v1.5.0) (2026-10-24)
 
 Signed and notarized macOS universal release for Apple Silicon and Intel.

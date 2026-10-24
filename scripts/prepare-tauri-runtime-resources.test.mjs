@@ -1,10 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import {
+  copyFileSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   statSync,
   writeFileSync,
 } from 'node:fs';
@@ -91,6 +94,44 @@ test('windows runtime config uses windows resources and skips missing sidecars',
     'bin/windows/sense-voice-main-x86_64-pc-windows.exe',
     'assets/start_beep.wav',
   ]);
+});
+
+test('macOS packages the ARM MLX bootstrap independently of polish sidecars', () => {
+  const { root, tauriDir } = createFixture();
+  mkdirSync(resolve(tauriDir, 'bin/apple-silicon'), { recursive: true });
+  writeFileSync(resolve(tauriDir, 'bin/apple-silicon/uv'), 'bootstrap');
+
+  assert.deepEqual(existingRuntimeResources('macos', root), []);
+  const result = writeRuntimeResourceConfig({
+    platform: 'macos',
+    rootDir: root,
+    sidecarSourcePath: '',
+  });
+  assert.equal(result instanceof Promise, false);
+  assert.ok(result.config.bundle.resources.includes('bin/apple-silicon/uv'));
+  assert.equal(runtimeResourceConfig('windows', root).bundle.resources.includes('bin/apple-silicon/uv'), false);
+  assert.equal(runtimeResourceConfig('linux', root).bundle.resources.includes('bin/apple-silicon/uv'), false);
+});
+
+test('resource CLI awaits bootstrap preparation before writing macOS resources', () => {
+  const { root } = createFixture();
+  const scripts = resolve(root, 'scripts');
+  mkdirSync(scripts);
+  copyFileSync(new URL('./prepare-tauri-runtime-resources.mjs', import.meta.url), resolve(scripts, 'prepare-tauri-runtime-resources.mjs'));
+  writeFileSync(resolve(scripts, 'ensure-mlx-runtime.mjs'), `
+    import { mkdirSync, writeFileSync } from 'node:fs';
+    import { fileURLToPath } from 'node:url';
+    export const MLX_BOOTSTRAP = { resource: 'bin/apple-silicon/uv' };
+    export async function ensureMlxBootstrap() {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      const directory = fileURLToPath(new URL('../apps/desktop/src-tauri/bin/apple-silicon/', import.meta.url));
+      mkdirSync(directory, { recursive: true });
+      writeFileSync(directory + '/uv', 'must not execute during packaging');
+    }
+  `);
+  execFileSync(process.execPath, [realpathSync(resolve(scripts, 'prepare-tauri-runtime-resources.mjs')), '--platform', 'macos']);
+  const config = JSON.parse(readFileSync(resolve(root, 'apps/desktop/src-tauri/tauri.runtime.generated.conf.json'), 'utf8'));
+  assert.ok(config.bundle.resources.includes('bin/apple-silicon/uv'));
 });
 
 test('sidecar preparation is a no-op when no source is configured', () => {

@@ -1,10 +1,11 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { RecommendedModel, events } from "@/lib/tauri";
 import { OnboardingGuide, OnboardingPresetControl } from "../OnboardingGuide";
 
 const mocks = vi.hoisted(() => {
-  const onModelDownloadProgressMock = vi.fn(async () => () => undefined);
-  const onModelDownloadCompleteMock = vi.fn(async () => () => undefined);
+  const onModelDownloadProgressMock = vi.fn<typeof events.onModelDownloadProgress>(async () => () => undefined);
+  const onModelDownloadCompleteMock = vi.fn<typeof events.onModelDownloadComplete>(async () => () => undefined);
 
   return {
     applyPermissionMock: vi.fn(async () => undefined),
@@ -19,7 +20,7 @@ const mocks = vi.hoisted(() => {
     onRecordingStateChangedMock: vi.fn(async () => () => undefined),
     onTranscriptionCompleteMock: vi.fn(async () => () => undefined),
     onTranscriptionErrorMock: vi.fn(async () => () => undefined),
-    recommendModelsByLanguageMock: vi.fn(async () => [
+    recommendModelsByLanguageMock: vi.fn<(language: string) => Promise<RecommendedModel[]>>(async () => [
       {
         engine_type: "sensevoice",
         model_name: "sense-voice-small",
@@ -33,7 +34,7 @@ const mocks = vi.hoisted(() => {
     startRecordingMock: vi.fn(async () => undefined),
     stopRecordingMock: vi.fn(async () => undefined),
     trackMock: vi.fn(),
-    updateSettingMock: vi.fn(async () => undefined),
+    updateSettingMock: vi.fn<(key: string, value: unknown) => Promise<void>>(async () => undefined),
   };
 });
 
@@ -115,6 +116,87 @@ describe("OnboardingGuide model download flow", () => {
     mocks.isModelDownloadedMock.mockResolvedValue(false);
     mocks.onModelDownloadCompleteMock.mockImplementation(async () => () => undefined);
     mocks.onModelDownloadProgressMock.mockImplementation(async () => () => undefined);
+  });
+
+  async function advanceToModelStep() {
+    const modal = screen.getByTestId("onboarding-modal");
+    const nextButton = screen.getByTestId("onboarding-primary-action");
+    for (const step of ["language", "hotkey", "model"]) {
+      fireEvent.click(nextButton);
+      await waitFor(() => expect(modal).toHaveAttribute("data-step-id", step));
+    }
+    return nextButton;
+  }
+
+  it.each([
+    { engine_type: "mlx", model_name: "mlx-whisper-turbo", display_name: "MLX Whisper Turbo" },
+    { engine_type: "whisper", model_name: "whisper-base", display_name: "Whisper Base" },
+  ])("uses the backend $engine_type recommendation and saves only the model", async recommendation => {
+    mocks.recommendModelsByLanguageMock.mockResolvedValueOnce([{
+      ...recommendation,
+      size_mb: 500,
+      speed_score: 0,
+      accuracy_score: 0,
+      downloaded: true,
+    }]);
+    mocks.isModelDownloadedMock.mockResolvedValue(true);
+    render(<OnboardingGuide isOpen onClose={vi.fn()} />);
+
+    const nextButton = await advanceToModelStep();
+    await waitFor(() => expect(mocks.isModelDownloadedMock).toHaveBeenCalledWith(recommendation.model_name));
+    expect(screen.getByText(recommendation.display_name)).toBeInTheDocument();
+    await waitFor(() => expect(nextButton).toBeEnabled());
+    fireEvent.click(nextButton);
+
+    await waitFor(() => expect(mocks.updateSettingMock).toHaveBeenCalledWith("model", recommendation.model_name));
+    expect(mocks.updateSettingMock.mock.calls.some(([key]) => key === "stt_engine")).toBe(false);
+    expect(mocks.downloadModelMock).not.toHaveBeenCalled();
+  });
+
+  it("shows installation progress without infrastructure copy or premature completion", async () => {
+    mocks.recommendModelsByLanguageMock.mockResolvedValueOnce([{
+      engine_type: "mlx",
+      model_name: "mlx-whisper-turbo",
+      display_name: "MLX Whisper Turbo",
+      size_mb: 500,
+      speed_score: 0,
+      accuracy_score: 0,
+      downloaded: false,
+    }]);
+    render(<OnboardingGuide isOpen onClose={vi.fn()} />);
+    const nextButton = await advanceToModelStep();
+    await waitFor(() => expect(mocks.downloadModelMock).toHaveBeenCalledWith("mlx-whisper-turbo"));
+    const progress = mocks.onModelDownloadProgressMock.mock.calls[0][0];
+    await act(async () => progress({ model: "mlx-whisper-turbo", downloaded: 0, total: 0, progress: 100, stage: "runtime" }));
+
+    expect(screen.getByText("model.mlx.installingRuntime")).toBeInTheDocument();
+    expect(screen.queryByText("model.mlx.managedDescription")).toBeNull();
+    expect(nextButton).toBeDisabled();
+    await act(async () => progress({ model: "mlx-whisper-turbo", downloaded: 100, total: 100, progress: 100, stage: "model" }));
+    expect(screen.queryByText("model.mlx.installingRuntime")).toBeNull();
+    expect(nextButton).toBeDisabled();
+
+    mocks.recommendModelsByLanguageMock.mockResolvedValueOnce([{
+      engine_type: "mlx",
+      model_name: "mlx-whisper-turbo",
+      display_name: "MLX Whisper Turbo",
+      size_mb: 500,
+      speed_score: 0,
+      accuracy_score: 0,
+      downloaded: true,
+    }]);
+    await act(async () => mocks.onModelDownloadCompleteMock.mock.calls[0][0]("mlx-whisper-turbo"));
+    await waitFor(() => expect(nextButton).toBeEnabled());
+  });
+
+  it("does not invent a native fallback when the backend returns no recommendations", async () => {
+    mocks.recommendModelsByLanguageMock.mockResolvedValueOnce([]);
+    render(<OnboardingGuide isOpen onClose={vi.fn()} />);
+    const nextButton = await advanceToModelStep();
+    await waitFor(() => expect(mocks.recommendModelsByLanguageMock).toHaveBeenCalled());
+    expect(mocks.isModelDownloadedMock).not.toHaveBeenCalled();
+    expect(mocks.downloadModelMock).not.toHaveBeenCalled();
+    expect(nextButton).toBeDisabled();
   });
 
   it("starts the model download from the model step after progress listeners are mounted", async () => {

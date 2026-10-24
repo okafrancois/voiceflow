@@ -13,13 +13,14 @@ export interface CatalogMetric {
 export interface CatalogModel {
   id: string;
   name: string;
-  description: string;
+  description?: string;
   sizeMb: number | null;
   sizeLabel: string;
   available: boolean;
   builtIn: boolean;
+  downloadable?: boolean;
   selected: boolean;
-  speed: CatalogMetric;
+  speed?: CatalogMetric;
   accuracy?: CatalogMetric;
   usage?: string;
   languageCodes?: string[];
@@ -27,6 +28,7 @@ export interface CatalogModel {
   warning?: string | null;
   downloading: boolean;
   progress?: number | null;
+  progressLabel?: string;
   downloadDisabled?: boolean;
 }
 
@@ -121,7 +123,7 @@ export function ModelCatalog({ models, kind, language, onSelect, onDownload, onC
     return true;
   }).sort((a, b) => {
     if (sort === "size") return (a.sizeMb ?? Infinity) - (b.sizeMb ?? Infinity);
-    if (sort === "speed") return (b.speed.value ?? -1) - (a.speed.value ?? -1);
+    if (sort === "speed") return (b.speed?.value ?? -1) - (a.speed?.value ?? -1);
     if (sort === "accuracy") return (b.accuracy?.value ?? -1) - (a.accuracy?.value ?? -1);
     return Number(b.selected) - Number(a.selected);
   });
@@ -153,26 +155,26 @@ export function ModelCatalog({ models, kind, language, onSelect, onDownload, onC
       <div className="model-catalog-list">
         {visibleRows.map(model => (
           <article className="model-catalog-row" key={model.id} aria-label={model.name}>
-            <div className="model-catalog-identity"><p className="model-catalog-name">{displayModelName(model.name)}</p><p className="model-catalog-description">{model.description}</p></div>
-            <div className="model-speed-cell"><ModelGauge metric={model.speed} label={speedLabel} /></div>
-            <div className="model-second-cell">{model.accuracy ? <ModelGauge metric={model.accuracy} label={t("model.available.accuracy")} secondary /> : <p className="model-usage">{model.usage}</p>}</div>
+            <div className="model-catalog-identity"><p className="model-catalog-name">{displayModelName(model.name)}</p>{model.description && <p className="model-catalog-description">{model.description}</p>}</div>
+            <div className="model-speed-cell">{model.speed ? <ModelGauge metric={model.speed} label={speedLabel} /> : <p className="model-usage">{t("model.catalog.unmeasured")}</p>}</div>
+            <div className="model-second-cell">{model.accuracy ? <ModelGauge metric={model.accuracy} label={t("model.available.accuracy")} secondary /> : <p className="model-usage">{model.usage ?? t("model.catalog.unmeasured")}</p>}</div>
             <p className="model-catalog-size">{model.sizeLabel}</p>
             <div className="model-catalog-actions">
               {model.downloading ? <Button size="sm" variant="outline" onClick={() => onCancel(model.id)}>{t("model.available.cancel")}</Button>
                 : model.selected && model.available ? <Button size="sm" className="model-selected-button" disabled><Check aria-hidden="true" />{t("model.catalog.selected")}</Button>
                 : model.available ? <Button size="sm" onClick={() => onSelect(model.id)}>{t("model.catalog.use")}</Button>
-                : !model.builtIn ? <Button size="sm" variant="outline" disabled={model.downloadDisabled} onClick={() => onDownload(model.id)}><ArrowDown aria-hidden="true" />{t("model.available.download")}</Button>
+                : (model.downloadable ?? !model.builtIn) ? <Button size="sm" variant="outline" disabled={model.downloadDisabled} onClick={() => onDownload(model.id)}><ArrowDown aria-hidden="true" />{t("model.available.download")}</Button>
                 : <span className="model-unavailable">{t("model.catalog.unavailable")}</span>}
               {model.available && !model.builtIn && !model.downloading && <Button size="icon" variant="ghost" className="model-delete-button" aria-label={t("model.available.delete")} title={t("model.available.delete")} onClick={() => onDelete(model.id)}><Trash aria-hidden="true" /></Button>}
             </div>
             {model.warning && <p className="model-row-warning">{model.warning}</p>}
-            {model.downloading && <div className="model-download"><div role="progressbar" aria-label={t("model.available.download")} aria-valuenow={model.progress ?? undefined} aria-valuemin={0} aria-valuemax={100} className="model-download-track"><div className="model-download-fill" style={{ width: `${Math.max(0, Math.min(100, model.progress ?? 0))}%` }} /></div><span>{model.progress === null || model.progress === undefined ? t("model.catalog.starting") : `${model.progress}%`}</span></div>}
+            {model.downloading && <div className="model-download"><div role="progressbar" aria-label={model.progressLabel ?? t("model.available.download")} aria-valuenow={model.progressLabel ? undefined : model.progress ?? undefined} aria-valuemin={0} aria-valuemax={100} className="model-download-track"><div className={model.progressLabel ? "model-download-fill animate-pulse" : "model-download-fill"} style={{ width: model.progressLabel ? "100%" : `${Math.max(0, Math.min(100, model.progress ?? 0))}%` }} /></div><span role="status">{model.progressLabel ?? (model.progress === null || model.progress === undefined ? t("model.catalog.starting") : `${model.progress}%`)}</span></div>}
           </article>
         ))}
         {rows.length === 0 && <p className="model-catalog-empty" role="status">{models.length === 0 ? t("model.active.noModels") : t("model.catalog.empty")}</p>}
       </div>
       {rows.length > 6 && <button type="button" className="model-show-more" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>{expanded ? t("model.catalog.showLess") : t("model.catalog.showMore", { count: rows.length - 6 })}</button>}
-      <p className="model-catalog-note">{isPolish ? t("model.catalog.polishNote") : t("model.catalog.sttNote")}</p>
+      {(isPolish || models.some(model => model.speed !== undefined || model.accuracy !== undefined)) && <p className="model-catalog-note">{isPolish ? t("model.catalog.polishNote") : t("model.catalog.sttNote")}</p>}
     </section>
   );
 }

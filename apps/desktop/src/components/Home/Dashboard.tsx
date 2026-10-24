@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useSettingsContext } from "@/contexts/SettingsContext";
 import { useEventListeners } from "@/hooks/useEventListeners";
+import { useLiveTranscription } from "@/hooks/useLiveTranscription";
 import { homeCommands, historyCommands, events, type DictationHome, type TranscriptionEntry } from "@/lib/tauri";
 import { useUsageStatistics } from "@/hooks/useUsageStatistics";
 import { UsageSummary } from "./UsageSummary";
@@ -13,6 +14,7 @@ import { SettingsPageLayout } from "./SettingsPageLayout";
 
 export function Dashboard() {
   const { t } = useTranslation();
+  const liveText = useLiveTranscription();
   const { settings } = useSettingsContext();
   const [snapshot, setSnapshot] = useState<DictationHome | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -90,6 +92,7 @@ export function Dashboard() {
           <kbd className="rounded-2xl border border-border bg-background px-3 py-2 font-mono text-sm">{snapshot.hotkey}</kbd>
         </Link>
       </div>}
+      {liveText && <p role="status" className="whitespace-pre-wrap break-words rounded-2xl border border-border/60 bg-secondary/30 p-4 text-sm leading-relaxed text-foreground">{liveText}</p>}
       <section className="space-y-3" aria-label={t("usage.period7")}>
         <div className="flex items-center justify-between gap-3"><h2 className="text-sm font-medium">{t("usage.period7")}</h2><Link className="text-xs underline underline-offset-4" to="/statistics">{t("usage.openStatistics")}</Link></div>
         {usage.statistics && <UsageSummary statistics={usage.statistics} />}

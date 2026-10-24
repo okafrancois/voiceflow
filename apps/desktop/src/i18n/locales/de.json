@@ -226,6 +226,8 @@
   "model.hint.cjkBest": "CJK optimal",
   "model.hint.multiLang": "20+ Sprachen",
   "model.hint.appleStreaming": "transkribiert während Sie sprechen · Diktiersprache festlegen",
+  "model.mlx.installingRuntime": "Lokale MLX-Engine wird installiert…",
+  "onboarding.model.downloadComplete": "Download von {{model}} abgeschlossen",
   "model.available.builtIn": "In macOS integriert",
   "model.polish.appleIntelligenceHint": "Aktivieren Sie Apple Intelligence in Systemeinstellungen › Apple Intelligence & Siri.",
   "model.performanceSection.title": "Leistung",

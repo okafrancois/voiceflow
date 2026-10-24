@@ -1,9 +1,10 @@
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useLayoutEffect, useState, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { BorderBeam } from "border-beam";
 import { useTranslation } from "react-i18next";
+import { useLiveTranscription } from "@/hooks/useLiveTranscription";
 import { AudioDots } from "./AudioDots";
 import { SettingsButton } from "./SettingsButton";
 import type { RecordingStatus } from "@/types";
@@ -100,10 +101,11 @@ function tooltipClassName(showPillBody: boolean, isPolishPreview: boolean): stri
 
 export function PillWindow() {
   const { t } = useTranslation();
+  const liveText = useLiveTranscription();
   const [status, setStatus] = useState<RecordingStatus>("idle");
   const [audioLevel, setAudioLevel] = useState(0);
   const [hasAudioActivity, setHasAudioActivity] = useState(false);
-  const [indicatorMode, setIndicatorMode] = useState("always");
+  const [indicatorMode, setIndicatorMode] = useState<string | null>(null);
   const [pillSize, setPillSize] = useState(2);
   const [pillBackgroundColor, setPillBackgroundColor] = useState(DEFAULT_PILL_BACKGROUND_COLOR);
   const [pillBackgroundOpacity, setPillBackgroundOpacity] = useState(DEFAULT_PILL_BACKGROUND_OPACITY);
@@ -111,6 +113,12 @@ export function PillWindow() {
   const latestTaskId = useRef<number>(0);
   const tooltipTimer = useRef<number | undefined>(undefined);
   const indicatorModeRef = useRef(indicatorMode);
+  const livePreviewRef = useRef<HTMLParagraphElement>(null);
+
+  useLayoutEffect(() => {
+    const preview = livePreviewRef.current;
+    if (preview) preview.scrollTop = preview.scrollHeight;
+  }, [liveText, indicatorMode]);
 
   const showTooltipEvent = useCallback((event: PillTooltipEvent) => {
     setTooltip(event);
@@ -225,9 +233,10 @@ export function PillWindow() {
 
   // For "when_recording" mode: pill animates in/out and hides the OS window after exit.
   // For "always" mode: pill content is always rendered, no show/hide animation.
-  const showPillBody = indicatorMode === "always" || isActive;
+  const showPillBody = indicatorMode !== null && indicatorMode !== "never" && (indicatorMode === "always" || isActive);
   const showTooltip = tooltip !== null && (indicatorMode !== "never" || status === "error");
-  const showContent = showPillBody || showTooltip;
+  const showLivePreview = Boolean(liveText) && indicatorMode !== null && indicatorMode !== "never";
+  const showContent = showPillBody || showTooltip || showLivePreview;
   const tooltipIsPolishPreview = isPolishPreviewTooltip(tooltip);
 
   const handleDrag = useCallback(async () => {
@@ -299,6 +308,11 @@ export function PillWindow() {
                   <SettingsButton isLightBackground={isLightBackground} />
                 </div>
               </BorderBeam>
+            )}
+            {showLivePreview && (
+              <p ref={livePreviewRef} role="status" className="pointer-events-none mt-2 max-h-[calc(2.75em+0.75rem)] max-w-[calc(100vw-1rem)] overflow-hidden whitespace-normal break-words rounded-lg bg-black/60 px-3 py-1.5 text-center text-[10px] leading-snug text-white/90 ring-1 ring-white/10 backdrop-blur-md">
+                {liveText}
+              </p>
             )}
             <AnimatePresence mode="wait">
               {showTooltip && tooltip && (

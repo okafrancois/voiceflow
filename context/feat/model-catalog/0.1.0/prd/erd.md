@@ -17,6 +17,7 @@ Users need to see the configured engine, compare catalogue guidance, narrow alte
 - Place size, language/use, availability and sort controls above flat rows.
 - Show transcription speed and accuracy as aligned segmented bars. Show polish latency classes and backend-recommended templates instead of an invented quality score.
 - Keep download progress, cancellation, deletion, compatibility warnings and runtime diagnostics functional. Put secondary runtime details below the catalogue.
+- Keep model selection free of infrastructure explanations about managed MLX, local servers, URLs, or Terminal setup. Do not repeat local execution as each model's subtitle. Omit descriptions that add no model-specific selection information.
 
 ## Data contract
 
@@ -36,6 +37,7 @@ Users need to see the configured engine, compare catalogue guidance, narrow alte
 6. A downloaded alternative can be selected directly. Active and downloaded are distinct states.
 7. The layout works at narrow modal widths, in both themes, with accessible labels and text alternatives for gauges.
 8. All new UI text is translated in the ten shipped locales.
+9. Managed MLX rows and onboarding show no redundant local-runtime guidance or empty subtitle elements. Unknown speed/accuracy remains explicitly unknown instead of receiving fabricated ratings; the ratings footnote is omitted when no rating gauges are present.
 
 ## BDD scenarios
 

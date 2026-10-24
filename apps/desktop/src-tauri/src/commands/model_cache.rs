@@ -22,7 +22,8 @@ pub fn get_model_status(state: State<'_, AppState>) -> Result<serde_json::Value,
         .is_model_downloaded(engine_type, &model_name);
 
     Ok(serde_json::json!({
-        "is_loaded": is_downloaded,
+        "is_loaded": state.engine_manager.is_model_loaded(&model_name),
+        "downloaded": is_downloaded,
         "current_model": model_name,
         "engine_type": engine_str,
     }))
@@ -30,7 +31,7 @@ pub fn get_model_status(state: State<'_, AppState>) -> Result<serde_json::Value,
 
 #[tauri::command]
 #[instrument(skip(state), err)]
-pub fn preload_model(state: State<'_, AppState>) -> Result<(), String> {
+pub async fn preload_model(state: State<'_, AppState>) -> Result<(), String> {
     let (engine_str, model_name) = {
         let settings = state.settings.lock();
         (settings.stt_engine.clone(), settings.model.clone())
@@ -40,14 +41,21 @@ pub fn preload_model(state: State<'_, AppState>) -> Result<(), String> {
         .parse()
         .map_err(|e| format!("Invalid engine type: {}", e))?;
 
-    state.engine_manager.load_model(engine_type, &model_name)
+    let manager = state.engine_manager.clone();
+    if engine_type == EngineType::Mlx {
+        manager.preload_model(engine_type, &model_name).await
+    } else {
+        tauri::async_runtime::spawn_blocking(move || manager.load_model(engine_type, &model_name))
+            .await
+            .map_err(|error| error.to_string())?
+    }
 }
 
 #[tauri::command]
 #[instrument(skip(state), err)]
 pub fn unload_model(state: State<'_, AppState>) -> Result<(), String> {
     // Clear the engine cache to free memory
-    state.engine_manager.clear_cache();
+    state.engine_manager.unload_model();
     Ok(())
 }
 
@@ -71,6 +79,7 @@ async fn build_polish_model_status(
 ) -> Result<serde_json::Value, String> {
     if polish_model_id.is_empty() {
         return Ok(serde_json::json!({
+            "available": false,
             "is_loaded": false,
             "is_downloaded": false,
             "runtime_ready": false,
@@ -91,11 +100,14 @@ async fn build_polish_model_status(
             false
         };
         // Built-in engines run without the local llama runtime.
-        let runtime_ready = engine_type == Some(crate::polish_engine::PolishEngineType::Apple)
-            || polish_manager.is_local_runtime_ready();
+        let runtime_ready =
+            engine_type.is_some_and(|engine| polish_manager.is_runtime_ready_for(engine));
+        let is_loaded = engine_type
+            .is_some_and(|engine| polish_manager.is_model_loaded(engine, &polish_model_id));
 
         Ok(serde_json::json!({
-            "is_loaded": is_downloaded && runtime_ready,
+            "available": is_downloaded && runtime_ready,
+            "is_loaded": is_loaded,
             "is_downloaded": is_downloaded,
             "runtime_ready": runtime_ready,
             "current_model": polish_model_id,
@@ -108,7 +120,7 @@ async fn build_polish_model_status(
 
 #[tauri::command]
 #[instrument(skip(state), err)]
-pub fn preload_polish_model(state: State<'_, AppState>) -> Result<(), String> {
+pub async fn preload_polish_model(state: State<'_, AppState>) -> Result<(), String> {
     let polish_model_id = {
         let settings = state.settings.lock();
         settings.polish_model.clone()
@@ -123,9 +135,16 @@ pub fn preload_polish_model(state: State<'_, AppState>) -> Result<(), String> {
         crate::polish_engine::UnifiedPolishManager::get_engine_by_model_id(&polish_model_id)
             .ok_or_else(|| format!("Unknown polish model: {}", polish_model_id))?;
 
-    state
-        .polish_manager
-        .load_model(engine_type, &polish_model_id)
+    let manager = state.polish_manager.clone();
+    if engine_type == crate::polish_engine::PolishEngineType::Mlx {
+        manager.preload_model(engine_type, &polish_model_id).await
+    } else {
+        tauri::async_runtime::spawn_blocking(move || {
+            manager.load_model(engine_type, &polish_model_id)
+        })
+        .await
+        .map_err(|error| format!("polish preload task failed: {error}"))?
+    }
 }
 
 #[tauri::command]
@@ -162,5 +181,19 @@ mod tests {
         assert_eq!(status["current_model"], "qwen3.5-0.8b");
         assert_eq!(status["engine_type"], "qwen");
         assert_eq!(status["runtime_ready"], false);
+        assert_eq!(status["available"], false);
+    }
+
+    #[tokio::test]
+    async fn empty_and_unknown_polish_selection_are_authoritatively_unavailable() {
+        let manager = Arc::new(crate::polish_engine::UnifiedPolishManager::new());
+        for model_id in ["", "unknown-polish-model"] {
+            let status = build_polish_model_status(manager.clone(), model_id.to_string())
+                .await
+                .unwrap();
+            assert_eq!(status["available"], false);
+            assert_eq!(status["is_downloaded"], false);
+            assert_eq!(status["runtime_ready"], false);
+        }
     }
 }

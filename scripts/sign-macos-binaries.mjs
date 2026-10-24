@@ -43,7 +43,9 @@ function runtimeFilesIn(dir) {
         return false;
       }
 
-      return path.endsWith('/llama-server') || path.endsWith('.dylib');
+      return path.endsWith('/llama-server')
+        || path.endsWith('.dylib')
+        || (path.endsWith('/uv') && (stats.mode & 0o111) !== 0);
     });
 }
 

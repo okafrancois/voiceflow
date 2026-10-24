@@ -404,6 +404,11 @@ pub fn run() {
                 .expect("failed to resolve app data directory");
             crate::utils::AppPaths::init_from_tauri(data_dir.clone());
             crate::utils::AppPaths::ensure_dirs();
+            if crate::stt_engine::mlx::runtime::supported() {
+                let resource_dir = app.path().resource_dir().expect("failed to resolve MLX runtime resource directory");
+                crate::stt_engine::mlx::runtime::configure_bootstrap(resource_dir.join("bin/apple-silicon/uv"));
+                crate::polish_engine::mlx::runtime::configure_bootstrap(resource_dir.join("bin/apple-silicon/uv"));
+            }
 
             // Initialize logging with correct app-specific paths
             init_logging();
@@ -547,6 +552,10 @@ pub fn run() {
                 };
 
                 let settings = state.settings.lock();
+                if crate::stt_engine::mlx::runtime::supported() {
+                    tracing::info!("startup_model_ensure_deferred-managed_mlx_download_action");
+                    return;
+                }
                 if settings.is_streaming_stt_active() {
                     tracing::info!("startup_model_ensure_skipped-cloud_stt_active");
                     return;
@@ -673,7 +682,7 @@ pub fn run() {
                         )
                     {
                         if state.engine_manager.is_model_downloaded(engine_type, &model_name) {
-                            match state.engine_manager.load_model(engine_type, &model_name) {
+                            match tauri::async_runtime::block_on(state.engine_manager.preload_model(engine_type, &model_name)) {
                                 Ok(_) => {
                                     info!(
                                         engine = ?engine_type,
@@ -889,10 +898,12 @@ pub fn run() {
             tauri::RunEvent::ExitRequested { code, .. } => {
                 info!(exit_code = ?code, "app_exit_requested");
                 stop_managed_local_polish_runtime(app, "exit_requested");
+                if let Some(state) = app.try_state::<AppState>() { state.engine_manager.clear_cache(); }
             }
             tauri::RunEvent::Exit => {
                 tray::cleanup(app);
                 stop_managed_local_polish_runtime(app, "exit");
+                if let Some(state) = app.try_state::<AppState>() { state.engine_manager.clear_cache(); }
             }
             #[cfg(target_os = "macos")]
             tauri::RunEvent::Reopen {

@@ -14,7 +14,7 @@ This document describes the high-level architecture of Voice Flow, a Tauri v2 de
 | Domain | Packages | Responsibility |
 |--------|----------|----------------|
 | **Audio Pipeline** | `audio/recorder.rs`, `audio/resampler.rs`, `audio/processor.rs`, `audio/stream_processor.rs`, `audio/beep.rs`, `audio/level_meter.rs` | Capture, process, and manage audio data |
-| **STT Engine** | `stt_engine/sherpa_onnx/`, `stt_engine/cloud/`, `stt_engine/models.rs`, `stt_engine/traits.rs`, `stt_engine/unified_manager.rs` | Convert speech to text using local (sherpa-onnx) or cloud models |
+| **STT Engine** | `stt_engine/mlx/`, `stt_engine/sherpa_onnx/`, `stt_engine/cloud/`, `stt_engine/models.rs`, `stt_engine/traits.rs`, `stt_engine/unified_manager.rs` | Managed MLX-only local STT on Apple Silicon; compatible native engines on Intel/Windows/Linux; optional cloud services |
 | **Transformation Policy** | `services/text_transform.rs` | Provider dispatch, timeouts, intent-specific acceptance, original-text fallback across recording, history, and writing actions |
 | **Polish Engine** | `polish_engine/lfm.rs`, `polish_engine/qwen.rs`, `polish_engine/anthropic.rs`, `polish_engine/openai.rs` | Refine transcribed text for accuracy and formatting |
 | **Text Injection** | `text_injector/macos.rs`, `text_injector/windows.rs` | Insert text at current focus, or into a captured macOS Accessibility target |

@@ -42,6 +42,12 @@ export interface TranscriptionCompleteEvent {
   task_id: number;
 }
 
+export interface TranscriptionPartialEvent {
+  text: string;
+  is_definite: boolean;
+  task_id: number;
+}
+
 export interface CorrectionLearnedEvent {
   wrong: string;
   corrected: string;
@@ -340,10 +346,13 @@ export interface RetentionStatus {
 
 export interface ModelInfo {
   name: string;
+  engine?: string;
   display_name: string;
   size_mb: number;
   url: string;
   downloaded: boolean;
+  downloadable?: boolean;
+  runtime_ready?: boolean | null;
   speed_score: number;
   accuracy_score: number;
   /** Backend catalogue restrictions; empty means no declared restriction. */
@@ -352,8 +361,19 @@ export interface ModelInfo {
   built_in: boolean;
 }
 
+export type ModelDownloadStage = "runtime" | "model";
+
+export interface ModelDownloadProgress {
+  model: string;
+  downloaded: number;
+  total: number;
+  progress: number;
+  stage?: ModelDownloadStage;
+}
+
 export interface PolishModelInfo {
   id: string;
+  engine_type?: string;
   name: string;
   size: string;
   downloaded: boolean;
@@ -364,6 +384,7 @@ export interface PolishModelInfo {
 }
 
 export interface PolishModelStatus {
+  available?: boolean;
   is_loaded: boolean;
   is_downloaded: boolean;
   runtime_ready: boolean;
@@ -371,11 +392,12 @@ export interface PolishModelStatus {
   engine_type: string;
 }
 
-export type PolishModelLatencyClass = "fast" | "balanced" | "slow" | "heavy";
+export type PolishModelLatencyClass = "unmeasured" | "fast" | "balanced" | "slow" | "heavy";
 
 export interface PolishModelLatencyProfile {
   class: PolishModelLatencyClass;
   code:
+    | "unmeasured"
     | "fast_transcript_preserving"
     | "balanced_rewrite"
     | "accurate_rewrite"
@@ -387,6 +409,8 @@ export interface PolishModelLatencyProfile {
 export interface PolishModelCompatibility {
   level: "smooth" | "limited" | "unsupported";
   code:
+    | "os_unsupported"
+    | "platform_unsupported"
     | "smooth"
     | "memory_unknown"
     | "memory_below_minimum"
@@ -954,6 +978,8 @@ export const events = {
       callback(event.payload);
     });
   },
+  onTranscriptionPartial: (callback: (event: TranscriptionPartialEvent) => void) =>
+    listen<TranscriptionPartialEvent>("transcription-partial", (event) => callback(event.payload)),
   onCorrectionLearned: (callback: (event: CorrectionLearnedEvent) => void) => {
     return listen<CorrectionLearnedEvent>("correction-learned", (event) => {
       const { frequency, wrong, corrected } = event.payload;
@@ -1005,19 +1031,9 @@ export const events = {
     });
   },
   onModelDownloadProgress: (
-    callback: (data: {
-      model: string;
-      downloaded: number;
-      total: number;
-      progress: number;
-    }) => void
+    callback: (data: ModelDownloadProgress) => void
   ) => {
-    return listen<{
-      model: string;
-      downloaded: number;
-      total: number;
-      progress: number;
-    }>("model-download-progress", (event) => {
+    return listen<ModelDownloadProgress>("model-download-progress", (event) => {
       const { model, downloaded, total, progress } = event.payload;
       logger.debug("event_received-model_download_progress", { model, downloaded, total, progress });
       callback(event.payload);

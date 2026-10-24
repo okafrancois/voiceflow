@@ -26,13 +26,25 @@ fn test_unified_manager_initialization() {
     let manager = UnifiedPolishManager::new();
     let engines = manager.available_engines();
 
-    // Should have all local engines registered
-    assert_eq!(engines.len(), 5);
+    let apple_silicon = cfg!(all(target_os = "macos", target_arch = "aarch64"));
+    assert_eq!(
+        engines.len(),
+        1 + 4 * usize::from(!apple_silicon)
+            + usize::from(voiceflow_lib::polish_engine::mlx::runtime::supported())
+    );
+    assert_eq!(
+        engines.contains(&PolishEngineType::Mlx),
+        voiceflow_lib::polish_engine::mlx::runtime::supported()
+    );
     assert!(engines.contains(&PolishEngineType::Apple));
-    assert!(engines.contains(&PolishEngineType::Qwen));
-    assert!(engines.contains(&PolishEngineType::Lfm));
-    assert!(engines.contains(&PolishEngineType::Gemma));
-    assert!(engines.contains(&PolishEngineType::Glm));
+    for engine in [
+        PolishEngineType::Qwen,
+        PolishEngineType::Lfm,
+        PolishEngineType::Gemma,
+        PolishEngineType::Glm,
+    ] {
+        assert_eq!(engines.contains(&engine), !apple_silicon);
+    }
 }
 
 #[test]
@@ -56,8 +68,18 @@ fn test_model_auto_detection() {
 fn test_all_models_available() {
     let models = get_all_polish_models();
 
-    // Should have models from both engines
-    assert!(models.len() >= 5);
+    let apple_silicon = cfg!(all(target_os = "macos", target_arch = "aarch64"));
+    if apple_silicon {
+        assert_eq!(
+            models.len(),
+            2 * usize::from(voiceflow_lib::polish_engine::mlx::runtime::supported())
+        );
+        assert!(models
+            .iter()
+            .all(|model| model.engine_type == PolishEngineType::Mlx));
+    } else {
+        assert!(models.len() >= 5);
+    }
 
     // Verify model structure
     for model in &models {
@@ -68,12 +90,16 @@ fn test_all_models_available() {
 
     // Check specific models exist
     let qwen_model = models.iter().find(|m| m.id == "qwen3.5-0.8b");
-    assert!(qwen_model.is_some());
-    assert_eq!(qwen_model.unwrap().engine_type, PolishEngineType::Qwen);
+    assert_eq!(qwen_model.is_some(), !apple_silicon);
+    if let Some(model) = qwen_model {
+        assert_eq!(model.engine_type, PolishEngineType::Qwen);
+    }
 
     let lfm_model = models.iter().find(|m| m.id == "lfm2.5-1.2b");
-    assert!(lfm_model.is_some());
-    assert_eq!(lfm_model.unwrap().engine_type, PolishEngineType::Lfm);
+    assert_eq!(lfm_model.is_some(), !apple_silicon);
+    if let Some(model) = lfm_model {
+        assert_eq!(model.engine_type, PolishEngineType::Lfm);
+    }
 }
 
 #[test]

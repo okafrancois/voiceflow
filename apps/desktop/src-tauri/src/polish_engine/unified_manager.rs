@@ -13,11 +13,18 @@ pub struct UnifiedPolishManager {
     /// Cache for engine instances (engine_type, model_filename) -> instance
     engine_cache: Arc<Mutex<HashMap<EngineCacheKey, Arc<PolishEngineInstance>>>>,
     local_runtime: Arc<crate::polish_engine::local_runtime::LocalPolishRuntimeManager>,
+    mlx: Arc<crate::polish_engine::mlx::MlxPolishEngine>,
 }
 
 impl UnifiedPolishManager {
     pub fn new() -> Self {
         let mut engines: HashMap<PolishEngineType, Arc<dyn PolishEngine>> = HashMap::new();
+        let mlx = Arc::new(crate::polish_engine::mlx::MlxPolishEngine::new(
+            AppPaths::models_dir(),
+        ));
+        if crate::polish_engine::mlx::runtime::supported() {
+            engines.insert(PolishEngineType::Mlx, mlx.clone());
+        }
 
         // Register Qwen engine
         engines.insert(
@@ -42,9 +49,11 @@ impl UnifiedPolishManager {
             PolishEngineType::Apple,
             Arc::new(apple::ApplePolishEngine::new()),
         );
+        engines.retain(|engine, _| engine.is_available());
 
         info!(engine_count = engines.len(), "polish_manager_initialized");
         Self {
+            mlx,
             engines,
             engine_cache: Arc::new(Mutex::new(HashMap::new())),
             local_runtime: Arc::new(
@@ -55,7 +64,9 @@ impl UnifiedPolishManager {
 
     /// Auto-detect engine type from model ID
     pub fn get_engine_by_model_id(model_id: &str) -> Option<PolishEngineType> {
-        if qwen::is_qwen_model(model_id) {
+        if crate::polish_engine::mlx::models::find(model_id).is_some() {
+            Some(PolishEngineType::Mlx)
+        } else if qwen::is_qwen_model(model_id) {
             Some(PolishEngineType::Qwen)
         } else if lfm::is_lfm_model(model_id) {
             Some(PolishEngineType::Lfm)
@@ -100,6 +111,7 @@ impl UnifiedPolishManager {
 
     /// Clear engine cache
     pub fn clear_cache(&self) {
+        self.mlx.stop();
         let mut cache = self.engine_cache.lock().unwrap();
         cache.clear();
         self.local_runtime.stop();
@@ -108,6 +120,13 @@ impl UnifiedPolishManager {
 
     /// Clear specific engine cache
     pub fn clear_engine_cache(&self, engine_type: PolishEngineType, model_filename: Option<&str>) {
+        if engine_type == PolishEngineType::Mlx {
+            match model_filename {
+                Some(model) => self.mlx.stop_model(model),
+                None => self.mlx.stop(),
+            }
+            return;
+        }
         let mut cache = self.engine_cache.lock().unwrap();
 
         if let Some(filename) = model_filename {
@@ -145,6 +164,15 @@ impl UnifiedPolishManager {
 
     /// Load model into cache (for preloading)
     pub fn load_model(&self, engine_type: PolishEngineType, model_id: &str) -> Result<(), String> {
+        engine_type.ensure_available()?;
+        if engine_type == PolishEngineType::Mlx {
+            return std::thread::scope(|scope| {
+                scope
+                    .spawn(|| tauri::async_runtime::block_on(self.mlx.preload(model_id)))
+                    .join()
+                    .map_err(|_| "managed polish preload thread failed".to_string())?
+            });
+        }
         if engine_type == PolishEngineType::Apple {
             // Built into the OS: nothing to load.
             return if self.is_model_downloaded(engine_type, model_id) {
@@ -176,6 +204,19 @@ impl UnifiedPolishManager {
         Ok(())
     }
 
+    pub async fn preload_model(
+        &self,
+        engine_type: PolishEngineType,
+        model_id: &str,
+    ) -> Result<(), String> {
+        engine_type.ensure_available()?;
+        if engine_type == PolishEngineType::Mlx {
+            self.mlx.preload(model_id).await
+        } else {
+            self.load_model(engine_type, model_id)
+        }
+    }
+
     /// Unload model from cache
     pub fn unload_model(&self, engine_type: PolishEngineType, model_id: &str) {
         if let Some(model_filename) = self.get_model_filename(engine_type, model_id) {
@@ -195,6 +236,7 @@ impl UnifiedPolishManager {
         engine_type: PolishEngineType,
         request: PolishRequest,
     ) -> Result<PolishResult, String> {
+        engine_type.ensure_available()?;
         let engine = self
             .engines
             .get(&engine_type)
@@ -204,9 +246,10 @@ impl UnifiedPolishManager {
 
         // If model_name is provided, use cached instance. Built-in engines have
         // no model file and no local runtime.
-        if let (Some(ref model_filename), false) =
-            (&request.model_name, engine_type == PolishEngineType::Apple)
-        {
+        if let (Some(ref model_filename), false) = (
+            &request.model_name,
+            matches!(engine_type, PolishEngineType::Apple | PolishEngineType::Mlx),
+        ) {
             let _instance = self.get_or_create_engine_instance(engine_type, model_filename)?;
             let model_id = polish_model_id_from_filename(model_filename)
                 .unwrap_or_else(|| model_filename.to_string());
@@ -219,7 +262,11 @@ impl UnifiedPolishManager {
 
     /// Check if a model is downloaded for a specific engine
     pub fn is_model_downloaded(&self, engine_type: PolishEngineType, model_id: &str) -> bool {
+        if engine_type.ensure_available().is_err() {
+            return false;
+        }
         match engine_type {
+            PolishEngineType::Mlx => self.mlx.downloaded(model_id),
             PolishEngineType::Qwen => {
                 if let Some(model) = qwen::QwenModelDef::from_id(model_id) {
                     polish_model_file_is_downloaded(model_id, model.filename)
@@ -266,6 +313,9 @@ impl UnifiedPolishManager {
         model_id: &str,
     ) -> Option<String> {
         match engine_type {
+            PolishEngineType::Mlx => {
+                crate::polish_engine::mlx::models::find(model_id).map(|model| model.id.to_string())
+            }
             PolishEngineType::Qwen => {
                 qwen::QwenModelDef::from_id(model_id).map(|m| m.filename.to_string())
             }
@@ -294,15 +344,37 @@ impl UnifiedPolishManager {
     }
 
     pub fn is_local_runtime_ready(&self) -> bool {
-        self.local_runtime.is_ready()
+        PolishEngineType::Qwen.is_available() && self.local_runtime.is_ready()
+    }
+
+    pub fn is_runtime_ready_for(&self, engine_type: PolishEngineType) -> bool {
+        if engine_type.ensure_available().is_err() {
+            return false;
+        }
+        match engine_type {
+            PolishEngineType::Mlx => self.mlx.runtime_ready(),
+            PolishEngineType::Apple => apple::bridge::status() == apple::AppleLlmStatus::Available,
+            _ => self.local_runtime.is_ready(),
+        }
+    }
+
+    pub fn is_model_loaded(&self, engine_type: PolishEngineType, model_id: &str) -> bool {
+        if engine_type == PolishEngineType::Mlx {
+            self.mlx.is_loaded(model_id)
+        } else {
+            self.is_model_downloaded(engine_type, model_id)
+                && self.is_runtime_ready_for(engine_type)
+        }
     }
 
     pub fn stop_local_runtime(&self) {
+        self.mlx.stop();
         self.local_runtime.stop();
     }
 
     pub fn stop_local_runtime_if_idle(&self, idle_for: std::time::Duration) -> bool {
-        self.local_runtime.stop_if_idle(idle_for)
+        let mlx_stopped = self.mlx.stop_if_idle(idle_for);
+        self.local_runtime.stop_if_idle(idle_for) || mlx_stopped
     }
 
     pub fn configure_local_runtime(
@@ -317,6 +389,7 @@ impl UnifiedPolishManager {
         settings: &crate::commands::settings::LocalPolishRuntimeSettings,
         timeout: std::time::Duration,
     ) -> Result<(), String> {
+        PolishEngineType::Qwen.ensure_available()?;
         let config =
             crate::polish_engine::local_runtime::LocalPolishRuntimeConfig::from_settings(settings)?;
         self.local_runtime.check_config(config, timeout)
@@ -328,6 +401,7 @@ impl UnifiedPolishManager {
         model_id: &str,
         model_filename: &str,
     ) -> Result<(), String> {
+        engine_type.ensure_available()?;
         if matches!(
             engine_type,
             PolishEngineType::Cloud | PolishEngineType::Apple
@@ -434,7 +508,19 @@ pub struct PolishModelInfo {
 
 /// Get all available polish models across all engines
 pub fn get_all_polish_models() -> Vec<PolishModelInfo> {
+    polish_models_for_platform(cfg!(all(target_os = "macos", target_arch = "aarch64")))
+}
+
+fn polish_models_for_platform(apple_silicon: bool) -> Vec<PolishModelInfo> {
     let mut models = Vec::new();
+    for model in crate::polish_engine::mlx::models::for_platform(apple_silicon) {
+        models.push(PolishModelInfo {
+            id: model.id.to_string(),
+            display_name: model.name.to_string(),
+            size_display: model.size.to_string(),
+            engine_type: PolishEngineType::Mlx,
+        });
+    }
 
     // Add Qwen models
     for model in qwen::get_all_models() {
@@ -476,12 +562,134 @@ pub fn get_all_polish_models() -> Vec<PolishModelInfo> {
         });
     }
 
+    models.retain(|model| model.engine_type.is_available_for_platform(apple_silicon));
     models
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn apple_silicon_catalogue_keeps_mlx_choices_when_os_is_unsupported() {
+        assert!(
+            crate::polish_engine::mlx::runtime::eligibility("macos", "aarch64", Some("13.7"))
+                .is_err()
+        );
+        let models = super::polish_models_for_platform(true);
+        assert_eq!(models.len(), 2);
+        for model in models {
+            assert_eq!(model.engine_type, super::PolishEngineType::Mlx);
+        }
+        assert!(super::polish_models_for_platform(false)
+            .iter()
+            .all(|model| model.engine_type != super::PolishEngineType::Mlx));
+    }
+
     use super::*;
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[ignore = "downloads a private runtime and runs real MLX models under an explicitly supplied /tmp root"]
+    async fn real_managed_mlx_polish_corrects_french_through_dictation_dispatch() {
+        use crate::polish_engine::mlx;
+        use crate::services::text_transform::{
+            accept_output, await_local_polish, local_polish_timeout, prepare_transcript,
+            TransformIntent,
+        };
+        use std::sync::atomic::AtomicBool;
+        use std::time::Duration;
+
+        let root = std::path::PathBuf::from(
+            std::env::var_os("VOICEFLOW_MLX_POLISH_TEST_ROOT")
+                .expect("explicit isolated test root required"),
+        );
+        let canonical = root.canonicalize().unwrap();
+        assert!(canonical.starts_with("/private/tmp") || canonical.starts_with("/tmp"));
+        let models_dir = root.join("models");
+        let mlx_engine = Arc::new(mlx::MlxPolishEngine::new(models_dir.clone()));
+        let mut manager = UnifiedPolishManager::new();
+        manager.mlx = mlx_engine.clone();
+        manager.engines.insert(PolishEngineType::Mlx, mlx_engine);
+        let input = "bonjour je suis aller a paris hier et jai acheter trois pomme pour ma soeur";
+        let inference_timeout = local_polish_timeout(input);
+        let mut evidence = Vec::new();
+        let mut complete_corrections = 0;
+        for model in mlx::models::MODELS {
+            tokio::time::timeout(
+                Duration::from_secs(20 * 60),
+                mlx::download_model(
+                    &models_dir,
+                    model.id,
+                    Arc::new(AtomicBool::new(false)),
+                    Arc::new(|_, _| {}),
+                ),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+            assert!(manager.is_model_downloaded(PolishEngineType::Mlx, model.id));
+            let request = PolishRequest::new(
+                prepare_transcript(input, TransformIntent::Cleanup),
+                crate::polish_engine::DEFAULT_POLISH_PROMPT,
+                "fr",
+            )
+            .with_model(model.id)
+            .with_timeout(inference_timeout);
+            let result = await_local_polish(
+                PolishEngineType::Mlx,
+                inference_timeout,
+                manager.polish(PolishEngineType::Mlx, request.clone()),
+            )
+            .await
+            .unwrap();
+            let (accepted, rejection) =
+                accept_output(input, &result.text, TransformIntent::Cleanup);
+            evidence.push(serde_json::json!({"model":model.id,"input":input,"output":result.text,"accepted":accepted,"rejection":rejection,
+                "total_ms":result.total_ms,"model_load_ms":result.model_load_ms,"inference_ms":result.inference_ms}));
+            std::fs::write(
+                root.join("inference-evidence.json"),
+                serde_json::to_vec_pretty(&evidence).unwrap(),
+            )
+            .unwrap();
+            assert_eq!(rejection, None, "{model:?}: {accepted}");
+            if accepted
+                == "Bonjour, je suis allé à Paris hier et j'ai acheté trois pommes pour ma sœur."
+            {
+                complete_corrections += 1;
+            }
+            assert!(accepted.contains("acheté"), "{model:?}: {accepted}");
+            assert!(accepted.contains("pommes"), "{model:?}: {accepted}");
+            assert!(manager.is_model_loaded(PolishEngineType::Mlx, model.id));
+            let warm = await_local_polish(
+                PolishEngineType::Mlx,
+                inference_timeout,
+                manager.polish(PolishEngineType::Mlx, request),
+            )
+            .await
+            .unwrap();
+            assert_eq!(warm.model_load_ms, Some(0));
+            assert_eq!(warm.text, result.text);
+        }
+        assert!(
+            complete_corrections > 0,
+            "at least one small model must correct all targeted French grammar errors"
+        );
+        manager.stop_local_runtime();
+        assert!(!manager.is_model_loaded(PolishEngineType::Mlx, "mlx-qwen3-1.7b"));
+        let restarted = await_local_polish(
+            PolishEngineType::Mlx,
+            inference_timeout,
+            manager.polish(
+                PolishEngineType::Mlx,
+                PolishRequest::new(input, crate::polish_engine::DEFAULT_POLISH_PROMPT, "fr")
+                    .with_model("mlx-qwen3-0.6b")
+                    .with_timeout(inference_timeout),
+            ),
+        )
+        .await
+        .unwrap();
+        assert!(restarted.text.contains("acheté"));
+        manager.clear_cache();
+        assert!(!manager.is_model_loaded(PolishEngineType::Mlx, "mlx-qwen3-0.6b"));
+    }
 
     #[test]
     fn apple_intelligence_routes_to_the_built_in_engine() {
@@ -512,19 +720,35 @@ mod tests {
     fn test_unified_polish_manager_new() {
         let manager = UnifiedPolishManager::new();
         let engines = manager.available_engines();
-        assert_eq!(engines.len(), 5);
+        assert_eq!(
+            engines.len(),
+            1 + 4 * usize::from(PolishEngineType::Qwen.is_available())
+                + usize::from(crate::polish_engine::mlx::runtime::supported())
+        );
+        assert_eq!(
+            engines.contains(&PolishEngineType::Mlx),
+            crate::polish_engine::mlx::runtime::supported()
+        );
         assert!(engines.contains(&PolishEngineType::Apple));
-        assert!(engines.contains(&PolishEngineType::Qwen));
-        assert!(engines.contains(&PolishEngineType::Lfm));
-        assert!(engines.contains(&PolishEngineType::Gemma));
-        assert!(engines.contains(&PolishEngineType::Glm));
+        for engine in [
+            PolishEngineType::Qwen,
+            PolishEngineType::Lfm,
+            PolishEngineType::Gemma,
+            PolishEngineType::Glm,
+        ] {
+            assert_eq!(engines.contains(&engine), engine.is_available());
+        }
     }
 
     #[test]
     fn test_unified_polish_manager_default() {
         let manager = UnifiedPolishManager::default();
         let engines = manager.available_engines();
-        assert_eq!(engines.len(), 5);
+        assert_eq!(
+            engines.len(),
+            1 + 4 * usize::from(PolishEngineType::Qwen.is_available())
+                + usize::from(crate::polish_engine::mlx::runtime::supported())
+        );
     }
 
     #[test]
@@ -655,8 +879,14 @@ mod tests {
     #[test]
     fn test_get_all_polish_models() {
         let models = get_all_polish_models();
-        assert!(!models.is_empty());
-        assert!(models.len() >= 7); // At least 3 Qwen + 2 LFM + 1 Gemma + 1 GLM model
+        if PolishEngineType::Qwen.is_available() {
+            assert!(models.len() >= 7);
+        } else {
+            assert_eq!(
+                models.len(),
+                2 * usize::from(crate::polish_engine::mlx::runtime::supported())
+            );
+        }
 
         // Check that we have all engine types
         let has_qwen = models
@@ -671,10 +901,10 @@ mod tests {
         let has_glm = models
             .iter()
             .any(|m| m.engine_type == PolishEngineType::Glm);
-        assert!(has_qwen);
-        assert!(has_lfm);
-        assert!(has_gemma);
-        assert!(has_glm);
+        assert_eq!(has_qwen, PolishEngineType::Qwen.is_available());
+        assert_eq!(has_lfm, PolishEngineType::Lfm.is_available());
+        assert_eq!(has_gemma, PolishEngineType::Gemma.is_available());
+        assert_eq!(has_glm, PolishEngineType::Glm.is_available());
 
         // Check that all models have valid fields
         for model in models {
