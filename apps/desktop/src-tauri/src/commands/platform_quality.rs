@@ -596,10 +596,7 @@ fn apply_processing_choice(
         }
         SetupPreset::CloudStt => {
             let active = settings.get_active_cloud_stt_config();
-            if active.api_key.trim().is_empty()
-                || (settings.active_cloud_stt_provider == "volcengine-streaming"
-                    && active.app_id.trim().is_empty())
-            {
+            if !active.is_configured() {
                 return Err("Configure the active cloud transcription provider first".to_string());
             }
             settings.cloud_stt_enabled = true;

@@ -5,6 +5,7 @@ use crate::stt_engine::cloud::aliyun_stream::{ALIYUN_REALTIME_ENDPOINT, ALIYUN_R
 use crate::stt_engine::cloud::elevenlabs::{
     ELEVENLABS_REALTIME_ENDPOINT, ELEVENLABS_REALTIME_MODEL,
 };
+use crate::stt_engine::cloud::mlx_audio::{MLX_AUDIO_BASE_URL, MLX_AUDIO_MODEL};
 use crate::stt_engine::cloud::volcengine_streaming::{
     DEFAULT_VOLCENGINE_RESOURCE_ID, URL_BIGMODEL_NOSTREAM,
 };
@@ -131,6 +132,28 @@ pub static STT_SCHEMAS: &[ProviderSchema] = &[
             },
         ],
     },
+    ProviderSchema {
+        id: "mlx-audio",
+        name: "MLX Audio (Local)",
+        fields: &[
+            ProviderFieldSchema {
+                name: "Base URL",
+                key: "base_url",
+                required: false,
+                default_value: MLX_AUDIO_BASE_URL,
+                example: MLX_AUDIO_BASE_URL,
+                secret: false,
+            },
+            ProviderFieldSchema {
+                name: "Model",
+                key: "model",
+                required: false,
+                default_value: MLX_AUDIO_MODEL,
+                example: MLX_AUDIO_MODEL,
+                secret: false,
+            },
+        ],
+    },
 ];
 
 pub static POLISH_SCHEMAS: &[ProviderSchema] = &[
@@ -223,7 +246,12 @@ mod tests {
 
         assert_eq!(
             stt_ids,
-            ["volcengine-streaming", "aliyun-stream", "elevenlabs"]
+            [
+                "volcengine-streaming",
+                "aliyun-stream",
+                "elevenlabs",
+                "mlx-audio"
+            ]
         );
         assert_eq!(polish_ids, ["anthropic", "openai"]);
     }

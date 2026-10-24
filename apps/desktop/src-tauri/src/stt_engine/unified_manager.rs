@@ -66,6 +66,9 @@ pub struct ModelInfo {
     pub speed_score: u8,
     pub accuracy_score: u8,
     pub engine: String,
+    /// Catalogue language restrictions. Empty means no restriction is declared.
+    #[serde(default)]
+    pub language_codes: Vec<String>,
     /// Ships with the operating system: no download size, cannot be deleted.
     pub built_in: bool,
 }
@@ -329,6 +332,11 @@ impl UnifiedEngineManager {
             speed_score: def.speed_score,
             accuracy_score: def.accuracy_score,
             engine: def.engine_type.as_str().to_string(),
+            language_codes: def
+                .prefer_lang
+                .iter()
+                .map(|code| (*code).to_string())
+                .collect(),
             built_in: def.built_in,
         }
     }
@@ -868,6 +876,29 @@ impl EngineInstance {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn model_catalog_exposes_language_restrictions() {
+        let manager =
+            super::UnifiedEngineManager::new(std::env::temp_dir().join("catalog_metadata"));
+        let models = manager.get_all_models();
+        let sensevoice = models
+            .iter()
+            .find(|model| model.name == "sense-voice-small")
+            .unwrap();
+        let whisper = models
+            .iter()
+            .find(|model| model.name == "whisper-base")
+            .unwrap();
+        assert_eq!(
+            serde_json::to_value(sensevoice).unwrap()["language_codes"],
+            serde_json::json!(["zh", "yue", "ja", "ko", "en"])
+        );
+        assert_eq!(
+            serde_json::to_value(whisper).unwrap()["language_codes"],
+            serde_json::json!([])
+        );
+    }
+
     use super::*;
 
     #[test]

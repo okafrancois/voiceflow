@@ -36,6 +36,8 @@ Feature specs are versioned delivery contracts. Each spec at `context/feat/[name
 
 | Feature | Version | Status | Spec |
 |---------|---------|--------|------|
+| Visual model selectors | 0.1.0 | Completed | [erd.md](./model-catalog/0.1.0/prd/erd.md) |
+| Local MLX Audio dictation | 0.1.0 | Completed | [erd.md](./mlx-audio-stt/0.1.0/prd/erd.md) |
 | Recording Audio Integrity | 0.1.0 | Completed | [erd.md](./recording-audio-integrity/0.1.0/prd/erd.md) |
 | Vibe coding | 0.1.0 | Completed | [erd.md](./vibe-coding/0.1.0/prd/erd.md) |
 | Local macOS development installation | 0.1.0 | Completed | [erd.md](./dev-local-install/0.1.0/prd/erd.md) |

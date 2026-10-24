@@ -19,6 +19,23 @@ fn test_is_streaming_stt_active_accepts_aliyun_stream_provider_id() {
 }
 
 #[test]
+fn mlx_audio_is_an_active_recording_provider_with_local_defaults() {
+    let mut settings = AppSettings::default();
+    settings.cloud_stt_enabled = true;
+    settings.active_cloud_stt_provider = "mlx-audio".to_string();
+
+    assert!(settings.is_streaming_stt_active());
+    let config = settings.get_active_cloud_stt_config();
+    assert_eq!(config.base_url, "http://127.0.0.1:8000/v1");
+    assert_eq!(
+        config.model,
+        "mlx-community/whisper-large-v3-turbo-asr-fp16"
+    );
+    assert!(config.api_key.is_empty());
+    assert!(validate_cloud_stt_config_for_check(&config).is_ok());
+}
+
+#[test]
 fn cloud_stt_check_validation_requires_schema_fields() {
     let mut config = CloudSttConfig {
         provider_type: "volcengine-streaming".to_string(),

@@ -1,15 +1,7 @@
 import { useEffect, useState } from "react";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { Check, CircleNotch, WarningCircle } from "@phosphor-icons/react";
+import { Check, CircleNotch } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import {
@@ -21,18 +13,11 @@ import {
   type PolishModelStatus,
 } from "@/lib/tauri";
 import { logger } from "@/lib/logger";
+import { showErrorToast } from "@/lib/toast";
+import { ActiveModelSummary, ModelCatalog, TEMPLATE_LABEL_KEYS, parseDisplaySize, displaySize } from "@/components/Home/model/ModelCatalog";
 import { analytics } from "@/lib/analytics";
 import { AnalyticsEvents } from "@/lib/events";
 import { useSettingsContext } from "@/contexts/SettingsContext";
-
-const TEMPLATE_LABEL_KEYS: Record<string, string> = {
-  filler: "model.polish.templateFiller",
-  chat: "model.polish.templateChat",
-  formal: "model.polish.templateFormal",
-  concise: "model.polish.templateConcise",
-  document: "model.polish.templateDocument",
-  agent: "model.polish.templateAgent",
-};
 
 const LATENCY_LABEL_KEYS: Record<PolishModelInfo["latency_profile"]["class"], string> = {
   fast: "model.polish.latency.fast",
@@ -107,7 +92,7 @@ function getCompatibilityWarning(model: PolishModelInfo | undefined, t: TFunctio
 function getTemplateNames(templateIds: string[], t: TFunction): string {
   return templateIds
     .map((id) => t(TEMPLATE_LABEL_KEYS[id] ?? id))
-    .join(", ");
+    .join(" · ");
 }
 
 function getLatencyLabel(model: PolishModelInfo, t: TFunction): string {
@@ -185,24 +170,11 @@ export function PolishSection({
   onCancel,
   onDelete,
 }: PolishSectionProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { settings, updateSetting } = useSettingsContext();
   const [runtimeCheckResult, setRuntimeCheckResult] = useState<CloudConnectionCheckResult | null>(null);
   const [checkingRuntime, setCheckingRuntime] = useState(false);
   const [polishModelStatus, setPolishModelStatus] = useState<PolishModelStatus | null>(null);
-
-  useEffect(() => {
-    if (polishModels.length === 0 || !settings) return;
-
-    const downloadedModels = polishModels.filter((m) => m.downloaded);
-    const isValid = downloadedModels.some((m) => m.id === selectedPolishModel);
-
-    if (!isValid && downloadedModels.length > 0) {
-      const first = downloadedModels[0].id;
-      setSelectedPolishModel(first);
-      updateSetting("polish_model", first).catch((err: unknown) => logger.error("failed_to_update_polish_model", { error: String(err) }));
-    }
-  }, [polishModels, selectedPolishModel, settings]);
 
   const localRuntime = settings?.local_polish_runtime ?? DEFAULT_LOCAL_RUNTIME;
 
@@ -217,10 +189,16 @@ export function PolishSection({
   };
 
   const handlePolishModelSelect = async (modelId: string) => {
-    setSelectedPolishModel(modelId);
-    analytics.track(AnalyticsEvents.SETTING_CHANGED, { setting: "polish_model", value: modelId });
-    await updateSetting("polish_model", modelId);
-    await refreshPolishModelStatus();
+    try {
+      await updateSetting("polish_model", modelId);
+      if (settings?.cloud_polish_enabled) await updateSetting("cloud_polish_enabled", false);
+      setSelectedPolishModel(modelId);
+      analytics.track(AnalyticsEvents.SETTING_CHANGED, { setting: "polish_model", value: modelId });
+      await refreshPolishModelStatus();
+    } catch (error) {
+      logger.error("failed_to_select_polish_model", { error: String(error) });
+      showErrorToast(String(error));
+    }
   };
 
   useEffect(() => {
@@ -258,7 +236,6 @@ export function PolishSection({
 
   if (!settings) return null;
 
-  const downloadedPolishModels = polishModels.filter((m) => m.downloaded);
   const selectedPolishModelInfo = polishModels.find((m) => m.id === selectedPolishModel);
   const selectedCompatibilityWarning = getCompatibilityWarning(selectedPolishModelInfo, t);
   const selectedLatencyCaution = selectedPolishModelInfo
@@ -285,54 +262,49 @@ export function PolishSection({
       : t("model.polish.localRuntime.fileOnlyStatus");
   const runtimeCheckMessage = getRuntimeCheckMessage(runtimeCheckResult, checkingRuntime, t);
 
-  return (
-    <div className="space-y-4">
-      <Card>
-        <CardHeader>
-          <CardTitle>{t("model.polishSection.title")}</CardTitle>
-          <CardDescription>{t("model.polishSection.description")}</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label>{t("model.polish.selectModel")}</Label>
-            <Select
-              value={
-                downloadedPolishModels.length === 0 ? "" : selectedPolishModel
-              }
-              onChange={(e) => handlePolishModelSelect(e.target.value)}
-              options={downloadedPolishModels.map((m) => ({
-                value: m.id,
-                label: `${m.name} · ${m.built_in ? t("model.available.builtIn") : m.size} · ${getLatencyLabel(m, t)}`,
-              }))}
-              placeholder={
-                downloadedPolishModels.length === 0
-                  ? t("model.active.noModels")
-                  : undefined
-              }
-            />
-            {downloadedPolishModels.length === 0 && (
-              <p className="text-xs text-muted-foreground">
-                {t("model.active.noModels")}
-              </p>
-            )}
-            {selectedCompatibilityWarning && (
-              <p className="mt-2 flex items-start gap-1 text-xs leading-5 text-muted-foreground">
-                <WarningCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                <span>{selectedCompatibilityWarning}</span>
-              </p>
-            )}
-            {selectedPolishModelInfo && (
-              <div className="mt-2 space-y-1 text-xs leading-5 text-muted-foreground">
-                <p>
-                  {getLatencyLabel(selectedPolishModelInfo, t)} ·{" "}
-                  {getLatencySummary(selectedPolishModelInfo, t)}
-                </p>
-                {selectedLatencyCaution && <p>{selectedLatencyCaution}</p>}
-              </div>
-            )}
-          </div>
+  const serviceEnabled = settings.cloud_polish_enabled;
+  const serviceProvider = settings.active_cloud_polish_provider;
+  const serviceModel = settings.cloud_polish_configs[serviceProvider]?.model;
+  const activeName = serviceEnabled
+    ? `${serviceProvider} · ${serviceModel || t("model.catalog.configuredService")}`
+    : selectedPolishModelInfo?.name ?? t("model.active.noModels");
+  const latencyValue = { fast: 4, balanced: 3, slow: 2, heavy: 1 };
 
-          <div className="space-y-4 rounded-2xl border border-border/60 p-4">
+  return (
+    <div className="model-picker rounded-2xl border border-border bg-card p-5 md:p-6">
+      <ActiveModelSummary name={activeName} ready={serviceEnabled || selectedRuntimeReady} detail={serviceEnabled ? t("model.catalog.speechService") : selectedRuntimeReady ? t("model.info.ready") : t("model.catalog.runtimePending")}>
+        {!serviceEnabled && selectedPolishModelInfo && <p className="mt-1 text-xs leading-5 text-muted-foreground">{getLatencyLabel(selectedPolishModelInfo, t)} · {getLatencySummary(selectedPolishModelInfo, t)}</p>}
+      </ActiveModelSummary>
+      {!serviceEnabled && selectedCompatibilityWarning && <p className="model-runtime-warning">{selectedCompatibilityWarning}</p>}
+      {!serviceEnabled && selectedLatencyCaution && <p className="mb-4 text-xs leading-5 text-muted-foreground">{selectedLatencyCaution}</p>}
+      {!serviceEnabled && showRuntimeNotReadyWarning && <p className="mb-4 text-xs leading-5 text-muted-foreground">{t("model.polish.localRuntime.notReadyHelp")}</p>}
+      <ModelCatalog
+        kind="polish"
+        models={polishModels.map(model => ({
+          id: model.id,
+          name: model.name,
+          description: model.built_in ? t("model.available.builtIn") : t("model.catalog.memoryRecommended", { memory: formatMemory(model.compatibility.recommended_memory_mb) }),
+          sizeMb: model.built_in ? 0 : parseDisplaySize(model.size),
+          sizeLabel: model.built_in ? t("model.available.builtIn") : parseDisplaySize(model.size) === null ? model.size : displaySize(parseDisplaySize(model.size) ?? 0, i18n.language),
+          available: model.downloaded,
+          builtIn: model.built_in,
+          selected: !serviceEnabled && model.id === selectedPolishModel,
+          speed: { value: latencyValue[model.latency_profile.class], maximum: 4, label: getLatencyLabel(model, t) },
+          usage: getTemplateNames(model.latency_profile.recommended_templates, t),
+          templates: model.latency_profile.recommended_templates,
+          warning: model.built_in && !model.downloaded ? t("model.polish.appleIntelligenceHint") : getCompatibilityWarning(model, t),
+          downloading: polishDownloadingId === model.id,
+          progress: polishProgress,
+          downloadDisabled: polishDownloadingId !== null,
+        }))}
+        onSelect={id => { void handlePolishModelSelect(id); }}
+        onDownload={onDownload}
+        onCancel={onCancel}
+        onDelete={onDelete}
+      />
+      {!serviceEnabled && !selectedPolishModelInfo?.built_in && <details className="model-runtime-details">
+        <summary>{t("model.polish.localRuntime.title")}</summary>
+        <div className="space-y-4 p-1">
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0 space-y-1">
                 <Label>{t("model.polish.localRuntime.title")}</Label>
@@ -388,102 +360,8 @@ export function PolishSection({
               </Button>
             </div>
 
-            {showRuntimeNotReadyWarning && (
-              <p className="flex items-start gap-1 text-xs leading-5 text-muted-foreground">
-                <WarningCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                <span>{t("model.polish.localRuntime.notReadyHelp")}</span>
-              </p>
-            )}
           </div>
-
-          <div className="space-y-3">
-            {polishModels.map((m) => {
-              const isDownloading = polishDownloadingId === m.id;
-              const compatibilityWarning = getCompatibilityWarning(m, t);
-              return (
-                <div
-                  key={m.id}
-                  className="flex items-center justify-between space-x-4 p-4 rounded-2xl border border-border"
-                >
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium text-sm">{m.name}</span>
-                      {m.downloaded && m.id === selectedPolishModel && selectedModelLoaded && (
-                        <Check className="h-4 w-4 text-muted-foreground" />
-                      )}
-                    </div>
-                    <div className="text-xs text-muted-foreground mt-0.5">
-                      {m.built_in ? t("model.available.builtIn") : m.size}
-                    </div>
-                    {m.built_in && !m.downloaded && (
-                      <p className="mt-2 text-xs leading-5 text-muted-foreground">
-                        {t("model.polish.appleIntelligenceHint")}
-                      </p>
-                    )}
-                    <div className="mt-2 space-y-1 text-xs leading-5 text-muted-foreground">
-                      <p>
-                        {getLatencyLabel(m, t)} · {getLatencySummary(m, t)}
-                      </p>
-                    </div>
-                    {compatibilityWarning && (
-                      <p className="mt-2 flex items-start gap-1 text-xs leading-5 text-muted-foreground">
-                        <WarningCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                        <span>{compatibilityWarning}</span>
-                      </p>
-                    )}
-                    {isDownloading && polishProgress !== null && (
-                      <div className="mt-2">
-                        <div className="h-1.5 bg-secondary rounded-full overflow-hidden border border-border">
-                          <div
-                            className="h-full bg-primary transition-all"
-                            style={{ width: `${polishProgress}%` }}
-                          />
-                        </div>
-                        <span className="text-xs text-muted-foreground">
-                          {polishProgress}%
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                  <div className="ml-3">
-                    {m.built_in ? null : m.downloaded ? (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="w-24"
-                        onClick={() => onDelete(m.id)}
-                        disabled={isDownloading}
-                      >
-                        {t("model.available.delete")}
-                      </Button>
-                    ) : isDownloading ? (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="w-24"
-                        onClick={() => onCancel(m.id)}
-                      >
-                        {t("model.available.cancel")}
-                      </Button>
-                    ) : (
-                      <Button
-                        size="sm"
-                        className="w-24"
-                        onClick={() => onDownload(m.id)}
-                        disabled={polishDownloadingId !== null}
-                      >
-                        {t("model.available.download")}
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-
-        </CardContent>
-      </Card>
+      </details>}
     </div>
   );
 }

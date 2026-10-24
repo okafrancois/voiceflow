@@ -87,7 +87,7 @@
 
 | Document | Description |
 |----------|-------------|
-| [`reference/providers/stt.md`](./reference/providers/stt.md) | Shipped cloud STT contracts for Volcengine, Aliyun Realtime, and ElevenLabs |
+| [`reference/providers/stt.md`](./reference/providers/stt.md) | Shipped speech services: Volcengine, Aliyun Realtime, ElevenLabs, and local MLX Audio |
 | [`reference/providers/polish.md`](./reference/providers/polish.md) | Shipped Anthropic and OpenAI Polish contracts plus local runtime notes |
 | [`reference/providers/capswriter-polish-latency.md`](./reference/providers/capswriter-polish-latency.md) | CapsWriter-Offline polish latency case study and Voice Flow optimization guidance |
 
@@ -114,6 +114,8 @@ Versioned feature specs with verification status. Each lives under `feat/<name>/
 
 | Feature | Version | Status |
 |---------|---------|--------|
+| [Visual model selectors](./feat/model-catalog/0.1.0/prd/erd.md) | 0.1.0 | Completed |
+| [Local MLX Audio dictation](./feat/mlx-audio-stt/0.1.0/prd/erd.md) | 0.1.0 | Completed |
 | [Recording Audio Integrity](./feat/recording-audio-integrity/0.1.0/prd/erd.md) | 0.1.0 | Completed |
 | [Polish profile structure](./feat/polish-profile-structure/0.1.0/prd/erd.md) | 0.1.0 | Completed |
 | [Vibe coding](./feat/vibe-coding/0.1.0/prd/erd.md) | 0.1.0 | Completed |

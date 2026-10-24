@@ -57,6 +57,7 @@ export function CloudSttSection() {
   };
 
   const activeProviderId = settings?.active_cloud_stt_provider ?? "volcengine-streaming";
+  const isLocalProvider = activeProviderId === "mlx-audio";
   const activeSchema = schemas?.stt.find((s) => s.id === activeProviderId);
   const currentConfig = settings?.cloud_stt_configs?.[activeProviderId] ?? getDefaultConfig(activeProviderId);
   const configRecord = currentConfig as unknown as Record<string, string>;
@@ -162,17 +163,17 @@ export function CloudSttSection() {
         <div className="flex items-center gap-4">
           <img src={sttSvg} alt="STT" className="w-32 h-auto drop-shadow-sm" />
           <div>
-            <CardTitle className="text-base">{t("cloud.stt.title", "Cloud STT")}</CardTitle>
-            <CardDescription className="text-sm">{t("cloud.stt.description", "Use cloud-based STT engines for transcription")}</CardDescription>
+            <CardTitle className="text-base">{isLocalProvider ? "MLX Audio" : t("cloud.stt.title", "Cloud STT")}</CardTitle>
+            <CardDescription className="text-sm">{isLocalProvider ? t("cloud.stt.local.description") : t("cloud.stt.description")}</CardDescription>
           </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="flex items-center justify-between space-x-4">
           <div>
-            <Label htmlFor="cloud-stt">{t("model.stt.cloud.enable", "Enable Cloud STT")}</Label>
+            <Label htmlFor="cloud-stt">{isLocalProvider ? t("cloud.stt.local.enable") : t("model.stt.cloud.enable")}</Label>
             <p className="text-xs text-muted-foreground">
-              {t("model.stt.cloud.enableDesc", "Use cloud API for transcription instead of local models.")}
+              {isLocalProvider ? t("cloud.stt.local.serverHint") : t("model.stt.cloud.enableDesc")}
             </p>
           </div>
           <Switch
@@ -184,7 +185,7 @@ export function CloudSttSection() {
 
         {isEnabled && (
           <div className="space-y-4 pt-4 border-t border-border">
-            <a
+            {!isLocalProvider && <a
               href="https://github.com/okafrancois/voiceflow/discussions/3"
               target="_blank"
               rel="noopener noreferrer"
@@ -192,7 +193,7 @@ export function CloudSttSection() {
             >
               {t("cloud.stt.providerGuide", "How to get API credentials")}
               <ArrowSquareOut className="w-3 h-3" />
-            </a>
+            </a>}
 
             <div className="space-y-2">
               <Label>{t("model.stt.cloud.provider", "Provider")}</Label>

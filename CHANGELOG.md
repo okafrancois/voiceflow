@@ -2,6 +2,32 @@
 
 All notable changes to the desktop application will be documented in this file.
 
+## [v1.5.0](https://github.com/okafrancois/voiceflow/releases/tag/v1.5.0) (2026-10-24)
+
+Signed and notarized macOS universal release for Apple Silicon and Intel.
+
+### Features
+
+- Connect dictation to a separately running local MLX Audio server. Submit
+  complete recordings, including their final audio samples, without an API
+  key. Local transcription stays on this computer through a loopback endpoint.
+- Compare transcription models with aligned speed and accuracy gauges.
+  Filter by disk size, dictation language and installed status, and sort by
+  speed, accuracy or size.
+- Compare polish models using responsiveness profiles and recommended uses.
+  Filter by cleanup, messages, formal writing, concise text, documents or
+  prompts, with clear memory and runtime guidance.
+- Keep the configured model visible above the filtered catalogue and select
+  installed alternatives directly. Download progress, cancellation, deletion
+  and built-in model protections remain available.
+
+### Notes
+
+- Catalogue ratings are indicative; they are not measurements on your Mac.
+- MLX Audio and its model files are installed separately. Start its local
+  server before enabling the MLX Audio speech provider in Voice Flow.
+- The MLX Audio connection is opt-in and does not change existing providers.
+
 ## [v1.4.3](https://github.com/okafrancois/voiceflow/releases/tag/v1.4.3) (2026-10-24)
 
 Signed and notarized macOS universal release for Apple Silicon and Intel.

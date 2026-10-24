@@ -111,6 +111,10 @@ We use a strict **4px grid** for padding, margins, and sizing, utilizing Tailwin
 - Use the `md:` prefix to apply standard desktop sizes (e.g., `md:rounded-3xl`, `md:p-6`, `md:text-2xl`).
 - Desktop app window minimum size is strictly constrained to `960x720`.
 
+### 4.4 Model comparison selectors
+
+The approved model catalogue uses flat rows with shared metric columns instead of nested cards. Its local controls have 7px corners, its active summary has 10px corners, and its data marks use a muted sage accent in both themes. These are scoped exceptions to the general radius guidance above; they do not change global buttons or settings panels. Compare speed/accuracy using catalogue indices and polish responsiveness using backend latency classes. Keep benchmark claims separate from these ratings. Use container queries because the settings modal can be narrow inside a wider desktop window.
+
 ---
 
 ## 5. Illustration System

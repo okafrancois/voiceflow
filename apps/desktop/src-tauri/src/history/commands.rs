@@ -900,9 +900,13 @@ pub fn save_to_history_with_delivery_status(
     let (stt_engine, stt_model, language, is_cloud, text_retention, audio_retention) = {
         let settings = state.settings.lock();
         let cloud_config = settings.get_active_cloud_stt_config();
-        let is_cloud = cloud_config.enabled;
-        let engine_str = if is_cloud {
-            format!("cloud-{}", cloud_config.provider_type)
+        let is_cloud = cloud_config.enabled && !cloud_config.is_local();
+        let engine_str = if cloud_config.enabled {
+            if cloud_config.is_local() {
+                cloud_config.provider_type.clone()
+            } else {
+                format!("cloud-{}", cloud_config.provider_type)
+            }
         } else {
             crate::stt_engine::UnifiedEngineManager::get_engine_by_model_name(&settings.model)
                 .map(|et| et.as_str().to_string())
@@ -910,7 +914,7 @@ pub fn save_to_history_with_delivery_status(
         };
         (
             engine_str,
-            if is_cloud {
+            if cloud_config.enabled {
                 Some(cloud_config.model.clone())
             } else {
                 Some(settings.model.clone())
@@ -1055,9 +1059,13 @@ fn save_failed_history_with_duration_gate(
     let (stt_engine, stt_model, language, is_cloud, text_retention, audio_retention) = {
         let settings = state.settings.lock();
         let cloud_config = settings.get_active_cloud_stt_config();
-        let is_cloud = cloud_config.enabled;
-        let engine_str = if is_cloud {
-            format!("cloud-{}", cloud_config.provider_type)
+        let is_cloud = cloud_config.enabled && !cloud_config.is_local();
+        let engine_str = if cloud_config.enabled {
+            if cloud_config.is_local() {
+                cloud_config.provider_type.clone()
+            } else {
+                format!("cloud-{}", cloud_config.provider_type)
+            }
         } else {
             crate::stt_engine::UnifiedEngineManager::get_engine_by_model_name(&settings.model)
                 .map(|et| et.as_str().to_string())
@@ -1065,7 +1073,7 @@ fn save_failed_history_with_duration_gate(
         };
         (
             engine_str,
-            if is_cloud {
+            if cloud_config.enabled {
                 Some(cloud_config.model.clone())
             } else {
                 Some(settings.model.clone())

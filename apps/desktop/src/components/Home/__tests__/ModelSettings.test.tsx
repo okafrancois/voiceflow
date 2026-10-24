@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ModelSettings } from "../ModelSettings";
 import type { AppSettings, ModelInfo, PolishModelInfo, PolishModelStatus } from "@/lib/tauri";
@@ -311,5 +311,58 @@ describe("ModelSettings voice model downloads", () => {
     expect(await screen.findAllByText(/model\.available\.builtIn/)).not.toHaveLength(0);
     expect(screen.queryByText(/0MB/)).toBeNull();
     expect(screen.queryByRole("button", { name: "model.available.delete" })).toBeNull();
+  });
+
+  it("combines disk size and availability filters without changing selection", async () => {
+    getModelsMock.mockResolvedValue([
+      voiceModel,
+      { ...voiceModel, name: "whisper-base", display_name: "Whisper Base", size_mb: 279, downloaded: true },
+      { ...voiceModel, name: "whisper-tiny", display_name: "Whisper Tiny", size_mb: 99 },
+    ]);
+    render(<ModelSettings />);
+    const catalogue = await screen.findByRole("region", { name: "model.catalog.title" });
+    fireEvent.change(within(catalogue).getByRole("combobox", { name: "model.catalog.size" }), { target: { value: "500" } });
+    expect(within(catalogue).queryByRole("article", { name: voiceModel.display_name })).toBeNull();
+    fireEvent.click(within(catalogue).getByRole("checkbox", { name: "model.catalog.readyOnly" }));
+    expect(within(catalogue).getAllByRole("article")).toHaveLength(1);
+    expect(within(catalogue).getByRole("article", { name: "Whisper Base" })).toBeInTheDocument();
+    expect(updateSettingContextMock).not.toHaveBeenCalled();
+  });
+
+  it("filters restricted languages using backend metadata and restores all models", async () => {
+    getModelsMock.mockResolvedValue([
+      voiceModel,
+      { ...voiceModel, name: "sense-voice-small", display_name: "SenseVoice Small", language_codes: ["zh", "ja", "ko", "en"] },
+      { ...voiceModel, name: "restricted-example", display_name: "French Model", language_codes: ["fr"] },
+    ]);
+    render(<ModelSettings />);
+    const catalogue = await screen.findByRole("region", { name: "model.catalog.title" });
+    fireEvent.change(within(catalogue).getByRole("combobox", { name: "model.catalog.language" }), { target: { value: "current" } });
+    expect(within(catalogue).queryByRole("article", { name: "French Model" })).toBeNull();
+    expect(within(catalogue).getByRole("article", { name: "SenseVoice Small" })).toBeInTheDocument();
+    fireEvent.change(within(catalogue).getByRole("combobox", { name: "model.catalog.language" }), { target: { value: "all" } });
+    expect(within(catalogue).getByRole("article", { name: "French Model" })).toBeInTheDocument();
+  });
+
+  it("shows the active MLX service and switches to native only after an explicit selection", async () => {
+    const previous = { enabled: testSettings.cloud_stt_enabled, provider: testSettings.active_cloud_stt_provider };
+    testSettings.cloud_stt_enabled = true;
+    testSettings.active_cloud_stt_provider = "mlx-audio";
+    getModelsMock.mockResolvedValue([{ ...voiceModel, downloaded: true }]);
+    try {
+      render(<ModelSettings />);
+      await screen.findByRole("article", { name: voiceModel.display_name });
+      expect(screen.getByText(/MLX Audio/)).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "model.catalog.selected" })).toBeNull();
+      expect(updateSettingContextMock).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole("button", { name: "model.catalog.use" }));
+      await waitFor(() => {
+        expect(updateSettingContextMock).toHaveBeenNthCalledWith(1, "model", voiceModel.name);
+        expect(updateSettingContextMock).toHaveBeenNthCalledWith(2, "cloud_stt_enabled", false);
+      });
+    } finally {
+      testSettings.cloud_stt_enabled = previous.enabled;
+      testSettings.active_cloud_stt_provider = previous.provider;
+    }
   });
 });

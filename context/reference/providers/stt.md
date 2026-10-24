@@ -1,6 +1,6 @@
-# Shipped cloud STT providers
+# Shipped speech transcription services
 
-This reference describes the cloud speech-to-text providers that Voice Flow can dispatch today. The provider IDs and field definitions come from `apps/desktop/src-tauri/src/provider_schema.rs`.
+This reference describes the cloud and local-service speech-to-text providers that Voice Flow can dispatch today. The provider IDs and field definitions come from `apps/desktop/src-tauri/src/provider_schema.rs`.
 
 ## Provider list
 
@@ -9,18 +9,19 @@ This reference describes the cloud speech-to-text providers that Voice Flow can 
 | `volcengine-streaming` | Volcengine Streaming | Volcengine binary WebSocket | `VolcengineStreamingClient` |
 | `aliyun-stream` | Aliyun Realtime | DashScope Realtime JSON WebSocket | `AliyunStreamClient` |
 | `elevenlabs` | ElevenLabs | Scribe v2 Realtime JSON WebSocket | `ElevenLabsStreamingClient` |
+| `mlx-audio` | MLX Audio (Local) | Loopback HTTP multipart WAV | `MlxAudioClient` |
 
-No other cloud STT provider ID is supported. OpenAI Whisper, OpenAI Realtime, Deepgram, Volcengine Flash, and custom batch endpoints are not exposed by the backend.
+No other service provider ID is supported. OpenAI's hosted Whisper, OpenAI Realtime, Deepgram, Volcengine Flash, and arbitrary remote batch endpoints are not exposed by the backend. The MLX Audio provider uses locally downloaded Whisper or other MLX-compatible recognition checkpoints.
 
 ## Shared recording contract
 
-All three providers implement the same recording lifecycle:
+All four providers implement the same recording lifecycle:
 
 1. The backend creates a `StreamingSttClient` from the saved provider ID.
-2. `connect()` completes the WebSocket handshake and provider setup.
+2. `connect()` completes provider setup: a WebSocket handshake for vendor services, or a local model-list request for MLX Audio.
 3. The recording pipeline forwards 16 kHz mono PCM chunks through the provider audio channel.
-4. `finish()` closes the audio channel, sends the provider's final packet, and waits for a final transcript.
-5. `close()` releases the WebSocket connection.
+4. `finish()` closes the audio channel, finalizes the provider request, and waits for a final transcript.
+5. `close()` releases the connection or discards a buffered local session without transcribing it.
 
 The connection check uses the saved active configuration. It connects and closes without sending user audio.
 
@@ -95,14 +96,42 @@ Official references:
 - [ElevenLabs Realtime STT API](https://elevenlabs.io/docs/api-reference/speech-to-text/v-1-speech-to-text-realtime)
 - [ElevenLabs transcripts and commit strategies](https://elevenlabs.io/docs/eleven-api/guides/how-to/speech-to-text/realtime/transcripts-and-commit-strategies)
 
+## MLX Audio (Local)
+
+| Field | Value |
+|-------|-------|
+| Provider ID | `mlx-audio` |
+| Default Base URL | `http://127.0.0.1:8000/v1` |
+| Default model | `mlx-community/whisper-large-v3-turbo-asr-fp16` |
+| Authentication | None |
+| Connection check | `GET /v1/models`, without audio or model loading |
+| Transcription | `POST /v1/audio/transcriptions`, multipart WAV, `response_format=json` |
+| Audio | Lossless PCM, 16 kHz, 16-bit, mono |
+
+Start the MLX Audio server before dictating. Choose **MLX Audio (Local)** in the existing speech-service provider selector, enable it, and keep the default URL and model or enter another locally cached recognition checkpoint. No API key is needed. The default API server's model list includes loaded models only, so an empty list does not mean the downloaded checkpoints are unavailable.
+
+This provider buffers the recording and sends the complete WAV after release. All chunks, including the final partial chunk, are drained before submission. It emits a final transcript without simulated partial results. Cancellation before finish submits no audio. HTTP(S) endpoints must use localhost or a loopback IP; proxies and redirects are disabled. Connection requests are bounded to five seconds and inference requests to five minutes. A failed request is reported without silently switching engines.
+
+Language tags such as `fr-FR` become `fr`; automatic language selection omits the language field. The current MLX Audio HTTP transcription contract does not forward Voice Flow's contextual glossary/initial-prompt fields. Existing post-transcription correction and polish remain available. The history identifies this provider as local. File import and history retry retain their existing native-local-engine policy.
+
+An explicit local inference check is available after starting the server:
+
+```sh
+cd apps/desktop/src-tauri
+VOICEFLOW_MLX_TEST_WAV=/absolute/path/french-sample.wav cargo test --test mlx_audio_stt_test mlx_audio_transcribes_a_real_local_french_recording -- --ignored --nocapture
+```
+
+The manual fixture should contain the French phrase about testing a French voice directly on a Mac. This check is ignored by default and does not download a model by itself; prepare the server and its checkpoint first.
+
 ## Deterministic contract tests
 
-These tests run against local WebSocket servers. They need no vendor credentials or internet connection.
+These tests run against local WebSocket or HTTP servers. They need no vendor credentials or internet connection.
 
 ```bash
 cd apps/desktop/src-tauri
 cargo test --test volcengine_streaming_mock_test
 cargo test --test cloud_stt_provider_contract_test
+cargo test --test mlx_audio_stt_test
 cargo test --test cloud_stt_streaming_lifecycle_test
 ```
 

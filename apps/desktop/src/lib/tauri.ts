@@ -346,6 +346,8 @@ export interface ModelInfo {
   downloaded: boolean;
   speed_score: number;
   accuracy_score: number;
+  /** Backend catalogue restrictions; empty means no declared restriction. */
+  language_codes?: string[];
   /** Ships with the operating system: no download size, cannot be deleted. */
   built_in: boolean;
 }

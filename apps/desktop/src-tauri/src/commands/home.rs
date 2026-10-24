@@ -60,9 +60,7 @@ pub fn get_dictation_home(state: State<'_, AppState>) -> Result<DictationHome, S
     let cloud = settings.cloud_stt_enabled;
     let provider_ready = if cloud {
         let config = settings.get_active_cloud_stt_config();
-        !config.api_key.trim().is_empty()
-            && (settings.active_cloud_stt_provider != "volcengine-streaming"
-                || !config.app_id.trim().is_empty())
+        config.is_configured()
     } else {
         let (engine, model) = state
             .engine_manager
@@ -119,7 +117,7 @@ pub fn get_dictation_home(state: State<'_, AppState>) -> Result<DictationHome, S
         setup_path,
         hotkey: settings.get_dictate_hotkey(),
         trigger_mode,
-        is_cloud: cloud,
+        is_cloud: cloud && !settings.get_active_cloud_stt_config().is_local(),
         last_result,
     })
 }

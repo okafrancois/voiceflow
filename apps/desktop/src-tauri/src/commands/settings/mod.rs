@@ -59,6 +59,16 @@ pub struct CloudSttConfig {
     pub language: String,
 }
 
+impl CloudSttConfig {
+    pub fn is_local(&self) -> bool {
+        self.provider_type == "mlx-audio"
+    }
+
+    pub fn is_configured(&self) -> bool {
+        validate_cloud_stt_config_for_check(self).is_ok()
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CloudConnectionCheckResult {
     pub ok: bool,
@@ -326,6 +336,14 @@ fn validate_cloud_stt_config_for_check(
         });
     }
 
+    if config.is_local() {
+        crate::stt_engine::cloud::mlx_audio::local_base_url(&config.base_url).map_err(
+            |message| CloudConfigValidationError {
+                kind: "invalid_url",
+                message,
+            },
+        )?;
+    }
     Ok(())
 }
 
@@ -509,6 +527,15 @@ impl AppSettings {
             .unwrap_or_default();
         config.enabled = self.cloud_stt_enabled;
         config.provider_type = self.active_cloud_stt_provider.clone();
+        if config.is_local() {
+            if config.base_url.trim().is_empty() {
+                config.base_url =
+                    crate::stt_engine::cloud::mlx_audio::MLX_AUDIO_BASE_URL.to_string();
+            }
+            if config.model.trim().is_empty() {
+                config.model = crate::stt_engine::cloud::mlx_audio::MLX_AUDIO_MODEL.to_string();
+            }
+        }
         config
     }
 
@@ -519,12 +546,12 @@ impl AppSettings {
             .unwrap_or_default()
     }
 
-    /// Check if any streaming cloud STT provider is active
+    /// Check whether an external recording consumer is active, including local MLX HTTP.
     pub fn is_streaming_stt_active(&self) -> bool {
         self.cloud_stt_enabled
             && matches!(
                 self.active_cloud_stt_provider.as_str(),
-                "volcengine-streaming" | "aliyun-stream" | "elevenlabs"
+                "volcengine-streaming" | "aliyun-stream" | "elevenlabs" | "mlx-audio"
             )
     }
 
@@ -1738,7 +1765,11 @@ pub async fn check_active_cloud_stt_config(
                 "cloud_stt_config_check_ok"
             );
             CloudConnectionCheckResult::success(
-                "Connection OK. Endpoint and credentials are usable.",
+                if config.is_local() {
+                    "Local MLX Audio server is reachable. Models load on first transcription."
+                } else {
+                    "Connection OK. Endpoint and credentials are usable."
+                },
                 elapsed_ms(started_at),
             )
         }

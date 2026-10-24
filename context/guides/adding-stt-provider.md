@@ -11,7 +11,9 @@ This guide walks through adding a new cloud speech-to-text provider to the strea
 
 ## Overview
 
-All STT engines (local and cloud) implement the unified `SttEngine` trait. Cloud providers integrate through the `StreamingSttClient` enum, which implements `SttEngine` and delegates to per-provider WebSocket clients.
+Recording consumers implement the unified `RecordingConsumer` trait. Service providers integrate through `StreamingSttClient` and `StreamingConsumer`. The existing vendor clients use WebSockets; `mlx-audio` buffers audio and submits a local HTTP request on finish. Native model engines use `BufferingConsumer`.
+
+Register service IDs and configuration fields in `provider_schema.rs`, dispatch them in `stt_engine/cloud/mod.rs`, and include them in the active-consumer settings predicate. Connection/readiness checks must use the schema's required fields: a local service must not acquire an artificial API-key requirement. The recording pipeline and insertion code stay provider-agnostic.
 
 ## Step 1: Implement the Trait
 

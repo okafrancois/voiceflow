@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PolishSection } from "../model/PolishSection";
 import type { AppSettings, PolishModelInfo, PolishModelStatus } from "@/lib/tauri";
@@ -232,5 +232,24 @@ describe("PolishSection local runtime readiness", () => {
     expect(screen.getAllByText("model.available.builtIn")).not.toHaveLength(0);
     expect(screen.getAllByRole("button", { name: "model.available.delete" })).toHaveLength(1);
     expect(screen.queryByRole("button", { name: "model.available.download" })).toBeNull();
+  });
+
+  it("filters polish models by backend template recommendations and keeps the active summary", async () => {
+    const documentModel: PolishModelInfo = {
+      ...polishModel,
+      id: "qwen3-4b",
+      name: "Qwen3 4B",
+      size: "2.6GB",
+      downloaded: false,
+      latency_profile: { class: "slow", code: "accurate_rewrite", recommended_templates: ["document", "formal"], caution_templates: ["filler"] },
+    };
+    renderPolishSection({is_loaded:true,is_downloaded:true,runtime_ready:true,current_model:polishModel.id,engine_type:"qwen"}, [polishModel,documentModel]);
+    await screen.findByText("model.polish.localRuntime.readyStatus");
+    const catalogue = screen.getByRole("region", {name:"model.catalog.title"});
+    fireEvent.change(within(catalogue).getByRole("combobox", {name:"model.catalog.usage"}), {target:{value:"document"}});
+    expect(within(catalogue).getAllByRole("article")).toHaveLength(1);
+    expect(within(catalogue).getByRole("article", {name:"Qwen3 4B"})).toBeInTheDocument();
+    expect(screen.getByText(polishModel.name)).toBeInTheDocument();
+    expect(updateSettingMock).not.toHaveBeenCalled();
   });
 });

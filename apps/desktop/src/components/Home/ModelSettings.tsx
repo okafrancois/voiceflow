@@ -17,7 +17,6 @@ import { VoiceInputSection } from "./model/VoiceInputSection";
 import { PolishSection } from "./model/PolishSection";
 import { PerformanceSection } from "./model/PerformanceSection";
 
-import { SegmentedControl } from "@/components/ui/segmented-control";
 
 type ModelSettingsTab = "voice" | "polish" | "performance";
 
@@ -211,6 +210,7 @@ export function ModelSettings({
       await modelCommands.downloadPolishModelById(modelId);
     } catch (err) {
       logger.error("failed_to_download_polish_model", { error: String(err) });
+      showErrorToast(err instanceof Error ? err.message : String(err));
       polishDownloadingIdRef.current = null;
       setPolishDownloadingId(null);
       setPolishProgress(null);
@@ -258,15 +258,13 @@ export function ModelSettings({
       variant={variant}
       showHeader={variant === "page"}
     >
-      <SegmentedControl
-        items={[
-          { value: "voice", label: t("model.tabs.voice", "Voice Input") },
-          { value: "polish", label: t("model.tabs.polish", "Polish") },
-          { value: "performance", label: t("model.tabs.performance", "Performance") },
-        ]}
-        value={activeTab}
-        onChange={(v) => setActiveTab(v as ModelSettingsTab)}
-      />
+      <nav className="model-settings-tabs" aria-label={t("model.title")}>
+        {([
+          { value: "voice", label: t("model.tabs.voice") },
+          { value: "polish", label: t("model.tabs.polish") },
+          { value: "performance", label: t("model.tabs.performance") },
+        ] as const).map(tab => <button type="button" key={tab.value} aria-pressed={activeTab === tab.value} onClick={() => setActiveTab(tab.value)}>{tab.label}</button>)}
+      </nav>
 
       <div >
         {activeTab === "voice" && (

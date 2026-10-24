@@ -1,6 +1,7 @@
 pub mod aliyun_stream;
 pub mod elevenlabs;
 pub mod engine;
+pub mod mlx_audio;
 pub mod volcengine_streaming;
 
 use crate::commands::settings::CloudSttConfig;
@@ -8,6 +9,7 @@ use crate::stt_engine::traits::{PartialResultCallback, RecordingConsumer, SttCon
 use aliyun_stream::AliyunStreamClient;
 use async_trait::async_trait;
 use elevenlabs::ElevenLabsStreamingClient;
+use mlx_audio::MlxAudioClient;
 use volcengine_streaming::VolcengineStreamingClient;
 
 pub use crate::stt_engine::traits::{
@@ -20,6 +22,7 @@ pub enum StreamingSttClient {
     Volcengine(VolcengineStreamingClient),
     Aliyun(AliyunStreamClient),
     ElevenLabs(ElevenLabsStreamingClient),
+    MlxAudio(MlxAudioClient),
 }
 
 impl StreamingSttClient {
@@ -38,6 +41,9 @@ impl StreamingSttClient {
             "elevenlabs" => Ok(Self::ElevenLabs(ElevenLabsStreamingClient::new(
                 config, language, context,
             ))),
+            "mlx-audio" => Ok(Self::MlxAudio(MlxAudioClient::new(
+                config, language, context,
+            )?)),
             _ => Err(format!(
                 "Unsupported streaming STT provider: {}",
                 config.provider_type
@@ -50,6 +56,7 @@ impl StreamingSttClient {
             Self::Volcengine(c) => c.connect().await,
             Self::Aliyun(c) => c.connect().await,
             Self::ElevenLabs(c) => c.connect().await,
+            Self::MlxAudio(c) => c.connect().await,
         }
     }
 
@@ -58,6 +65,7 @@ impl StreamingSttClient {
             Self::Volcengine(c) => c.get_audio_sender().await,
             Self::Aliyun(c) => c.get_audio_sender().await,
             Self::ElevenLabs(c) => c.get_audio_sender().await,
+            Self::MlxAudio(c) => c.get_audio_sender().await,
         }
     }
 
@@ -66,6 +74,7 @@ impl StreamingSttClient {
             Self::Volcengine(c) => c.finish().await,
             Self::Aliyun(c) => c.finish().await,
             Self::ElevenLabs(c) => c.finish().await,
+            Self::MlxAudio(c) => c.finish().await,
         }
     }
 
@@ -74,6 +83,7 @@ impl StreamingSttClient {
             Self::Volcengine(c) => c.close().await,
             Self::Aliyun(c) => c.close().await,
             Self::ElevenLabs(c) => c.close().await,
+            Self::MlxAudio(c) => c.close().await,
         }
     }
 
@@ -82,6 +92,7 @@ impl StreamingSttClient {
             Self::Volcengine(_) => "Volcengine",
             Self::Aliyun(_) => "Aliyun",
             Self::ElevenLabs(_) => "Eleven Labs",
+            Self::MlxAudio(_) => "MLX Audio",
         }
     }
 
@@ -90,16 +101,17 @@ impl StreamingSttClient {
             Self::Volcengine(c) => c.set_partial_callback(callback),
             Self::Aliyun(c) => c.set_partial_callback(callback),
             Self::ElevenLabs(c) => c.set_partial_callback(callback),
+            Self::MlxAudio(c) => c.set_partial_callback(callback),
         }
     }
 }
 
-/// Recording consumer backed by a cloud streaming STT provider.
+/// Recording consumer backed by a configured speech service.
 ///
 /// The cloud client is connected and fully configured (partial callback,
 /// audio sender obtained) before this struct is created. `send_chunk`
-/// forwards to the WebSocket audio channel; `finish` drops the sender
-/// and awaits the final result.
+/// forwards to the service audio channel; `finish` drops the sender
+/// and awaits the final result. MLX Audio buffers this channel for local HTTP.
 use tokio::sync::Mutex;
 
 pub struct StreamingConsumer {
