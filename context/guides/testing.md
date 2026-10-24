@@ -349,6 +349,31 @@ team, notarization ticket and DMG checksum. Verify the updater signature with
 the public key from an existing production application, confirm that the new
 app embeds the same key, and read the live latest updater endpoint.
 
+Match the updater's actual signature wire format: it decodes an outer-base64
+Minisign envelope, so accepting raw signature text in an independent verifier
+can hide a broken manifest. Validate the archive signature, key ID and trusted
+comment signature, and reject a changed archive. When extracting the embedded
+public key from a compiled executable, normalize its complete two-line envelope
+and validate the 42-byte public-key record before comparing keys; neighboring
+compiler-concatenated strings are not part of that envelope.
+
+Verify the final packaged MLX bootstrap, not just build-time inputs or the
+llama-server resources: check executable permissions, ARM architecture,
+Developer ID signature/team and pinned `uv --version`. Mount the DMG read-only,
+compare its application with the updater payload, and validate that contained
+application's signature, stapled notarization ticket and Gatekeeper assessment.
+Tauri can staple the application before creating its signed DMG; record a
+missing standalone container ticket explicitly rather than claiming that the
+container itself is notarized or skipping the contained application's checks.
+
+Keep healthy subprocess-fixture startup allowances separate from the deadline
+behavior being tested. CI contention can exceed an arbitrary two-second Python
+startup allowance before cancellation or integrity assertions are reached.
+Reuse the bounded production startup allowance for healthy fixtures, while
+retaining explicit short startup/request-deadline tests and process-reaping
+bounds. Preserve the failing CI evidence and require a fresh green run on the
+corrected exact source; do not relabel a failed run as successful.
+
 Artifact verification does not require installing or launching the production
 app, or changing local privacy permissions. Ad-hoc Dev rebuilds can invalidate
 local privacy grants; keep that limitation separate from signed production

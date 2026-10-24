@@ -13,6 +13,9 @@ A plan belongs in this directory only when all of the following are true:
 
 ## Completed Plans
 
+- [Managed MLX and live transcription v1.6.0](./2026-10-24-011-release-v1.6.0-plan.md) - feat - 2026-10-24
+- [Live MLX transcription and Apple Silicon model policy](./2026-10-24-010-feat-mlx-live-transcription-plan.md) - feat - 2026-10-24
+- [Managed MLX local text polish](./2026-10-24-006-feat-mlx-polish-plan.md) - feat - 2026-10-24
 - [Wait for complete MLX worker fixture process IDs](./2026-10-24-009-fix-mlx-pid-fixture-plan.md) - fix - 2026-10-24
 - [Remove redundant MLX model-selection copy](./2026-10-24-008-fix-model-selector-signal-plan.md) - fix - 2026-10-24
 - [Preserve French in managed MLX transcription](./2026-10-24-007-fix-mlx-french-output-plan.md) - fix - 2026-10-24

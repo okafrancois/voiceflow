@@ -31,7 +31,6 @@ A plan is only completed when all implementation units are closed, verification 
 
 | Plan | Type | Date | Status |
 |------|------|------|--------|
-| [Managed MLX and live transcription v1.6.0](./active/2026-10-24-011-release-v1.6.0-plan.md) | feat | 2026-10-24 | Active |
 | [Incremental local Whisper transcription](./active/2026-09-25-001-feat-incremental-local-transcription-plan.md) | feat | 2026-09-25 | Active |
 | [Apple speech engine](./active/2026-09-25-002-feat-apple-speech-engine-plan.md) | feat | 2026-09-25 | Active |
 | [Apple Intelligence polish](./active/2026-09-25-003-feat-apple-intelligence-polish-plan.md) | feat | 2026-09-25 | Active |
@@ -43,6 +42,7 @@ A plan is only completed when all implementation units are closed, verification 
 
 | Plan | Type | Date |
 |------|------|------|
+| [Managed MLX and live transcription v1.6.0](./completed/2026-10-24-011-release-v1.6.0-plan.md) | feat | 2026-10-24 |
 | [Live MLX transcription and Apple Silicon model policy](./completed/2026-10-24-010-feat-mlx-live-transcription-plan.md) | feat | 2026-10-24 |
 | [Managed MLX local text polish](./completed/2026-10-24-006-feat-mlx-polish-plan.md) | feat | 2026-10-24 |
 | [Wait for complete MLX worker fixture process IDs](./completed/2026-10-24-009-fix-mlx-pid-fixture-plan.md) | fix | 2026-10-24 |

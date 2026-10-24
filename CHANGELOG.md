@@ -35,6 +35,8 @@ Automatic updates retain the existing production signing key.
 
 ### Notes
 
+- Published macOS packages and live updater metadata are independently verified,
+  including application notarization and the existing production updater key.
 - Managed MLX runtimes require Apple Silicon and macOS 14 or later.
 - Existing valid MLX/Apple selections and vendor-cloud configuration remain
   intact. Excluded native selections migrate on Apple Silicon without
